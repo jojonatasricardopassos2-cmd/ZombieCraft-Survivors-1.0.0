@@ -200,6 +200,32 @@ export function generateWorld(seedInput: number): WorldData {
        }
   }
 
+  // Surface Lava Pools
+  for (let pool = 0; pool < 5; pool++) {
+      const lx = Math.floor(rng.next() * (WORLD_WIDTH - 100)) + 50;
+      const ly = surfaceHeight[lx];
+      if (ly < INTERNAL_SURFACE_Y - 5 || ly > INTERNAL_SURFACE_Y + 15) continue; // Only flat-ish ground
+      if (lx > 830) continue; // No lava in snow
+      
+      const width = 4 + Math.floor(rng.next() * 5);
+      const depth = 2 + Math.floor(rng.next() * 2);
+      
+      for (let px = lx - width; px <= lx + width; px++) {
+          for (let py = ly - 1; py <= ly + depth + 1; py++) {
+              // bounds check
+              if (px < 0 || px >= WORLD_WIDTH || py < 0 || py >= WORLD_HEIGHT) continue;
+
+              const dist = Math.sqrt(Math.pow(px - lx, 2) + Math.pow(py - ly, 2));
+              const idx = py * WORLD_WIDTH + px;
+              if (dist < width - 1 && py > ly) {
+                  blocks[idx] = BlockType.LAVA;
+              } else if (dist <= width && py >= ly - 1) {
+                  blocks[idx] = BlockType.STONE; // Stone border
+              }
+          }
+      }
+  }
+
   // 2. Ore Generation
   // User Y = 64 - (InternalY - INTERNAL_SURFACE_Y)
   // InternalY = INTERNAL_SURFACE_Y + 64 - UserY
@@ -222,10 +248,9 @@ export function generateWorld(seedInput: number): WorldData {
       // IRON BOOST (Layer 15)
       generateOreCluster(blocks, BlockType.IRON_ORE, cx, 0.6, INTERNAL_SURFACE_Y + 45, INTERNAL_SURFACE_Y + 55, 4, 7, rng);
 
-      // GOLD (Layer 0 and -1 -> Internal 364 to 365)
-      generateOreCluster(blocks, BlockType.GOLD_ORE, cx, 0.6, DEEP_SLATE_LEVEL, DEEP_SLATE_LEVEL + 2, 3, 6, rng);
-      // GOLD BOOST
-      generateOreCluster(blocks, BlockType.GOLD_ORE, cx, 0.4, DEEP_SLATE_LEVEL, DEEP_SLATE_LEVEL + 2, 3, 6, rng);
+      // GOLD
+      generateOreCluster(blocks, BlockType.GOLD_ORE, cx, 0.8, DEEP_SLATE_LEVEL, DEEP_SLATE_LEVEL + 60, 4, 8, rng);
+      generateOreCluster(blocks, BlockType.GOLD_ORE, cx, 0.6, DEEP_SLATE_LEVEL + 20, DEEP_SLATE_LEVEL + 60, 4, 8, rng);
 
       // DIAMOND (Layer -30 -> Internal 394)
       generateOreCluster(blocks, BlockType.DIAMOND_ORE, cx, 0.4, DEEP_SLATE_LEVEL + 28, DEEP_SLATE_LEVEL + 32, 2, 5, rng);
@@ -300,8 +325,8 @@ export function generateWorld(seedInput: number): WorldData {
       } else {
           // Circular biome room
           const roomRadius = 10 + rng.next() * 5; // Large radius
-          for (let cx = Math.floor(caveStartX - roomRadius); cx <= Math.floor(caveStartX + roomRadius); cx++) {
-              for (let cy = Math.floor(caveY - roomRadius); cy <= Math.floor(caveY + roomRadius); cy++) {
+          for (let cx = Math.floor(caveStartX - roomRadius - 5); cx <= Math.floor(caveStartX + roomRadius + 5); cx++) {
+              for (let cy = Math.floor(caveY - roomRadius - 5); cy <= Math.floor(caveY + roomRadius + 5); cy++) {
                   let safeX = cx;
                   if (safeX < 0) safeX += WORLD_WIDTH;
                   if (safeX >= WORLD_WIDTH) safeX -= WORLD_WIDTH;
@@ -309,8 +334,12 @@ export function generateWorld(seedInput: number): WorldData {
                       const dx = cx - caveStartX;
                       const dy = cy - caveY;
                       const r = roomRadius + (smoothNoise(cx, noiseSeed, 10) * 4);
-                      if (dx*dx + dy*dy < r*r) {
+                      const distSq = dx*dx + dy*dy;
+                      if (distSq < r*r) {
                            blocks[cy * WORLD_WIDTH + safeX] = BlockType.AIR;
+                      } else if (distSq < (r+2)*(r+2)) {
+                           // Encircle with contrasting stone
+                           blocks[cy * WORLD_WIDTH + safeX] = cy > DEEP_SLATE_LEVEL ? BlockType.STONE : BlockType.DEEP_STONE;
                       }
                   }
               }

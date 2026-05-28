@@ -68,7 +68,33 @@ export enum BlockType {
   SPIKE = 65,
   MOSS = 66,
   VINES = 67,
-  COBWEB = 68
+  COBWEB = 68,
+  LAVA = 69,
+  CABINET = 70,
+  TABLE = 71,
+  CAMPFIRE = 72,
+  COPPER_BLOCK = 73,
+  IRON_BLOCK = 74,
+  GOLD_BLOCK = 75,
+  DIAMOND_BLOCK = 76,
+  DOOR_IRON_BOTTOM_CLOSED = 77,
+  DOOR_IRON_TOP_CLOSED = 78,
+  DOOR_IRON_BOTTOM_OPEN = 79,
+  DOOR_IRON_TOP_OPEN = 80,
+  DOOR_STONE_BOTTOM_CLOSED = 81,
+  DOOR_STONE_TOP_CLOSED = 82,
+  DOOR_STONE_BOTTOM_OPEN = 83,
+  DOOR_STONE_TOP_OPEN = 84,
+  MEDICAL_BENCH = 85,
+  SCIENCE_BENCH = 86,
+  CABLE = 87,
+  BUTTON = 88,
+  LEVER = 89,
+  LAMP = 90,
+  CABLE_ON = 91,
+  BUTTON_ON = 92,
+  LEVER_ON = 93,
+  LAMP_ON = 94
 }
 
 export enum ItemType {
@@ -205,7 +231,7 @@ export interface GameOptions {
     showMinimap?: boolean;
     adminMode?: boolean;
     isMobile?: boolean; // Mobile controls toggle
-    gameMode?: 'SURVIVAL' | 'GOD';
+    gameMode?: 'SURVIVAL' | 'GOD' | 'CREATIVE' | 'SPECTATOR';
     difficulty?: 'EASY' | 'NORMAL' | 'HARD';
     graphicsQuality?: 'UGLY' | 'NORMAL' | 'ULTRA';
     volume?: number;
@@ -238,4 +264,5 @@ export interface SavedWorld {
     stamina: number;
     hunger: number;
     options?: GameOptions;
+    achievements?: number[];
 }

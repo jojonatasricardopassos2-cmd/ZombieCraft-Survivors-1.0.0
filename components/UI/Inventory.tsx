@@ -25,8 +25,10 @@ interface InventoryProps {
   level: number;
   onUpgradeStat: (stat: keyof PlayerStats) => void;
   isMobile?: boolean;
-  gameMode?: 'SURVIVAL' | 'GOD';
+  gameMode?: 'SURVIVAL' | 'GOD' | 'CREATIVE' | 'SPECTATOR';
   onCreativeGive?: (item: ItemStack) => void;
+  onDropItem?: (index: number, amount: number) => void;
+  onClearInventory?: () => void;
 }
 
 export const ItemIcon: React.FC<{ item: ItemStack | null }> = ({ item }) => {
@@ -83,7 +85,12 @@ export const ItemIcon: React.FC<{ item: ItemStack | null }> = ({ item }) => {
            <span className="text-xl drop-shadow-md filter drop-shadow-lg" style={{ color: bg, textShadow: '1px 1px 0 #000' }}>{char}</span>
        )}
        {item.id === BlockType.CRAFTING_TABLE && <span className="absolute text-xs opacity-50">🛠️</span>}
+       {item.id === BlockType.SCIENCE_BENCH && <span className="absolute text-xs opacity-80">🧪</span>}
+       {item.id === BlockType.MEDICAL_BENCH && <span className="absolute text-xs opacity-80">⚕️</span>}
        {item.id === BlockType.BED && <span className="absolute text-xs opacity-50">🛏️</span>}
+       {item.id === BlockType.MOSS && <span className="absolute text-xs opacity-50">🌿</span>}
+       {item.id === BlockType.VINES && <span className="absolute text-xs opacity-50" style={{ transform: 'rotate(90deg)' }}>🪜</span>}
+       {item.id === BlockType.CABLE && <span className="absolute text-xs opacity-50">🔌</span>}
        
       {item.count > 1 && (
         <span className="absolute bottom-0 right-0 text-xs font-bold text-white drop-shadow-md px-1">
@@ -108,20 +115,37 @@ export const ItemIcon: React.FC<{ item: ItemStack | null }> = ({ item }) => {
 
 export const Inventory: React.FC<InventoryProps> = ({ 
   items, isOpen, onClose, onSelectSlot, selectedSlot, onCraft, nearbyStation,
-  cursorItem, onSlotClick, mousePos, lang, equipment, onEquip, onUnequip, stats, skillPoints, level, onUpgradeStat, isMobile, gameMode, onCreativeGive
+  cursorItem, onSlotClick, mousePos, lang, equipment, onEquip, onUnequip, stats, skillPoints, level, onUpgradeStat, isMobile, gameMode, onCreativeGive, onDropItem, onClearInventory
 }) => {
-  const [activeTab, setActiveTab] = useState<'INVENTORY' | 'CHARACTER' | 'CRAFTING' | 'DECOR' | 'ITEMS' | 'COMBAT' | 'CREATIVE'>('INVENTORY');
+  const [activeTab, setActiveTab] = useState<'INVENTORY' | 'CHARACTER' | 'CRAFTING' | 'DECOR' | 'ITEMS' | 'COMBAT' | 'CREATIVE' | 'MEDICAL' | 'SCIENCE'>('INVENTORY');
   const [searchQuery, setSearchQuery] = useState('');
   const [hoveredRecipe, setHoveredRecipe] = useState<CraftingRecipe | null>(null);
   const [hoveredItem, setHoveredItem] = useState<ItemStack | null>(null);
+  const [hoveredSlotIndex, setHoveredSlotIndex] = useState<number | null>(null);
   const t = TRANSLATIONS[lang];
 
   useEffect(() => {
-    if (nearbyStation === BlockType.CRAFTING_TABLE) {
-        setActiveTab('DECOR');
-    } else {
-        setActiveTab('INVENTORY');
-    }
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+       if (document.activeElement?.tagName === 'INPUT') return;
+       if (e.code === 'KeyQ') {
+          if (hoveredSlotIndex !== null && items[hoveredSlotIndex] && onDropItem) {
+              onDropItem(hoveredSlotIndex, e.ctrlKey ? 64 : 1);
+          }
+       }
+       if (e.code === 'KeyX' && gameMode === 'CREATIVE' && onClearInventory) {
+           onClearInventory();
+       }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, hoveredSlotIndex, items, onDropItem, gameMode, onClearInventory]);
+
+  useEffect(() => {
+    if (nearbyStation === BlockType.CRAFTING_TABLE) setActiveTab('DECOR');
+    else if (nearbyStation === BlockType.MEDICAL_BENCH) setActiveTab('MEDICAL');
+    else if (nearbyStation === BlockType.SCIENCE_BENCH) setActiveTab('SCIENCE');
+    else setActiveTab('INVENTORY');
   }, [nearbyStation, isOpen]);
 
   const getItemName = (id: string | number) => {
@@ -292,7 +316,14 @@ export const Inventory: React.FC<InventoryProps> = ({
           <div className="flex flex-col gap-2 border-b border-gray-600 pb-2">
               <div className="flex justify-between items-center">
                   <h2 className="text-xl font-bold">{isTable ? (lang === 'PT' ? 'Bancada' : 'Workbench') : t.MENU}</h2>
-                  <button onClick={onClose} className="text-red-400 hover:text-red-300 font-bold text-xl">X</button>
+                  <div className="flex items-center gap-4">
+                      {gameMode === 'CREATIVE' && (
+                          <button onClick={onClearInventory} className="text-sm bg-red-600 hover:bg-red-500 text-white px-2 py-1 rounded" title={lang === 'PT' ? 'Limpar Inventário (X)' : 'Clear Inventory (X)'}>
+                              {lang === 'PT' ? 'Limpar Inv.' : 'Clear Inv.'} [X]
+                          </button>
+                      )}
+                      <button onClick={onClose} className="text-red-400 hover:text-red-300 font-bold text-xl">X</button>
+                  </div>
               </div>
               
               <div className="flex flex-col sm:flex-row gap-2 justify-between">
@@ -314,10 +345,16 @@ export const Inventory: React.FC<InventoryProps> = ({
                             <button onClick={() => setActiveTab('COMBAT')} className={`px-3 py-1 rounded ${activeTab === 'COMBAT' ? 'bg-red-600' : 'bg-gray-700'}`}>{t.COMBAT}</button>
                           </>
                       )}
+                      {nearbyStation === BlockType.MEDICAL_BENCH && (
+                            <button onClick={() => setActiveTab('MEDICAL')} className={`px-3 py-1 rounded bg-red-500`}>{lang === 'PT' ? 'Médico' : 'Medical'}</button>
+                      )}
+                      {nearbyStation === BlockType.SCIENCE_BENCH && (
+                            <button onClick={() => setActiveTab('SCIENCE')} className={`px-3 py-1 rounded bg-teal-500`}>{lang === 'PT' ? 'Ciência' : 'Science'}</button>
+                      )}
                   </div>
                   
                   {/* Search Bar */}
-                  {(activeTab === 'CRAFTING' || activeTab === 'CREATIVE' || isTable) && (
+                  {(activeTab === 'CRAFTING' || activeTab === 'CREATIVE' || isTable || nearbyStation === BlockType.SCIENCE_BENCH || nearbyStation === BlockType.MEDICAL_BENCH) && (
                       <input 
                         type="text" 
                         placeholder={t.SEARCH}
@@ -338,8 +375,8 @@ export const Inventory: React.FC<InventoryProps> = ({
                                   key={i} 
                                   className={`aspect-square bg-gray-900 border-2 ${selectedSlot === i ? 'border-yellow-500' : 'border-gray-700'} relative cursor-pointer hover:bg-gray-800`}
                                   onMouseDown={(e) => onSlotClick(i, e.button)}
-                                  onMouseEnter={() => setHoveredItem(item)}
-                                  onMouseLeave={() => setHoveredItem(null)}
+                                  onMouseEnter={() => { setHoveredItem(item); setHoveredSlotIndex(i); }}
+                                  onMouseLeave={() => { setHoveredItem(null); setHoveredSlotIndex(null); }}
                                   onTouchStart={() => {
                                       // Mobile tap logic: if cursor is empty, pick up. If cursor has item, place.
                                       // If already selected/highlighted, maybe show split option?

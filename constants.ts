@@ -56,9 +56,17 @@ export const BLOCK_COLORS: Record<number, string> = {
   [BlockType.LEAVES]: '#3a5f0b',
   [BlockType.DARK_LEAVES]: '#223c07', 
   [BlockType.PLANKS]: '#c19a6b',
+  [BlockType.LAVA]: '#ff5722',
+  [BlockType.CABINET]: '#4e342e',
+  [BlockType.TABLE]: '#6d4c41',
+  [BlockType.CAMPFIRE]: '#3e2723',
+  [BlockType.ROOF_WOOD]: '#8d6e63',
+  [BlockType.ROOF_STONE]: '#616161',
+  [BlockType.ROOF_WOOD_LEFT]: '#8d6e63',
+  [BlockType.ROOF_STONE_LEFT]: '#616161',
   [BlockType.COAL_ORE]: '#212121',
   [BlockType.IRON_ORE]: '#d7ccc8',
-  [BlockType.GOLD_ORE]: '#ffecb3',
+  [BlockType.GOLD_ORE]: '#FFD700',
   [BlockType.DIAMOND_ORE]: '#80deea',
   [BlockType.TITANIUM_ORE]: '#0d47a1', 
   [BlockType.URANIUM_ORE]: '#76ff03', // Light Green
@@ -112,7 +120,25 @@ export const BLOCK_COLORS: Record<number, string> = {
   [BlockType.SPIKE]: '#5c5c5c',
   [BlockType.MOSS]: '#4ca43b',
   [BlockType.VINES]: '#2e7d32',
-  [BlockType.COBWEB]: 'rgba(255, 255, 255, 0.6)'
+  [BlockType.COBWEB]: 'rgba(255, 255, 255, 0.6)',
+  [BlockType.MEDICAL_BENCH]: '#e0f7fa',
+  [BlockType.SCIENCE_BENCH]: '#b2dfdb',
+  [BlockType.CABLE]: '#790000', // Unpowered redstone
+  [BlockType.BUTTON]: '#9e9e9e', // Same as off by default
+  [BlockType.LEVER]: '#795548',
+  [BlockType.LAMP]: '#5c4b18', // Unpowered lamp
+  [BlockType.CABLE_ON]: '#ff0000',
+  [BlockType.BUTTON_ON]: '#757575',
+  [BlockType.LEVER_ON]: '#795548',
+  [BlockType.LAMP_ON]: '#fff59d',
+  [BlockType.DOOR_IRON_BOTTOM_CLOSED]: '#b0bec5',
+  [BlockType.DOOR_IRON_TOP_CLOSED]: '#b0bec5',
+  [BlockType.DOOR_IRON_BOTTOM_OPEN]: '#b0bec5',
+  [BlockType.DOOR_IRON_TOP_OPEN]: '#b0bec5',
+  [BlockType.DOOR_STONE_BOTTOM_CLOSED]: '#757575',
+  [BlockType.DOOR_STONE_TOP_CLOSED]: '#757575',
+  [BlockType.DOOR_STONE_BOTTOM_OPEN]: '#757575',
+  [BlockType.DOOR_STONE_TOP_OPEN]: '#757575'
 };
 
 export const HIDDEN_CREATIVE_BLOCKS = [
@@ -120,9 +146,19 @@ export const HIDDEN_CREATIVE_BLOCKS = [
     BlockType.DOOR_TOP_CLOSED,
     BlockType.DOOR_BOTTOM_OPEN,
     BlockType.DOOR_TOP_OPEN,
+    BlockType.DOOR_IRON_TOP_CLOSED,
+    BlockType.DOOR_IRON_BOTTOM_OPEN,
+    BlockType.DOOR_IRON_TOP_OPEN,
+    BlockType.DOOR_STONE_TOP_CLOSED,
+    BlockType.DOOR_STONE_BOTTOM_OPEN,
+    BlockType.DOOR_STONE_TOP_OPEN,
     BlockType.CROP_WHEAT,
     BlockType.CROP_CARROT,
-    BlockType.CROP_POTATO
+    BlockType.CROP_POTATO,
+    BlockType.CABLE_ON,
+    BlockType.LAMP_ON,
+    BlockType.BUTTON_ON,
+    BlockType.LEVER_ON
 ];
 
 // Hardness values
@@ -141,7 +177,8 @@ export const BLOCK_HARDNESS: Record<number, number> = {
     [BlockType.URANIUM_BLOCK]: 1500, [BlockType.TITANIUM_BLOCK]: 1200, [BlockType.LADDER]: 10,
     [BlockType.CACTUS]: 15, [BlockType.DRY_LEAVES]: 10, [BlockType.GLASS_GREEN]: 20, [BlockType.GLASS_BLUE]: 20,
     [BlockType.SNOWY_GRASS]: 50, [BlockType.SNOW_BLOCK]: 20, [BlockType.ICE]: 100, [BlockType.SNOWY_LEAVES]: 20,
-    [BlockType.SPIKE]: 200, [BlockType.MOSS]: 10, [BlockType.VINES]: 5, [BlockType.COBWEB]: 25
+    [BlockType.SPIKE]: 200, [BlockType.MOSS]: 10, [BlockType.VINES]: 5, [BlockType.COBWEB]: 25,
+    [BlockType.MEDICAL_BENCH]: 200, [BlockType.SCIENCE_BENCH]: 200, [BlockType.CABLE]: 5, [BlockType.BUTTON]: 10, [BlockType.LEVER]: 10, [BlockType.LAMP]: 20
 };
 
 // Max durability for tools (Simplified categories)
@@ -247,10 +284,21 @@ export const RECIPES: CraftingRecipe[] = [
   { result: { id: BlockType.BED_ADVANCED, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.BED_MEDIUM, count: 1 }, { id: 'gold_ingot', count: 2 }, { id: 'diamond', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.FURNACE, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.STONE, count: 8 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.DOOR_BOTTOM_CLOSED, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 6 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.DOOR_IRON_BOTTOM_CLOSED, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'iron_ingot', count: 6 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.DOOR_STONE_BOTTOM_CLOSED, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.STONE, count: 6 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.ROOF_WOOD, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 5 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.ROOF_STONE, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.STONE, count: 5 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.CABINET, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 10 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.TABLE, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 10 }, { id: BlockType.WOOD, count: 3 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.CAMPFIRE, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'stick', count: 3 }, { id: BlockType.COAL_ORE, count: 1 }, { id: BlockType.WOOD, count: 3 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.CHEST, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 8 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.CHEST_MEDIUM, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.CHEST, count: 1 }, { id: 'iron_ingot', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.CHEST_LARGE, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.CHEST_MEDIUM, count: 1 }, { id: 'diamond', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.STONE_CHEST, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.CHEST_MEDIUM, count: 1 }, { id: BlockType.STONE, count: 10 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.COPPER_BLOCK, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'copper_ingot', count: 9 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.IRON_BLOCK, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'iron_ingot', count: 9 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.GOLD_BLOCK, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'gold_ingot', count: 9 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.DIAMOND_BLOCK, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'diamond', count: 9 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.URANIUM_BLOCK, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'uranium', count: 9 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.TITANIUM_BLOCK, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'titanium_ingot', count: 9 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.ARMOR_BENCH, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.CRAFTING_TABLE, count: 1 }, { id: 'iron_ingot', count: 5 }, { id: 'gold_ingot', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
@@ -321,6 +369,24 @@ export const RECIPES: CraftingRecipe[] = [
   { result: { id: 'reinforced_iron_chestplate', count: 1, type: ItemType.ARMOR }, ingredients: [{ id: 'iron_ingot', count: 8 }, { id: 'diamond', count: 1 }], station: BlockType.ARMOR_BENCH, category: 'ARMOR' },
   { result: { id: 'reinforced_iron_leggings', count: 1, type: ItemType.ARMOR }, ingredients: [{ id: 'iron_ingot', count: 7 }, { id: 'diamond', count: 1 }], station: BlockType.ARMOR_BENCH, category: 'ARMOR' },
   { result: { id: 'reinforced_iron_boots', count: 1, type: ItemType.ARMOR }, ingredients: [{ id: 'iron_ingot', count: 4 }, { id: 'diamond', count: 1 }], station: BlockType.ARMOR_BENCH, category: 'ARMOR' },
+  
+  // New recipes
+  { result: { id: BlockType.MEDICAL_BENCH, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 4 }, { id: 'iron_ingot', count: 2 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.SCIENCE_BENCH, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 4 }, { id: 'copper_ingot', count: 2 }, { id: BlockType.GLASS, count: 2 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: 'syringe', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'iron_ingot', count: 1 }, { id: BlockType.GLASS, count: 1 }], station: BlockType.MEDICAL_BENCH, category: 'TOOLS' },
+  { result: { id: 'bandage', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.WOOL, count: 2 }], station: BlockType.MEDICAL_BENCH, category: 'TOOLS' },
+  { result: { id: 'medicine', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'syringe', count: 1 }, { id: 'berry', count: 2 }, { id: 'bone', count: 1 }], station: BlockType.MEDICAL_BENCH, category: 'TOOLS' },
+  { result: { id: 'potion_regen', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.GLASS, count: 1 }, { id: 'apple', count: 1 }, { id: BlockType.FLOWER_RED, count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
+  { result: { id: 'potion_resistance', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.GLASS, count: 1 }, { id: 'iron_ingot', count: 1 }, { id: BlockType.FLOWER_BLUE, count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
+  { result: { id: 'potion_fire', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.GLASS, count: 1 }, { id: 'coal', count: 1 }, { id: BlockType.FLOWER_GREEN, count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
+  { result: { id: 'potion_cold', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.GLASS, count: 1 }, { id: 'leather', count: 1 }, { id: BlockType.FLOWER_BLUE, count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
+  { result: { id: 'potion_antizombie', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.GLASS, count: 1 }, { id: 'zombie_meat', count: 1 }, { id: BlockType.BUSH, count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
+  { result: { id: 'bucket', count: 1, type: ItemType.TOOL }, ingredients: [{ id: 'iron_ingot', count: 3 }], station: BlockType.CRAFTING_TABLE, category: 'TOOLS' },
+  { result: { id: 'fishing_rod', count: 1, type: ItemType.TOOL }, ingredients: [{ id: 'stick', count: 2 }, { id: BlockType.COBWEB, count: 2 }], station: BlockType.CRAFTING_TABLE, category: 'TOOLS' },
+  { result: { id: BlockType.CABLE, count: 4, type: ItemType.BLOCK }, ingredients: [{ id: 'copper_ingot', count: 2 }, { id: 'gold_ingot', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.BUTTON, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'iron_ingot', count: 5 }, { id: 'copper_ingot', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.LEVER, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'stick', count: 1 }, { id: BlockType.STONE, count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.LAMP, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.GLASS, count: 1 }, { id: 'copper_ingot', count: 1 }, { id: 'iron_ingot', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
 ];
 
 export const COOKING_RECIPES: Record<string, string> = {
@@ -411,7 +477,12 @@ Object.assign(ITEM_COLORS, {
   'saddle': '#795548',
   'spawn_zombie': '#2e7d32', 'spawn_pig': '#f48fb1', 'spawn_cow': '#795548', 'spawn_sheep': '#e0e0e0',
   'spawn_scorpion': '#ffb300', 'spawn_camel': '#d7ccc8', 'spawn_snake': '#4caf50', 'spawn_rabbit': '#a1887f', 'spawn_mutant_zombie': '#1b5e20',
-  'spawn_polar_bear': '#ffffff', 'spawn_dog': '#d7ccc8', 'bone': '#e0e0e0'
+  'spawn_polar_bear': '#ffffff', 'spawn_dog': '#d7ccc8', 'bone': '#e0e0e0',
+  'syringe': '#eeeeee', 'bandage': '#ffebeb', 'medicine': '#ff1744',
+  'potion_regen': '#ff4081', 'potion_resistance': '#fb8c00', 'potion_fire': '#ff9800', 
+  'potion_cold': '#00bcd4', 'potion_antizombie': '#69f0ae',
+  'bucket': '#b0bec5', 'water_bucket': '#42a5f5', 'lava_bucket': '#ff5722',
+  'fishing_rod': '#8d6e63', 'raw_fish': '#81d4fa', 'cooked_fish': '#ffcc80', 'trash': '#757575'
 });
 
 // Add Armor colors manually for standard mats
@@ -467,6 +538,10 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         [BlockType.COAL_ORE]: 'Coal Ore', [BlockType.IRON_ORE]: 'Iron Ore', [BlockType.GOLD_ORE]: 'Gold Ore', [BlockType.DIAMOND_ORE]: 'Diamond Ore', [BlockType.COPPER_ORE]: 'Copper Ore', [BlockType.TITANIUM_ORE]: 'Titanium Ore', [BlockType.URANIUM_ORE]: 'Uranium Ore',
         [BlockType.WOOL]: 'Wool', [BlockType.WATER]: 'Water', [BlockType.SAND]: 'Sand', [BlockType.GLASS]: 'Glass',
         [BlockType.ROOF_WOOD]: 'Wood Roof', [BlockType.ROOF_STONE]: 'Stone Roof', [BlockType.ROOF_WOOD_LEFT]: 'Wood Roof (L)', [BlockType.ROOF_STONE_LEFT]: 'Stone Roof (L)',
+        [BlockType.CABINET]: 'Cabinet', [BlockType.TABLE]: 'Table', [BlockType.CAMPFIRE]: 'Campfire',
+        [BlockType.COPPER_BLOCK]: 'Copper Block', [BlockType.IRON_BLOCK]: 'Iron Block', [BlockType.GOLD_BLOCK]: 'Gold Block', [BlockType.DIAMOND_BLOCK]: 'Diamond Block',
+        [BlockType.DOOR_IRON_BOTTOM_CLOSED]: 'Iron Door', [BlockType.DOOR_STONE_BOTTOM_CLOSED]: 'Stone Door',
+        [BlockType.LAVA]: 'Lava',
         [BlockType.WALL_WOOD]: 'Wood Wall', [BlockType.DOOR_BOTTOM_CLOSED]: 'Door', [BlockType.FARMLAND]: 'Farmland',
         [BlockType.BERRY_BUSH]: 'Cherry Bush', [BlockType.SEED_BUSH]: 'Seed Bush',
         [BlockType.FLOWER_RED]: 'Red Flower', [BlockType.FLOWER_GREEN]: 'Green Flower', [BlockType.FLOWER_BLUE]: 'Blue Flower',
@@ -474,6 +549,12 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         [BlockType.CACTUS]: 'Cactus', [BlockType.DRY_LEAVES]: 'Dry Leaves', [BlockType.GLASS_GREEN]: 'Green Glass', [BlockType.GLASS_BLUE]: 'Blue Glass',
         [BlockType.SNOWY_GRASS]: 'Snowy Grass', [BlockType.SNOW_BLOCK]: 'Snow Block', [BlockType.ICE]: 'Ice', [BlockType.SNOWY_LEAVES]: 'Snowy Leaves',
         [BlockType.SPIKE]: 'Spikes', [BlockType.MOSS]: 'Moss', [BlockType.VINES]: 'Vines', [BlockType.COBWEB]: 'Cobweb',
+        [BlockType.MEDICAL_BENCH]: 'Medical Bench', [BlockType.SCIENCE_BENCH]: 'Science Bench', [BlockType.CABLE]: 'Cable', [BlockType.BUTTON]: 'Button', [BlockType.LEVER]: 'Lever', [BlockType.LAMP]: 'Lamp',
+        'syringe': 'Syringe', 'bandage': 'Bandage', 'medicine': 'Medicine',
+        'potion_regen': 'Regen Potion', 'potion_resistance': 'Resistance Potion', 'potion_fire': 'Fire Resist',
+        'potion_cold': 'Cold Resist Potion', 'potion_antizombie': 'Anti-Zombie',
+        'bucket': 'Bucket', 'water_bucket': 'Water Bucket', 'lava_bucket': 'Lava Bucket',
+        'fishing_rod': 'Fishing Rod', 'raw_fish': 'Raw Fish', 'cooked_fish': 'Cooked Fish', 'trash': 'Trash',
         'stick': 'Stick', 'basic_axe': 'Basic Axe', 'rope': 'Rope', 'fiber': 'Fiber', 'arrow': 'Arrow', 'bow': 'Simple Bow', 'crossbow': 'Besta',
         'iron_ingot': 'Iron Ingot', 'gold_ingot': 'Gold Ingot', 'copper_ingot': 'Copper Ingot', 'titanium_ingot': 'Titanium Ingot', 'diamond': 'Diamond', 'uranium': 'Uranium', 'leather': 'Leather',
         'raw_beef': 'Raw Beef', 'steak': 'Steak', 'raw_porkchop': 'Raw Porkchop', 'cooked_porkchop': 'Cooked Porkchop', 'raw_mutton': 'Raw Mutton', 'cooked_mutton': 'Cooked Mutton',
@@ -532,7 +613,11 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         [BlockType.BED]: 'Cama Básica', [BlockType.BED_MEDIUM]: 'Cama Média', [BlockType.BED_ADVANCED]: 'Cama Avançada',
         [BlockType.COAL_ORE]: 'Minério de Carvão', [BlockType.IRON_ORE]: 'Minério de Ferro', [BlockType.GOLD_ORE]: 'Minério de Ouro', [BlockType.DIAMOND_ORE]: 'Minério de Diamante', [BlockType.COPPER_ORE]: 'Minério de Cobre', [BlockType.TITANIUM_ORE]: 'Minério de Titânio', [BlockType.URANIUM_ORE]: 'Minério de Urânio',
         [BlockType.WOOL]: 'Lã', [BlockType.WATER]: 'Água', [BlockType.SAND]: 'Areia', [BlockType.GLASS]: 'Vidro',
-        [BlockType.ROOF_WOOD]: 'Telhado de Madeira (Dir)', [BlockType.ROOF_STONE]: 'Telhado de Pedra (Dir)', [BlockType.ROOF_WOOD_LEFT]: 'Telhado de Madeira (Esq)', [BlockType.ROOF_STONE_LEFT]: 'Telhado de Pedra (Esq)',
+        [BlockType.ROOF_WOOD]: 'Telhado de Madeira', [BlockType.ROOF_STONE]: 'Telhado de Pedra', [BlockType.ROOF_WOOD_LEFT]: 'Telhado de Madeira (Esq)', [BlockType.ROOF_STONE_LEFT]: 'Telhado de Pedra (Esq)',
+        [BlockType.CABINET]: 'Armário', [BlockType.TABLE]: 'Mésa', [BlockType.CAMPFIRE]: 'Fogueira',
+        [BlockType.COPPER_BLOCK]: 'Bloco de Cobre', [BlockType.IRON_BLOCK]: 'Bloco de Ferro', [BlockType.GOLD_BLOCK]: 'Bloco de Ouro', [BlockType.DIAMOND_BLOCK]: 'Bloco de Diamante',
+        [BlockType.DOOR_IRON_BOTTOM_CLOSED]: 'Porta de Ferro', [BlockType.DOOR_STONE_BOTTOM_CLOSED]: 'Porta de Pedra',
+        [BlockType.LAVA]: 'Lava',
         [BlockType.WALL_WOOD]: 'Parede de Madeira', [BlockType.DOOR_BOTTOM_CLOSED]: 'Porta', [BlockType.FARMLAND]: 'Terra Arada',
         [BlockType.LEAVES]: 'Folhas', [BlockType.DARK_LEAVES]: 'Folhas Escuras', [BlockType.BUSH]: 'Arbusto', [BlockType.BEDROCK]: 'Rocha Matriz',
         [BlockType.BERRY_BUSH]: 'Arbusto de Cereja', [BlockType.SEED_BUSH]: 'Arbusto de Sementes',
@@ -541,6 +626,12 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         [BlockType.CACTUS]: 'Cacto', [BlockType.DRY_LEAVES]: 'Folhas Secas', [BlockType.GLASS_GREEN]: 'Vidro Verde', [BlockType.GLASS_BLUE]: 'Vidro Azul',
         [BlockType.SNOWY_GRASS]: 'Grama com Neve', [BlockType.SNOW_BLOCK]: 'Bloco de Neve', [BlockType.ICE]: 'Gelo', [BlockType.SNOWY_LEAVES]: 'Folhas com Neve',
         [BlockType.SPIKE]: 'Espinhos', [BlockType.MOSS]: 'Musgo', [BlockType.VINES]: 'Linhas Verdes (Escada)', [BlockType.COBWEB]: 'Teia de Aranha',
+        [BlockType.MEDICAL_BENCH]: 'Bancada Médica', [BlockType.SCIENCE_BENCH]: 'Bancada de Cientista', [BlockType.CABLE]: 'Cabo', [BlockType.BUTTON]: 'Botão', [BlockType.LEVER]: 'Alavanca', [BlockType.LAMP]: 'Lâmpada',
+        'syringe': 'Seringa', 'bandage': 'Bandagem', 'medicine': 'Remédio',
+        'potion_regen': 'Poção de Regeneração', 'potion_resistance': 'Poção de Resistência', 'potion_fire': 'Poção contra Fogo',
+        'potion_cold': 'Poção contra Frio', 'potion_antizombie': 'Poção contra Zumbis',
+        'bucket': 'Balde', 'water_bucket': 'Balde de Água', 'lava_bucket': 'Balde de Lava',
+        'fishing_rod': 'Vara de Pescar', 'raw_fish': 'Peixe Cru', 'cooked_fish': 'Peixe Assado', 'trash': 'Lixo',
         'stick': 'Graveto', 'basic_axe': 'Machado Básico', 'rope': 'Corda', 'fiber': 'Fibra', 'arrow': 'Flecha', 'bow': 'Arco Simples', 'crossbow': 'Besta',
         'iron_ingot': 'Barra de Ferro', 'gold_ingot': 'Barra de Ouro', 'copper_ingot': 'Barra de Cobre', 'titanium_ingot': 'Barra de Titânio', 'diamond': 'Diamante', 'uranium': 'Urânio', 'leather': 'Couro',
         'raw_beef': 'Bife Cru', 'steak': 'Bife Assado', 'raw_porkchop': 'Carne de Porco Crua', 'cooked_porkchop': 'Carne de Porco Assada', 'raw_mutton': 'Carne de Carneiro Crua', 'cooked_mutton': 'Carne de Carneiro Assada',

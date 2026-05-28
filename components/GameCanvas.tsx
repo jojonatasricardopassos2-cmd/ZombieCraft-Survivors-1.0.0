@@ -22,6 +22,9 @@ import { AdminPanel } from './UI/AdminPanel.tsx';
 import { SleepUI } from './UI/SleepUI.tsx';
 import { NpcUI } from './UI/NpcUI.tsx';
 import { MobileControls } from './UI/MobileControls.tsx';
+import { ACHIEVEMENTS_LIST } from '../utils/achievementsList.ts';
+import { AchievementsOverlay } from './UI/AchievementsOverlay.tsx';
+import { FishingMinigame } from './UI/FishingMinigame.tsx';
 
 function getMousePos(canvas: HTMLCanvasElement, evt: MouseEvent) {
     const rect = canvas.getBoundingClientRect();
@@ -36,14 +39,16 @@ const generateEntityId = () => Math.floor(Math.random() * 1000000000);
 
 // 1. Blocks that light passes through (Visual Transparency)
 const LIGHT_TRANSPARENT_BLOCKS = new Set([
-    BlockType.AIR, BlockType.GLASS, BlockType.WATER, BlockType.TORCH,
+    BlockType.AIR, BlockType.GLASS, BlockType.WATER, BlockType.TORCH, BlockType.LAVA,
     BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH,
     BlockType.ROOF_WOOD, BlockType.ROOF_STONE, BlockType.ROOF_WOOD_LEFT, BlockType.ROOF_STONE_LEFT,
     BlockType.WALL_WOOD, BlockType.DOOR_BOTTOM_OPEN, BlockType.DOOR_TOP_OPEN,
+    BlockType.DOOR_IRON_BOTTOM_OPEN, BlockType.DOOR_IRON_TOP_OPEN, BlockType.DOOR_STONE_BOTTOM_OPEN, BlockType.DOOR_STONE_TOP_OPEN,
     BlockType.CROP_WHEAT, BlockType.CROP_CARROT, BlockType.CROP_POTATO,
     BlockType.BED, BlockType.BED_MEDIUM, BlockType.BED_ADVANCED,
     BlockType.FLOWER_RED, BlockType.FLOWER_GREEN, BlockType.FLOWER_BLUE,
     BlockType.CRAFTING_TABLE, BlockType.FURNACE, BlockType.ARMOR_BENCH,
+    BlockType.TABLE, BlockType.CABINET, BlockType.CAMPFIRE,
     // Chests also let light pass usually in 2D to avoid dark spots behind them
     BlockType.CHEST, BlockType.CHEST_MEDIUM, BlockType.CHEST_LARGE, BlockType.STONE_CHEST 
 ]);
@@ -51,16 +56,20 @@ const LIGHT_TRANSPARENT_BLOCKS = new Set([
 // 2. Blocks that entities can walk through (No Collision)
 // NOTE: Glass is NOT here, so it has physics (solid). Chests ARE here, so they have no physics (intangible).
 const NON_COLLIDABLE_BLOCKS = new Set([
-    BlockType.AIR, BlockType.WATER, BlockType.TORCH,
+    BlockType.AIR, BlockType.WATER, BlockType.TORCH, BlockType.LAVA,
     BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH,
     BlockType.ROOF_WOOD, BlockType.ROOF_STONE, BlockType.ROOF_WOOD_LEFT, BlockType.ROOF_STONE_LEFT,
     BlockType.WALL_WOOD, BlockType.DOOR_BOTTOM_OPEN, BlockType.DOOR_TOP_OPEN,
+    BlockType.DOOR_IRON_BOTTOM_OPEN, BlockType.DOOR_IRON_TOP_OPEN, BlockType.DOOR_STONE_BOTTOM_OPEN, BlockType.DOOR_STONE_TOP_OPEN,
     BlockType.CROP_WHEAT, BlockType.CROP_CARROT, BlockType.CROP_POTATO,
     BlockType.BED, BlockType.BED_MEDIUM, BlockType.BED_ADVANCED,
     BlockType.FLOWER_RED, BlockType.FLOWER_GREEN, BlockType.FLOWER_BLUE,
     BlockType.CRAFTING_TABLE, BlockType.FURNACE, BlockType.ARMOR_BENCH,
+    BlockType.TABLE, BlockType.CABINET, BlockType.CAMPFIRE,
     BlockType.CHEST, BlockType.CHEST_MEDIUM, BlockType.CHEST_LARGE, BlockType.STONE_CHEST,
-    BlockType.LADDER
+    BlockType.LADDER, BlockType.MOSS, BlockType.VINES,
+    BlockType.SCIENCE_BENCH, BlockType.MEDICAL_BENCH,
+    BlockType.CABLE, BlockType.CABLE_ON, BlockType.LAMP, BlockType.LAMP_ON, BlockType.BUTTON, BlockType.BUTTON_ON, BlockType.LEVER, BlockType.LEVER_ON
 ]);
 
 // Add LADDER to LIGHT_TRANSPARENT_BLOCKS as well (it's not defined in the snippet but usually is nearby or I should find it)
@@ -100,16 +109,65 @@ export const GameCanvas: React.FC = () => {
     const socketRef = useRef<Socket | null>(null);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     
-    const hungerRef = useRef<number>(10);
-    const staminaRef = useRef<number>(MAX_STAMINA);
+    const [unlockedAchievements, setUnlockedAchievements] = useState<number[]>([]);
+    const [recentAchievement, setRecentAchievement] = useState<{id: number, text: string, icon: string} | null>(null);
+    const [showAchievementsUI, setShowAchievementsUI] = useState(false);
+    const [isFishing, setIsFishing] = useState(false);
+
+    const checkAchievement = useCallback((id: number) => {
+        setUnlockedAchievements(prev => {
+            if (prev.includes(id)) return prev;
+            const ach = ACHIEVEMENTS_LIST.find(a => a.id === id);
+            if (ach) {
+                setRecentAchievement({id: ach.id, text: ach.title, icon: ach.icon});
+                setTimeout(() => setRecentAchievement(null), 5000); // show toast for 5 seconds
+            }
+            return [...prev, id];
+        });
+    }, []);
+
+    const handleFishingSuccess = useCallback(() => {
+        setIsFishing(false);
+        checkAchievement(19); // Pescador achievement
+        const rewards = ['raw_fish', 'raw_fish', 'trash', 'trash', 'glass_bottle', 'bone', 'leather'];
+        const r = rewards[Math.floor(Math.random() * rewards.length)];
+        setInventory(prev => {
+            const newInv = [...prev];
+            for (let i = 0; i < 36; i++) {
+                if (newInv[i] && newInv[i]!.id === r && newInv[i]!.count < 64) {
+                    newInv[i]!.count++;
+                    return newInv;
+                }
+            }
+            for (let i = 0; i < 36; i++) {
+                if (!newInv[i]) {
+                    newInv[i] = { id: r, count: 1, type: r === 'raw_fish' ? ItemType.FOOD : ItemType.MATERIAL };
+                    return newInv;
+                }
+            }
+            return newInv;
+        });
+        setChatMessages(p => [...p, { msg: `Pescado: ${r}`, color: '#4CAF50' }]);
+    }, [checkAchievement]);
+
+    const handleFishingFail = useCallback(() => {
+        setIsFishing(false);
+        setChatMessages(p => [...p, { msg: 'O peixe escapou...', color: '#F44336' }]);
+    }, []);
     const sprintRef = useRef<boolean>(false);
     const blockingRef = useRef<boolean>(false);
-    
+    const activePotionsRef = useRef<Record<string, number>>({});
+    const oxygenRef = useRef<number>(100);
+    const staminaRef = useRef<number>(MAX_STAMINA);
+    const hungerRef = useRef<number>(10);
+
     const [playerLevel, setPlayerLevel] = useState(1);
     const [playerXP, setPlayerXP] = useState(0);
     const [skillPoints, setSkillPoints] = useState(0);
     const [playerStats, setPlayerStats] = useState<PlayerStats>(DEFAULT_STATS);
     const [options, setOptions] = useState<GameOptions>({ showCoordinates: false, adminMode: false, isMobile: false });
+    const [temperatureState, setTemperatureState] = useState<'NORMAL' | 'HOT' | 'COLD'>('NORMAL');
+    const temperatureRef = useRef<number>(50);
 
     const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
     const [adminFlags, setAdminFlags] = useState({ noClip: false, nightVision: false, showCreative: false, oneHitBreak: false, rainChance: 0.0001 });
@@ -151,6 +209,23 @@ export const GameCanvas: React.FC = () => {
     const [cursorItem, setCursorItem] = useState<ItemStack | null>(null);
     const [selectedSlot, setSelectedSlot] = useState(0);
     const [isInventoryOpen, setIsInventoryOpen] = useState(false);
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [chatInput, setChatInput] = useState("");
+    const [chatMessages, setChatMessages] = useState<{msg: string, color?: string}[]>([]);
+
+    useEffect(() => {
+        if (chatMessages.length > 0) {
+            const timer = setTimeout(() => {
+                setChatMessages(prev => prev.slice(1));
+            }, 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [chatMessages]);
+    
+    // Cheat states
+    const [cheatTimeMultiplier, setCheatTimeMultiplier] = useState(1); // 0, 1, -1, 2
+    const [isNoclip, setIsNoclip] = useState(false);
+
     const [isFurnaceOpen, setIsFurnaceOpen] = useState(false);
     const [isChestOpen, setIsChestOpen] = useState(false);
     const [isHammerMenuOpen, setIsHammerMenuOpen] = useState(false);
@@ -245,9 +320,10 @@ export const GameCanvas: React.FC = () => {
         }
         
         for(let i=0; i<world.blocks.length; i++) {
-            if (world.blocks[i] === BlockType.TORCH) { lightMap[i] = 14; queue.push(i); }
+            if (world.blocks[i] === BlockType.TORCH || world.blocks[i] === BlockType.LAMP_ON) { lightMap[i] = 15; queue.push(i); }
             if (world.blocks[i] === BlockType.URANIUM_ORE) { lightMap[i] = 12; queue.push(i); }
             if (world.blocks[i] === BlockType.URANIUM_BLOCK) { lightMap[i] = 14; queue.push(i); }
+            if (world.blocks[i] === BlockType.LAVA || world.blocks[i] === BlockType.CAMPFIRE) { lightMap[i] = 13; queue.push(i); }
         }
         
         let head = 0;
@@ -271,6 +347,140 @@ export const GameCanvas: React.FC = () => {
         world.light = Array.from(lightMap);
     };
 
+    const updateFluids = (world: WorldData) => {
+        const pbx = Math.floor(playerRef.current.x / BLOCK_SIZE);
+        const pby = Math.floor(playerRef.current.y / BLOCK_SIZE);
+        const marginX = 40;
+        const marginY = 40;
+        
+        const startX = Math.max(0, pbx - marginX);
+        const endX = Math.min(WORLD_WIDTH - 1, pbx + marginX);
+        const startY = Math.max(0, pby - marginY);
+        const endY = Math.min(WORLD_HEIGHT - 1, pby + marginY);
+
+        let dirty = false;
+        
+        for (let y = endY; y >= startY; y--) {
+            const dir = Math.random() < 0.5 ? 1 : -1;
+            const xs = dir === 1 ? startX : endX;
+            const xe = dir === 1 ? endX : startX;
+            const xStep = dir;
+
+            for (let x = xs; x !== xe + xStep; x += xStep) {
+                const idx = y * WORLD_WIDTH + x;
+                const b = world.blocks[idx];
+                
+                if (b === BlockType.WATER || b === BlockType.LAVA) {
+                    if (y < WORLD_HEIGHT - 1) {
+                        const downIdx = (y + 1) * WORLD_WIDTH + x;
+                        const blockDown = world.blocks[downIdx];
+                        
+                        if (blockDown === BlockType.AIR || blockDown === BlockType.TORCH || blockDown === BlockType.CROP_WHEAT || blockDown === BlockType.CROP_CARROT || blockDown === BlockType.CROP_POTATO || blockDown === BlockType.MOSS || blockDown === BlockType.SPIKE || blockDown === BlockType.COBWEB) {
+                            world.blocks[downIdx] = b;
+                            world.blocks[idx] = BlockType.AIR;
+                            dirty = true;
+                            continue;
+                        }
+                    }
+                    
+                    const spreadRate = b === BlockType.LAVA ? 0.3 : 0.8;
+                    if (Math.random() < spreadRate) {
+                        let flowLeft = false;
+                        if (x > 0) {
+                            const lIdx = y * WORLD_WIDTH + (x - 1);
+                            if (world.blocks[lIdx] === BlockType.AIR) {
+                                world.blocks[lIdx] = b;
+                                world.blocks[idx] = BlockType.AIR;
+                                dirty = true;
+                                flowLeft = true;
+                            }
+                        }
+                        if (!flowLeft && x < WORLD_WIDTH - 1) {
+                            const rIdx = y * WORLD_WIDTH + (x + 1);
+                            if (world.blocks[rIdx] === BlockType.AIR) {
+                                world.blocks[rIdx] = b;
+                                world.blocks[idx] = BlockType.AIR;
+                                dirty = true;
+                            }
+                        }
+                    }
+                    
+                    if (b === BlockType.LAVA && Math.random() < 0.05) {
+                        const neighbors = [
+                            y > 0 ? idx - WORLD_WIDTH : -1,
+                            y < WORLD_HEIGHT - 1 ? idx + WORLD_WIDTH : -1,
+                            x > 0 ? idx - 1 : -1,
+                            x < WORLD_WIDTH - 1 ? idx + 1 : -1
+                        ];
+                        for (let n of neighbors) {
+                            if (n >= 0) {
+                                const nb = world.blocks[n];
+                                if (nb === BlockType.PLANKS || nb === BlockType.WOOD || nb === BlockType.DARK_WOOD || nb === BlockType.LEAVES || nb === BlockType.CABINET || nb === BlockType.TABLE || nb === BlockType.WALL_WOOD || nb === BlockType.ROOF_WOOD) {
+                                    world.blocks[n] = BlockType.AIR;
+                                    dirty = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (dirty) updateLighting(world, timeRef.current);
+    };
+
+    const updateRedstone = (world: WorldData) => {
+        let changed = false;
+        for (let i = 0; i < world.blocks.length; i++) {
+            const b = world.blocks[i];
+            if (b === BlockType.CABLE_ON) { world.blocks[i] = BlockType.CABLE; changed = true; }
+            else if (b === BlockType.LAMP_ON) { world.blocks[i] = BlockType.LAMP; changed = true; }
+            else if (b === BlockType.DOOR_IRON_BOTTOM_OPEN) {
+                world.blocks[i] = BlockType.DOOR_IRON_BOTTOM_CLOSED;
+                if (i >= WORLD_WIDTH && world.blocks[i - WORLD_WIDTH] === BlockType.DOOR_IRON_TOP_OPEN) {
+                    world.blocks[i - WORLD_WIDTH] = BlockType.DOOR_IRON_TOP_CLOSED;
+                }
+                changed = true;
+            }
+        }
+        const queue: {idx: number, dist: number}[] = [];
+        for (let i = 0; i < world.blocks.length; i++) {
+            if (world.blocks[i] === BlockType.LEVER_ON || world.blocks[i] === BlockType.BUTTON_ON) queue.push({idx: i, dist: 0});
+        }
+        let qIdx = 0;
+        while(qIdx < queue.length) {
+            const curr = queue[qIdx++];
+            if (curr.dist > 15) continue;
+            const adj = [ curr.idx - 1, curr.idx + 1, curr.idx - WORLD_WIDTH, curr.idx + WORLD_WIDTH ];
+            for (const next of adj) {
+                if (next < 0 || next >= world.blocks.length) continue;
+                if (Math.abs((curr.idx % WORLD_WIDTH) - (next % WORLD_WIDTH)) > 1) continue;
+                const b = world.blocks[next];
+                if (b === BlockType.CABLE) {
+                    world.blocks[next] = BlockType.CABLE_ON;
+                    changed = true;
+                    queue.push({idx: next, dist: curr.dist + 1});
+                } else if (b === BlockType.LAMP) {
+                    world.blocks[next] = BlockType.LAMP_ON;
+                    changed = true;
+                    queue.push({idx: next, dist: curr.dist + 1});
+                } else if (b === BlockType.DOOR_IRON_BOTTOM_CLOSED) {
+                    world.blocks[next] = BlockType.DOOR_IRON_BOTTOM_OPEN;
+                    if (next >= WORLD_WIDTH && world.blocks[next - WORLD_WIDTH] === BlockType.DOOR_IRON_TOP_CLOSED) {
+                        world.blocks[next - WORLD_WIDTH] = BlockType.DOOR_IRON_TOP_OPEN;
+                    }
+                    changed = true;
+                } else if (b === BlockType.DOOR_IRON_TOP_CLOSED) {
+                    world.blocks[next] = BlockType.DOOR_IRON_TOP_OPEN;
+                    if (next + WORLD_WIDTH < world.blocks.length && world.blocks[next + WORLD_WIDTH] === BlockType.DOOR_IRON_BOTTOM_CLOSED) {
+                        world.blocks[next + WORLD_WIDTH] = BlockType.DOOR_IRON_BOTTOM_OPEN;
+                    }
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    };
+
     const setBlockAt = (x: number, y: number, type: BlockType, shouldBroadcast: boolean = true) => {
         if (!worldRef.current) return;
         if (x < 0 || x >= WORLD_WIDTH || y < 0 || y >= WORLD_HEIGHT) return;
@@ -279,6 +489,7 @@ export const GameCanvas: React.FC = () => {
         if (worldRef.current.blocks[y * WORLD_WIDTH + x] === type) return;
 
         worldRef.current.blocks[y * WORLD_WIDTH + x] = type;
+        updateRedstone(worldRef.current);
         updateLighting(worldRef.current, timeRef.current);
         
         if (shouldBroadcast) {
@@ -312,7 +523,7 @@ export const GameCanvas: React.FC = () => {
                     // Damage all mobs and player
                     if (ent.type !== 'DROP' && ent.type !== 'PROJECTILE') {
                         if (ent.type === 'PLAYER') {
-                            if (options.gameMode === 'SURVIVAL' && (ent.invincibilityEndTime || 0) < Date.now()) {
+                            if (!['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL') && (ent.invincibilityEndTime || 0) < Date.now()) {
                                 ent.health -= 1.5;
                                 ent.invincibilityEndTime = Date.now() + 500; 
                                 setHearts(ent.health);
@@ -598,7 +809,7 @@ export const GameCanvas: React.FC = () => {
             const cx = Math.floor((playerRef.current.x + playerRef.current.width / 2) / BLOCK_SIZE);
             const cy = Math.floor((playerRef.current.y + playerRef.current.height / 2) / BLOCK_SIZE);
             const blockAtFeet = worldRef.current.blocks[cy * WORLD_WIDTH + cx];
-            if (blockAtFeet === BlockType.LADDER || blockAtFeet === BlockType.VINES) {
+            if (blockAtFeet === BlockType.LADDER || blockAtFeet === BlockType.VINES || blockAtFeet === BlockType.MOSS) {
                 isClimbingRef.current = !isClimbingRef.current;
                 playerRef.current.vx = 0; playerRef.current.vy = 0;
                 return;
@@ -621,9 +832,22 @@ export const GameCanvas: React.FC = () => {
                     const b = worldRef.current.blocks[idx];
                     const key = `${x},${y}`;
 
-                    if (b === BlockType.CRAFTING_TABLE) {
-                        setNearbyStation(BlockType.CRAFTING_TABLE);
+                    if (b === BlockType.CRAFTING_TABLE || b === BlockType.SCIENCE_BENCH || b === BlockType.MEDICAL_BENCH) {
+                        setNearbyStation(b);
                         setIsInventoryOpen(true);
+                        return;
+                    } else if (b === BlockType.LEVER || b === BlockType.LEVER_ON) {
+                        audio.playHit();
+                        setBlockAt(x, y, b === BlockType.LEVER ? BlockType.LEVER_ON : BlockType.LEVER);
+                        return;
+                    } else if (b === BlockType.BUTTON) {
+                        audio.playHit();
+                        setBlockAt(x, y, BlockType.BUTTON_ON);
+                        setTimeout(() => {
+                            if (worldRef.current && worldRef.current.blocks[y * WORLD_WIDTH + x] === BlockType.BUTTON_ON) {
+                                setBlockAt(x, y, BlockType.BUTTON);
+                            }
+                        }, 1000);
                         return;
                     } else if (b === BlockType.ARMOR_BENCH) {
                         setIsArmorBenchOpen(true);
@@ -668,22 +892,24 @@ export const GameCanvas: React.FC = () => {
                             setIsSleepUIOpen(true);
                         }
                         return;
-                    } else if (b === BlockType.DOOR_BOTTOM_CLOSED || b === BlockType.DOOR_TOP_CLOSED) {
-                        if (b === BlockType.DOOR_BOTTOM_CLOSED) {
-                            setBlockAt(x, y, BlockType.DOOR_BOTTOM_OPEN);
-                            setBlockAt(x, y - 1, BlockType.DOOR_TOP_OPEN);
+                    } else if (b === BlockType.DOOR_BOTTOM_CLOSED || b === BlockType.DOOR_TOP_CLOSED || b === BlockType.DOOR_STONE_BOTTOM_CLOSED || b === BlockType.DOOR_STONE_TOP_CLOSED) {
+                        const isStone = b === BlockType.DOOR_STONE_BOTTOM_CLOSED || b === BlockType.DOOR_STONE_TOP_CLOSED;
+                        if (b === BlockType.DOOR_BOTTOM_CLOSED || b === BlockType.DOOR_STONE_BOTTOM_CLOSED) {
+                            setBlockAt(x, y, isStone ? BlockType.DOOR_STONE_BOTTOM_OPEN : BlockType.DOOR_BOTTOM_OPEN);
+                            setBlockAt(x, y - 1, isStone ? BlockType.DOOR_STONE_TOP_OPEN : BlockType.DOOR_TOP_OPEN);
                         } else {
-                            setBlockAt(x, y, BlockType.DOOR_TOP_OPEN);
-                            setBlockAt(x, y + 1, BlockType.DOOR_BOTTOM_OPEN);
+                            setBlockAt(x, y, isStone ? BlockType.DOOR_STONE_TOP_OPEN : BlockType.DOOR_TOP_OPEN);
+                            setBlockAt(x, y + 1, isStone ? BlockType.DOOR_STONE_BOTTOM_OPEN : BlockType.DOOR_BOTTOM_OPEN);
                         }
                         return;
-                    } else if (b === BlockType.DOOR_BOTTOM_OPEN || b === BlockType.DOOR_TOP_OPEN) {
-                        if (b === BlockType.DOOR_BOTTOM_OPEN) {
-                            setBlockAt(x, y, BlockType.DOOR_BOTTOM_CLOSED);
-                            setBlockAt(x, y - 1, BlockType.DOOR_TOP_CLOSED);
+                    } else if (b === BlockType.DOOR_BOTTOM_OPEN || b === BlockType.DOOR_TOP_OPEN || b === BlockType.DOOR_STONE_BOTTOM_OPEN || b === BlockType.DOOR_STONE_TOP_OPEN) {
+                        const isStone = b === BlockType.DOOR_STONE_BOTTOM_OPEN || b === BlockType.DOOR_STONE_TOP_OPEN;
+                        if (b === BlockType.DOOR_BOTTOM_OPEN || b === BlockType.DOOR_STONE_BOTTOM_OPEN) {
+                            setBlockAt(x, y, isStone ? BlockType.DOOR_STONE_BOTTOM_CLOSED : BlockType.DOOR_BOTTOM_CLOSED);
+                            setBlockAt(x, y - 1, isStone ? BlockType.DOOR_STONE_TOP_CLOSED : BlockType.DOOR_TOP_CLOSED);
                         } else {
-                            setBlockAt(x, y, BlockType.DOOR_TOP_CLOSED);
-                            setBlockAt(x, y + 1, BlockType.DOOR_BOTTOM_CLOSED);
+                            setBlockAt(x, y, isStone ? BlockType.DOOR_STONE_TOP_CLOSED : BlockType.DOOR_TOP_CLOSED);
+                            setBlockAt(x, y + 1, isStone ? BlockType.DOOR_STONE_BOTTOM_CLOSED : BlockType.DOOR_BOTTOM_CLOSED);
                         }
                         return;
                     }
@@ -737,19 +963,18 @@ export const GameCanvas: React.FC = () => {
         }
     };
     
-    const dropItem = () => {
-        const item = inventory[selectedSlot];
-        if (item) {
-             spawnDrop(playerRef.current.x, playerRef.current.y, item.id, 1, item.meta);
-             setInventory(prev => {
-                 const n = [...prev];
-                 if (n[selectedSlot]) {
-                     n[selectedSlot]!.count--;
-                     if (n[selectedSlot]!.count <= 0) n[selectedSlot] = null;
-                 }
-                 return n;
-             });
-        }
+    const dropItem = (slotIndex: number = selectedSlot, amount: number = 1) => {
+        setInventory(prev => {
+            const n = [...prev];
+            const item = n[slotIndex];
+            if (item) {
+                 const dropCount = Math.min(amount, item.count);
+                 spawnDrop(playerRef.current.x, playerRef.current.y, item.id, dropCount, item.meta);
+                 n[slotIndex]!.count -= dropCount;
+                 if (n[slotIndex]!.count <= 0) n[slotIndex] = null;
+            }
+            return n;
+        });
     };
 
     const drawMob = (ctx: CanvasRenderingContext2D, ent: Entity) => {
@@ -1323,12 +1548,12 @@ export const GameCanvas: React.FC = () => {
             setPlayerLevel(save.level || 1); setPlayerXP(save.xp || 0); setSkillPoints(save.skillPoints || 0); setPlayerStats(save.stats || DEFAULT_STATS); staminaRef.current = save.stamina !== undefined ? save.stamina : MAX_STAMINA; hungerRef.current = save.hunger !== undefined ? save.hunger : 10;
             if (save.options) setOptions(save.options);
             furnacesRef.current = new Map(save.furnaces); chestsRef.current = new Map(save.chests); if (save.crops) cropsRef.current = new Map(save.crops); else cropsRef.current = new Map();
-            entitiesRef.current = []; setHearts(save.player.health); setHunger(hungerRef.current); setStamina(staminaRef.current); updateLighting(worldRef.current, timeRef.current);
+            entitiesRef.current = []; setHearts(save.player.health); setHunger(hungerRef.current); setStamina(staminaRef.current); updateRedstone(worldRef.current); updateLighting(worldRef.current, timeRef.current);
         } else if (newConfig) {
             // NOTE: If multiplayer client, we wait for seed from host. If host/singleplayer, generate now.
             if (!newConfig.options?.multiplayer || newConfig.options.multiplayer.mode === 'HOST') {
                 const w = generateWorld(newConfig.seed); worldRef.current = w; 
-                respawnPlayer(w); updateLighting(w, 0);
+                respawnPlayer(w); updateRedstone(w); updateLighting(w, 0);
                 
                 // Initialize NPCs and Chests
                 if (w.npcSpawns) {
@@ -1466,6 +1691,7 @@ export const GameCanvas: React.FC = () => {
                             const w = generateWorld(payload.seed);
                             worldRef.current = w;
                             respawnPlayer(w);
+                            updateRedstone(w);
                             updateLighting(w, 0);
                             setCurrentSeed(payload.seed);
                             addNotification("Synced with Host World!");
@@ -1643,7 +1869,7 @@ export const GameCanvas: React.FC = () => {
 
     const getRenderLight = (x: number, y: number, baseLight: number, player: Entity, hasTorch: boolean) => {
         if (adminFlags.nightVision) return 15; let l = baseLight;
-        if (hasTorch) { const px = Math.floor((player.x + player.width/2) / BLOCK_SIZE); const py = Math.floor((player.y + player.height/2) / BLOCK_SIZE); const dist = Math.abs(x - px) + Math.abs(y - py); if (dist < 9) l = Math.max(l, 14 - Math.floor(dist * 1.5)); }
+        if (hasTorch) { const px = Math.floor((player.x + player.width/2) / BLOCK_SIZE); const py = Math.floor((player.y + player.height/2) / BLOCK_SIZE); const dist = Math.abs(x - px) + Math.abs(y - py); if (dist < 12) l = Math.max(l, 15 - Math.floor(dist * 1.2)); }
         return l;
     };
 
@@ -1665,14 +1891,27 @@ export const GameCanvas: React.FC = () => {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            if (isChatOpen || document.activeElement?.tagName === 'INPUT') return;
             if (gameState === 'MENU') return;
+            if (e.code === 'Enter' || e.code === 'KeyT') {
+                if (gameState === 'PLAYING') {
+                     e.preventDefault();
+                     setIsChatOpen(true);
+                     return;
+                }
+            }
             if (e.code === 'Escape') { if (isInventoryOpen || isFurnaceOpen || isChestOpen || isHammerMenuOpen || isAdminMenuOpen || isSleepUIOpen || isArmorBenchOpen) { setIsInventoryOpen(false); setIsFurnaceOpen(false); setIsChestOpen(false); setIsHammerMenuOpen(false); setIsAdminMenuOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); setActiveBuildBlock(null); setCursorItem(null); } else { setGameState(prev => prev === 'PLAYING' ? 'PAUSED' : 'PLAYING'); } return; }
             if (gameState !== 'PLAYING') return;
             keysRef.current[e.code] = true;
             if (e.code === 'KeyE') { const heldItem = inventory[selectedSlot]; if (heldItem && heldItem.id.toString().includes('hammer')) { setIsHammerMenuOpen(true); return; } if (isFurnaceOpen || isChestOpen || isSleepUIOpen || isArmorBenchOpen) { setIsFurnaceOpen(false); setIsChestOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); if (cursorItem) setCursorItem(null); } else { if (isInventoryOpen) { setIsInventoryOpen(false); setNearbyStation('NONE'); } else { setIsInventoryOpen(true); setNearbyStation('NONE'); } } }
             if (e.code === 'KeyF') handleInteraction();
-            if (e.code === 'KeyG') dropItem();
-            if (e.code === 'KeyQ') { if (equipment.offHand && equipment.offHand.type === ItemType.SHIELD) { blockingRef.current = true; } }
+            if (e.code === 'KeyL') setShowAchievementsUI(p => !p);
+            if (e.code === 'KeyQ') dropItem(selectedSlot, e.ctrlKey ? 64 : 1);
+            if (e.code === 'KeyX' && !isInventoryOpen && !isChestOpen && !isFurnaceOpen) {
+                treePassRef.current = !treePassRef.current;
+                addNotification(lang === 'PT' ? `Atravessar Árvores: ${treePassRef.current ? 'ON' : 'OFF'}` : `Tree Pass: ${treePassRef.current ? 'ON' : 'OFF'}`);
+            }
+            if (e.code === 'KeyP' && options.adminMode) setIsAdminMenuOpen(p => !p);
             
             // POSTURE TOGGLE (C)
             if (e.code === 'KeyC') {
@@ -1726,14 +1965,62 @@ export const GameCanvas: React.FC = () => {
             if (e.code === 'ShiftLeft') sprintRef.current = true;
             if (e.code === 'KeyR') { setEquipment(prev => ({ ...prev, offHand: inventory[selectedSlot] })); setInventory(prev => { const newInv = [...prev]; newInv[selectedSlot] = equipment.offHand; return newInv; }); }
         };
-        const handleKeyUp = (e: KeyboardEvent) => { keysRef.current[e.code] = false; if (e.code === 'ShiftLeft') sprintRef.current = false; if (e.code === 'KeyQ') blockingRef.current = false; };
+        const handleKeyUp = (e: KeyboardEvent) => { keysRef.current[e.code] = false; if (e.code === 'ShiftLeft') sprintRef.current = false; };
         const handleMouseDown = (e: MouseEvent) => { 
             if (gameState !== 'PLAYING') return; 
             if (e.button === 0) mouseRef.current.left = true; 
+            if (e.button === 1 || e.button === 2) {
+                if (equipment.offHand?.type === ItemType.SHIELD) blockingRef.current = true;
+            }
             if (e.button === 2) { 
                 mouseRef.current.right = true; 
                 const heldItem = inventory[selectedSlot]; 
                 
+                // FISHING INTERACTION
+                if (heldItem && heldItem.id === 'fishing_rod' && worldRef.current) {
+                    const pCenterX = Math.floor((playerRef.current.x + playerRef.current.width / 2) / BLOCK_SIZE);
+                    const pCenterY = Math.floor((playerRef.current.y + playerRef.current.height / 2) / BLOCK_SIZE);
+                    let nearWater = false;
+                    for (let y = pCenterY - 2; y <= pCenterY + 2; y++) {
+                        for (let x = pCenterX - 2; x <= pCenterX + 2; x++) {
+                             if (worldRef.current.blocks[y * WORLD_WIDTH + x] === BlockType.WATER) nearWater = true;
+                        }
+                    }
+                    if (nearWater) {
+                        setIsFishing(true);
+                        return;
+                    } else {
+                        addNotification(lang === 'PT' ? "Nenhuma água por perto." : "No water nearby.");
+                        return;
+                    }
+                }
+
+                // BUCKET LOGIC
+                if (heldItem && (heldItem.id === 'bucket' || heldItem.id === 'water_bucket' || heldItem.id === 'lava_bucket') && worldRef.current) {
+                    const bx = Math.floor((mouseRef.current.x + cameraRef.current.x) / BLOCK_SIZE);
+                    const by = Math.floor((mouseRef.current.y + cameraRef.current.y) / BLOCK_SIZE);
+                    const idx = by * WORLD_WIDTH + bx;
+                    const targetBlock = worldRef.current.blocks[idx];
+
+                    if (heldItem.id === 'bucket') {
+                        if (targetBlock === BlockType.WATER) {
+                            worldRef.current.blocks[idx] = BlockType.AIR;
+                            setInventory(prev => { const n = [...prev]; n[selectedSlot] = { id: 'water_bucket', count: 1, type: ItemType.TOOL }; return n; });
+                            audio.playPickup(); return;
+                        } else if (targetBlock === BlockType.LAVA) {
+                            worldRef.current.blocks[idx] = BlockType.AIR;
+                            setInventory(prev => { const n = [...prev]; n[selectedSlot] = { id: 'lava_bucket', count: 1, type: ItemType.TOOL }; return n; });
+                            audio.playPickup(); return;
+                        }
+                    } else {
+                        if (targetBlock === BlockType.AIR || !NON_COLLIDABLE_BLOCKS.has(targetBlock)) {
+                            worldRef.current.blocks[idx] = heldItem.id === 'water_bucket' ? BlockType.WATER : BlockType.LAVA;
+                            setInventory(prev => { const n = [...prev]; n[selectedSlot] = { id: 'bucket', count: 1, type: ItemType.TOOL }; return n; });
+                            audio.playPlace(); return;
+                        }
+                    }
+                }
+
                 // PLAGUE TOTEM INTERACTION
                 if (heldItem && heldItem.id === 'plague_totem') {
                     const mx = mouseRef.current.x + cameraRef.current.x;
@@ -1876,6 +2163,9 @@ export const GameCanvas: React.FC = () => {
         };
         const handleMouseUp = (e: MouseEvent) => {
             if (e.button === 0) { mouseRef.current.left = false; breakingRef.current = { x: -1, y: -1, progress: 0 }; }
+            if (e.button === 1 || e.button === 2) {
+                blockingRef.current = false;
+            }
             if (e.button === 2) {
                 mouseRef.current.right = false;
                 eatingStartRef.current = null; // Stop eating on release
@@ -1923,16 +2213,30 @@ export const GameCanvas: React.FC = () => {
                 window.removeEventListener('touchmove', handleTouchStart);
             }
         };
-    }, [gameState, cursorItem, isFurnaceOpen, isChestOpen, isInventoryOpen, inventory, selectedSlot, playerStats, equipment, isHammerMenuOpen, activeBuildBlock, options.adminMode, isSleepUIOpen, options.isMobile, isArmorBenchOpen]); 
+    }, [gameState, cursorItem, isFurnaceOpen, isChestOpen, isInventoryOpen, inventory, selectedSlot, playerStats, equipment, isHammerMenuOpen, activeBuildBlock, options.adminMode, isSleepUIOpen, options.isMobile, isArmorBenchOpen, isChatOpen]); 
 
     // --- GAME LOOP ---
     const gameLoop = () => {
         if (gameState !== 'PLAYING') { requestRef.current = requestAnimationFrame(gameLoop); if (gameState === 'PAUSED' && canvasRef.current) { const ctx = canvasRef.current.getContext('2d'); if(ctx) { ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height); } } return; }
         const player = playerRef.current; const world = worldRef.current; const cvs = canvasRef.current; if (!world || !cvs) return; const ctx = cvs.getContext('2d'); if (!ctx) return;
-        const isPaused = isInventoryOpen || isFurnaceOpen || isChestOpen || isHammerMenuOpen || isAdminMenuOpen || isSleepUIOpen || isArmorBenchOpen;
+        const isPaused = isInventoryOpen || isFurnaceOpen || isChestOpen || isHammerMenuOpen || isAdminMenuOpen || isSleepUIOpen || isArmorBenchOpen || isChatOpen;
         
+        let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
+        if (temperatureRef.current > 85) curTempState = 'HOT';
+        else if (temperatureRef.current < 15) curTempState = 'COLD';
+
         if (!isPaused) {
-            timeRef.current = (timeRef.current + 1) % FULL_DAY_TICKS;
+            // Slow motion frame skipping logic
+            if (cheatTimeMultiplier === -1) {
+                 if (Date.now() % 32 < 16) { 
+                      requestRef.current = requestAnimationFrame(gameLoop);
+                      return;
+                 }
+            }
+
+            if (cheatTimeMultiplier !== 0) {
+                timeRef.current = (timeRef.current + (cheatTimeMultiplier > 0 ? Math.floor(cheatTimeMultiplier) : 1)) % FULL_DAY_TICKS;
+            }
             
             if (timeRef.current % 30 === 0) { // Every 0.5 seconds (at 60fps)
                 const isDay = timeRef.current < DUSK_START || timeRef.current >= DAWN_START;
@@ -2000,7 +2304,7 @@ export const GameCanvas: React.FC = () => {
             // Check for Hazmat Suit
             const hasHazmat = equipment.helmet?.id === 'hazmat_helmet' && equipment.chestplate?.id === 'hazmat_chestplate' && equipment.leggings?.id === 'hazmat_leggings' && equipment.boots?.id === 'hazmat_boots';
 
-            if (hasUranium && !hasHazmat && options.gameMode === 'SURVIVAL') {
+            if (hasUranium && !hasHazmat && !['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) {
                 if (Date.now() - (lastRadiationDamageRef.current || 0) > 2000) {
                     player.health -= 1;
                     lastRadiationDamageRef.current = Date.now();
@@ -2015,7 +2319,59 @@ export const GameCanvas: React.FC = () => {
             }
             const maxStamina = MAX_STAMINA + (playerStats.endurance * 20); const drainEfficiency = Math.max(0.1, 1 - (playerStats.endurance * 0.05)); const regenEfficiency = 1 + (playerStats.endurance * 0.1); if (!sprintRef.current) { if (staminaRef.current < maxStamina && hungerRef.current > 0) staminaRef.current = Math.min(maxStamina, staminaRef.current + (BASE_STAMINA_REGEN * regenEfficiency)); } else { if (Math.abs(player.vx) > PLAYER_SPEED) { if (staminaRef.current > 0) staminaRef.current = Math.max(0, staminaRef.current - (BASE_STAMINA_DRAIN * drainEfficiency)); else hungerRef.current = Math.max(0, hungerRef.current - SPRINT_HUNGER_DRAIN); } }
             const decayInterval = (HUNGER_DECAY_TICK + (playerStats.metabolism * 1000)) * (options.difficulty === 'EASY' ? 1.5 : 1); 
-            if (options.gameMode !== 'GOD' && timeRef.current % decayInterval < 1 && hungerRef.current > 0) hungerRef.current = Math.max(0, hungerRef.current - 0.5);
+            if (!['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL') && timeRef.current % decayInterval < 1 && hungerRef.current > 0) hungerRef.current = Math.max(0, hungerRef.current - 0.5);
+            
+            // --- TEMPERATURE MECHANIC ---
+            if (timeRef.current % 10 === 0 && !['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) {
+                const px = Math.floor(player.x / BLOCK_SIZE);
+                const py = Math.floor(player.y / BLOCK_SIZE);
+                let envTemp = 50;
+                if (player.x > 830 * BLOCK_SIZE) envTemp -= 30; // Snow biome
+                if (player.x < 150 * BLOCK_SIZE) envTemp += 20; // Desert biome
+                
+                // Check nearby heat sources
+                let nearHeat = false;
+                for (let yy = Math.max(0, py - 3); yy <= Math.min(WORLD_HEIGHT-1, py + 3); yy++) {
+                    for (let xx = Math.max(0, px - 3); xx <= Math.min(WORLD_WIDTH-1, px + 3); xx++) {
+                        const b = world.blocks[yy * WORLD_WIDTH + xx];
+                        if (b === BlockType.LAVA || b === BlockType.CAMPFIRE || b === BlockType.FURNACE) {
+                            nearHeat = true;
+                            envTemp += 40;
+                            break;
+                        } else if (b === BlockType.ICE || b === BlockType.SNOW_BLOCK) {
+                            envTemp -= 10;
+                        }
+                    }
+                    if (nearHeat) break;
+                }
+
+                // Smooth temp transition
+                if (temperatureRef.current < envTemp) temperatureRef.current = Math.min(100, temperatureRef.current + 0.5);
+                if (temperatureRef.current > envTemp) temperatureRef.current = Math.max(0, temperatureRef.current - 0.5);
+                
+                if (temperatureRef.current > 85) curTempState = 'HOT';
+                else if (temperatureRef.current < 15) curTempState = 'COLD';
+                else curTempState = 'NORMAL';
+                
+                setTemperatureState(curTempState);
+                
+                if (curTempState === 'HOT') {
+                    if (Math.random() < 0.1 && (timeRef.current % 60 === 0)) {
+                        player.health -= 1;
+                        setHearts(player.health);
+                        addNotification("Está muito quente!");
+                        setChatMessages(p => [...p, {msg: "Você está pegando fogo!", color: '#ffaa00'}]);
+                    }
+                } else if (curTempState === 'COLD') {
+                    if (Math.random() < 0.1 && (timeRef.current % 60 === 0)) {
+                        player.health -= 1;
+                        setHearts(player.health);
+                        addNotification("Está congelando!");
+                        setChatMessages(p => [...p, {msg: "Você está congelando!", color: '#00ffff'}]);
+                    }
+                }
+            }
+
             if (timeRef.current % 60 === 0) { 
                 cropsRef.current.forEach((crop, key) => { 
                     if (crop.stage < 3) { 
@@ -2034,6 +2390,7 @@ export const GameCanvas: React.FC = () => {
             if ((Math.abs(timeRef.current - DUSK_START) < 5) || (Math.abs(timeRef.current - NIGHT_START) < 5) || (Math.abs(timeRef.current - DAWN_START) < 5)) updateLighting(world, timeRef.current);
             if (timeRef.current % 1000 === 0) updateLighting(world, timeRef.current);
             if (timeRef.current < DUSK_START && world.light[0] < 15 && timeRef.current % 60 === 0) updateLighting(world, timeRef.current);
+            if (timeRef.current % 10 === 0) updateFluids(world);
             furnacesRef.current.forEach((furnace) => { let dirty = false; if (furnace.burnTime > 0) { furnace.burnTime--; dirty = true; } else if (furnace.burnTime <= 0 && furnace.input && furnace.fuel && furnace.input.count > 0 && furnace.fuel.count > 0) { const outputId = COOKING_RECIPES[furnace.input.id.toString()]; if (outputId) { if (!furnace.output || (furnace.output.id === outputId && furnace.output.count < 64)) { const fuelVal = FUEL_VALUES[furnace.fuel.id.toString()]; if (fuelVal) { furnace.maxBurnTime = fuelVal; furnace.burnTime = fuelVal; furnace.fuel.count--; if(furnace.fuel.count <= 0) furnace.fuel = null; dirty = true; } } } } if (furnace.burnTime > 0 && furnace.input) { const outputId = COOKING_RECIPES[furnace.input.id.toString()]; if (outputId) { if (!furnace.output || (furnace.output.id === outputId && furnace.output.count < 64)) { furnace.cookTime++; if (furnace.cookTime >= 200) { furnace.cookTime = 0; furnace.input.count--; if (furnace.input.count <= 0) furnace.input = null; 
             
             // FIXED: Set Correct Output Type
@@ -2127,6 +2484,7 @@ export const GameCanvas: React.FC = () => {
             }
 
             const baseSpeed = PLAYER_SPEED + (playerStats.agility * 0.5); const runSpeed = PLAYER_RUN_SPEED + (playerStats.agility * 0.8); let speed = (sprintRef.current && (hungerRef.current > 3 || staminaRef.current > 0)) ? runSpeed : baseSpeed;
+            if (temperatureState === 'COLD') speed *= 0.6;
             speed *= envSpeedMultiplier;
             if (player.posture === 'CROUCH') speed *= 0.5;
             if (player.posture === 'PRONE') speed *= 0.25;
@@ -2134,7 +2492,7 @@ export const GameCanvas: React.FC = () => {
             
             // --- LADDER PHYSICS & MOUNT LOGIC ---
             let blockAtFeet = world.blocks[pCenterY * WORLD_WIDTH + pCenterX];
-            let isOnLadder = blockAtFeet === BlockType.LADDER || blockAtFeet === BlockType.VINES;
+            let isOnLadder = blockAtFeet === BlockType.LADDER || blockAtFeet === BlockType.VINES || blockAtFeet === BlockType.MOSS;
 
             const mount = entitiesRef.current.find(e => e.riderId === player.id);
             if (mount) {
@@ -2150,7 +2508,7 @@ export const GameCanvas: React.FC = () => {
                 pCenterX = Math.floor((player.x + player.width/2)/BLOCK_SIZE);
                 pCenterY = Math.floor((player.y + player.height/2)/BLOCK_SIZE);
                 blockAtFeet = world.blocks[pCenterY * WORLD_WIDTH + pCenterX];
-                isOnLadder = blockAtFeet === BlockType.LADDER || blockAtFeet === BlockType.VINES;
+                isOnLadder = blockAtFeet === BlockType.LADDER || blockAtFeet === BlockType.VINES || blockAtFeet === BlockType.MOSS;
                 player.highestY = player.y;
 
                 // Dismount
@@ -2177,6 +2535,10 @@ export const GameCanvas: React.FC = () => {
                 if (keysRef.current['KeyS']) player.vy = climbSpeed;
                 if (keysRef.current['KeyA']) { player.vx = -climbSpeed; }
                 if (keysRef.current['KeyD']) { player.vx = climbSpeed; }
+                if (keysRef.current['Space']) {
+                    isClimbingRef.current = false;
+                    player.vy = -JUMP_FORCE * 0.8;
+                }
                 
                 player.x += player.vx;
                 if (checkCollision(player, world)) { player.x -= player.vx; player.vx = 0; }
@@ -2223,12 +2585,12 @@ export const GameCanvas: React.FC = () => {
                             const isLandedOnSpikes = landedOn === BlockType.SPIKE;
                             
                             // If landed on spikes and dropped from any height > 1
-                            if (isLandedOnSpikes && blocksFallen > 1 && options.gameMode !== 'GOD' && (player.invincibilityEndTime || 0) < Date.now()) {
+                            if (isLandedOnSpikes && blocksFallen > 1 && !['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL') && (player.invincibilityEndTime || 0) < Date.now()) {
                                 const damage = Math.floor(blocksFallen * 3);
                                 audio.playHit();
                                 player.health -= damage;
                                 addNotification("Ouch! Spikes!");
-                            } else if (blocksFallen > 6 && options.gameMode !== 'GOD' && (player.invincibilityEndTime || 0) < Date.now()) {
+                            } else if (blocksFallen > 6 && !['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL') && (player.invincibilityEndTime || 0) < Date.now()) {
                                 const multiplier = options.difficulty === 'HARD' ? 2 : (options.difficulty === 'EASY' ? 0.5 : 1);
                                 const damage = Math.floor((blocksFallen - 6) * multiplier);
                                 if (damage > 0) {
@@ -2264,7 +2626,7 @@ export const GameCanvas: React.FC = () => {
             if (player.x < 0) player.x = 0; if (player.x > WORLD_WIDTH * BLOCK_SIZE - player.width) player.x = WORLD_WIDTH * BLOCK_SIZE - player.width; 
             
             if (player.y > WORLD_HEIGHT * BLOCK_SIZE || player.health <= 0) {
-                if (options.gameMode === 'GOD') {
+                if (['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) {
                     player.health = player.maxHealth;
                     if (player.y > WORLD_HEIGHT * BLOCK_SIZE) { player.y = 0; player.vy = 0; player.highestY = 0; }
                 } else {
@@ -2275,6 +2637,65 @@ export const GameCanvas: React.FC = () => {
                 }
             }
             
+            // --- POTION TICK LOGIC ---
+            if (timeRef.current % 60 === 0) {
+                const now = Date.now();
+                if (activePotionsRef.current['potion_regen'] && activePotionsRef.current['potion_regen'] > now) {
+                    player.health = Math.min(player.maxHealth, player.health + 1);
+                }
+            }
+            if (timeRef.current % 60 === 0) {
+                const now = Date.now();
+                Object.keys(activePotionsRef.current).forEach(k => {
+                    if (activePotionsRef.current[k] <= now) delete activePotionsRef.current[k];
+                });
+            }
+
+            // --- WATER DAMAGE (OXYGEN) & LAVA BURN & COLD ---
+            const bodyIdx = Math.floor((player.y + player.height/2) / BLOCK_SIZE) * WORLD_WIDTH + Math.floor((player.x + player.width/2) / BLOCK_SIZE);
+            const inBlock = world.blocks[bodyIdx];
+            const inWater = inBlock === BlockType.WATER;
+            const inLava = inBlock === BlockType.LAVA;
+            
+            const isGod = options.gameMode === 'CREATIVE' || options.gameMode === 'GOD';
+            const isFireResist = activePotionsRef.current['potion_fire'] && activePotionsRef.current['potion_fire'] > Date.now();
+            const isColdResist = activePotionsRef.current['potion_cold'] && activePotionsRef.current['potion_cold'] > Date.now();
+
+            if (inWater) {
+                if (!isGod) {
+                    oxygenRef.current = Math.max(0, oxygenRef.current - 0.2);
+                    if (oxygenRef.current <= 0 && timeRef.current % 60 === 0) {
+                        player.health -= 1;
+                        setChatMessages(p => [...p, {msg: "Você está se afogando!", color: '#42a5f5'}]);
+                    }
+                }
+            } else {
+                oxygenRef.current = Math.min(100, oxygenRef.current + 2);
+            }
+
+            if (inLava && !isGod && !isFireResist) {
+                if (timeRef.current % 30 === 0) {
+                     player.health -= 2;
+                     setChatMessages(p => [...p, {msg: "Você está na lava!", color: '#ff5722'}]);
+                }
+            }
+
+            if (inWater && curTempState === 'NORMAL') curTempState = 'COLD';
+            if (inLava && curTempState === 'NORMAL') curTempState = 'HOT';
+            if (isColdResist && curTempState === 'COLD') curTempState = 'NORMAL';
+            if (isFireResist && curTempState === 'HOT') curTempState = 'NORMAL';
+
+            if (['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) {
+                 staminaRef.current = MAX_STAMINA + (playerStats.endurance * 20);
+                 hungerRef.current = 10;
+                 player.health = player.maxHealth;
+            }
+
+            // Apply knockback cooldown (if recently damaged)
+            if (player.lastDamageTime && Date.now() - player.lastDamageTime < 300) {
+                // simple visual flash
+            }
+
             player.attackCooldown = Math.max(0, (player.attackCooldown || 0) - 1); setHearts(player.health); setHunger(hungerRef.current); setStamina(staminaRef.current);
             
             // --- PROXIMITY PROMPT CHECK ---
@@ -2294,13 +2715,14 @@ export const GameCanvas: React.FC = () => {
                         for (let x = pCenterX - 1; x <= pCenterX + 1; x++) {
                             const b = world.blocks[y * WORLD_WIDTH + x];
                             let msg = '';
-                            if (b === BlockType.CRAFTING_TABLE) msg = t.PROMPT_OPEN_WORKBENCH;
+                            if (b === BlockType.CRAFTING_TABLE || b === BlockType.SCIENCE_BENCH || b === BlockType.MEDICAL_BENCH) msg = t.PROMPT_OPEN_WORKBENCH;
                             else if (b === BlockType.FURNACE) msg = t.PROMPT_OPEN_FURNACE;
                             else if (b === BlockType.CHEST || b === BlockType.CHEST_MEDIUM || b === BlockType.CHEST_LARGE || b === BlockType.STONE_CHEST) msg = t.PROMPT_OPEN_CHEST;
                             else if (b === BlockType.BED || b === BlockType.BED_MEDIUM || b === BlockType.BED_ADVANCED) msg = t.PROMPT_SLEEP;
                             else if (b === BlockType.ARMOR_BENCH) msg = t.PROMPT_OPEN_ARMOR;
-                            else if (b === BlockType.DOOR_BOTTOM_CLOSED || b === BlockType.DOOR_TOP_CLOSED) msg = t.PROMPT_OPEN;
-                            else if (b === BlockType.DOOR_BOTTOM_OPEN || b === BlockType.DOOR_TOP_OPEN) msg = t.PROMPT_CLOSE;
+                            else if (b === BlockType.LEVER || b === BlockType.LEVER_ON || b === BlockType.BUTTON) msg = t.PROMPT_OPEN;
+                            else if (b === BlockType.DOOR_BOTTOM_CLOSED || b === BlockType.DOOR_TOP_CLOSED || b === BlockType.DOOR_STONE_BOTTOM_CLOSED || b === BlockType.DOOR_STONE_TOP_CLOSED) msg = t.PROMPT_OPEN;
+                            else if (b === BlockType.DOOR_BOTTOM_OPEN || b === BlockType.DOOR_TOP_OPEN || b === BlockType.DOOR_STONE_BOTTOM_OPEN || b === BlockType.DOOR_STONE_TOP_OPEN) msg = t.PROMPT_CLOSE;
                             
                             if (msg) {
                                 promptMsg = msg;
@@ -2346,7 +2768,20 @@ export const GameCanvas: React.FC = () => {
                         
                         if (Date.now() - eatingStartRef.current > 1500) { // 1.5 seconds to eat
                             // Consume
-                            const foodVal = FOOD_VALUES[heldItem.id.toString()] || 1;
+                            const idStr = heldItem.id.toString();
+                            
+                            // Apply Potion / Medical Effects
+                            if (idStr === 'medicine') {
+                                player.health = player.maxHealth;
+                                hungerRef.current = 10;
+                            } else if (idStr === 'syringe' || idStr === 'bandage') {
+                                player.health = Math.min(player.maxHealth, player.health + 4);
+                            } else if (idStr.startsWith('potion_')) {
+                                const durationMs = idStr === 'potion_antizombie' ? 30000 : 180000;
+                                activePotionsRef.current[idStr] = Date.now() + durationMs;
+                            }
+
+                            const foodVal = FOOD_VALUES[idStr] || 1;
                             if (hungerRef.current < 10) {
                                 hungerRef.current = Math.min(10, hungerRef.current + foodVal);
                             } else {
@@ -2618,7 +3053,7 @@ export const GameCanvas: React.FC = () => {
                         if (closestPlayer.id === player.id) {
                             let blocked = false; if (blockingRef.current) { const mobIsRight = ent.x > player.x; if (player.facingRight && mobIsRight) blocked = true; if (!player.facingRight && !mobIsRight) blocked = true; } 
                             if (blocked) { ent.vx = player.facingRight ? 8 : -8; ent.vy = -5; damageOffhand(); ent.attackCooldown = 30; } 
-                            else if (options.gameMode !== 'GOD' && (player.invincibilityEndTime || 0) < Date.now()) { 
+                            else if (!['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL') && (player.invincibilityEndTime || 0) < Date.now()) { 
                                 let rawDamage = 2;
                                 if (ent.type === 'MUTANT_ZOMBIE') rawDamage = 5;
                                 else if (ent.type === 'SCORPION') rawDamage = 3;
@@ -2905,9 +3340,16 @@ export const GameCanvas: React.FC = () => {
                                     if (bType === BlockType.CHEST || bType === BlockType.CHEST_MEDIUM || bType === BlockType.CHEST_LARGE || bType === BlockType.STONE_CHEST) chestsRef.current.delete(key); 
                                     if (bType === BlockType.CROP_WHEAT || bType === BlockType.CROP_CARROT || bType === BlockType.CROP_POTATO) { const crop = cropsRef.current.get(key); if(crop) { if(crop.type==='WHEAT') { spawnDrop(bx*BLOCK_SIZE, by*BLOCK_SIZE, 'wheat_seeds', 1); if(crop.stage>=3) spawnDrop(bx*BLOCK_SIZE, by*BLOCK_SIZE, 'wheat', 1); } else if (crop.type === 'CARROT') { spawnDrop(bx*BLOCK_SIZE, by*BLOCK_SIZE, 'carrot', crop.stage>=3 ? 3 : 1); } else if (crop.type === 'POTATO') { spawnDrop(bx*BLOCK_SIZE, by*BLOCK_SIZE, 'potato', crop.stage>=3 ? 3 : 1); } cropsRef.current.delete(key); } } 
                                     if (bType === BlockType.DOOR_BOTTOM_CLOSED || bType === BlockType.DOOR_BOTTOM_OPEN) { setBlockAt(bx, by - 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_BOTTOM_CLOSED, 1); } else if (bType === BlockType.DOOR_TOP_CLOSED || bType === BlockType.DOOR_TOP_OPEN) { setBlockAt(bx, by + 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_BOTTOM_CLOSED, 1); } 
+                                    if (bType === BlockType.DOOR_STONE_BOTTOM_CLOSED || bType === BlockType.DOOR_STONE_BOTTOM_OPEN) { setBlockAt(bx, by - 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_STONE_BOTTOM_CLOSED, 1); } else if (bType === BlockType.DOOR_STONE_TOP_CLOSED || bType === BlockType.DOOR_STONE_TOP_OPEN) { setBlockAt(bx, by + 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_STONE_BOTTOM_CLOSED, 1); } 
+                                    if (bType === BlockType.DOOR_IRON_BOTTOM_CLOSED || bType === BlockType.DOOR_IRON_BOTTOM_OPEN) { setBlockAt(bx, by - 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_IRON_BOTTOM_CLOSED, 1); } else if (bType === BlockType.DOOR_IRON_TOP_CLOSED || bType === BlockType.DOOR_IRON_TOP_OPEN) { setBlockAt(bx, by + 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_IRON_BOTTOM_CLOSED, 1); } 
                                     setBlockAt(bx, by, BlockType.AIR); 
                                     audio.playBreak();
                                     if (canHarvest(bType, heldItem)) { 
+                                        let dropId: number | string = bType;
+                                        if (bType === BlockType.CABLE_ON) dropId = BlockType.CABLE;
+                                        if (bType === BlockType.LAMP_ON) dropId = BlockType.LAMP;
+                                        if (bType === BlockType.LEVER_ON) dropId = BlockType.LEVER;
+                                        if (bType === BlockType.BUTTON_ON) dropId = BlockType.BUTTON;
                                         if (bType === BlockType.SNOWY_GRASS && heldItem && heldItem.id.toString().includes('shovel')) {
                                             setBlockAt(bx, by, BlockType.DIRT);
                                             spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.SNOW_BLOCK, 1);
@@ -2926,7 +3368,7 @@ export const GameCanvas: React.FC = () => {
                                         else if (bType === BlockType.FLOWER_RED || bType === BlockType.FLOWER_GREEN || bType === BlockType.FLOWER_BLUE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, bType, 1); } 
                                         else if (bType === BlockType.CACTUS) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'dark_green_resin', 1); }
                                         else if (bType === BlockType.DRY_LEAVES) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'stick', 1 + Math.floor(Math.random() * 2)); }
-                                        else if (!bType.toString().includes('DOOR') && !bType.toString().includes('CROP')) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, bType, 1); } 
+                                        else if (!bType.toString().includes('DOOR') && !bType.toString().includes('CROP')) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, dropId, 1); } 
             
             // REMOVED LEVEL LOGIC FOR PICKAXE DROP CHANCE
 
@@ -3232,27 +3674,33 @@ export const GameCanvas: React.FC = () => {
 
                 if (block !== BlockType.AIR) {
                     const isOre = (block === BlockType.COAL_ORE || block === BlockType.IRON_ORE || block === BlockType.GOLD_ORE || block === BlockType.DIAMOND_ORE || block === BlockType.COPPER_ORE || block === BlockType.TITANIUM_ORE || block === BlockType.URANIUM_ORE);
-                    if (block === BlockType.WATER) { 
-                        // Realistic Water
+                    if (block === BlockType.WATER || block === BlockType.LAVA) { 
+                        // Realistic Fluid
+                        const isLava = block === BlockType.LAVA;
                         const wave1 = Math.sin(timeRef.current * 0.05 + x * 0.2) * 0.1;
                         const wave2 = Math.cos(timeRef.current * 0.03 + y * 0.1) * 0.1;
-                        ctx.globalAlpha = 0.6 + Math.max(0, wave1 + wave2);
+                        ctx.globalAlpha = (isLava ? 0.9 : 0.6) + Math.max(0, wave1 + wave2);
                         
                         const grad = ctx.createLinearGradient(x * BLOCK_SIZE, y * BLOCK_SIZE, x * BLOCK_SIZE, (y + 1) * BLOCK_SIZE);
-                        grad.addColorStop(0, 'rgba(33, 150, 243, 0.4)'); 
-                        grad.addColorStop(1, 'rgba(25, 118, 210, 0.8)');
+                        if (isLava) {
+                            grad.addColorStop(0, 'rgba(255, 152, 0, 0.8)'); 
+                            grad.addColorStop(1, 'rgba(216, 67, 21, 1)');
+                        } else {
+                            grad.addColorStop(0, 'rgba(33, 150, 243, 0.4)'); 
+                            grad.addColorStop(1, 'rgba(25, 118, 210, 0.8)');
+                        }
                         ctx.fillStyle = grad;
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE); 
                         
-                        // Fake reflections above water
+                        // Fake reflections above fluid
                         if (y > 0 && world.blocks[(y - 1) * WORLD_WIDTH + x] !== BlockType.AIR) {
                             ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
                             ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE / 2);
                         }
                         
-                        // Sparkles
-                        if (light >= 10 && Math.random() < 0.03) {
-                            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                        // Sparkles / Embers
+                        if ((light >= 10 || isLava) && Math.random() < (isLava ? 0.08 : 0.03)) {
+                            ctx.fillStyle = isLava ? '#ffeb3b' : 'rgba(255, 255, 255, 0.6)';
                             ctx.fillRect(x * BLOCK_SIZE + Math.random() * (BLOCK_SIZE - 2), y * BLOCK_SIZE + Math.random() * (BLOCK_SIZE - 2), 2, 2);
                         }
                         ctx.globalAlpha = 1.0; 
@@ -3316,6 +3764,45 @@ export const GameCanvas: React.FC = () => {
                     else if (block === BlockType.VINES) {
                         ctx.fillStyle = BLOCK_COLORS[block];
                         ctx.fillRect(x*BLOCK_SIZE + 14, y*BLOCK_SIZE, 4, BLOCK_SIZE);
+                        ctx.fillStyle = '#64dd17';
+                        ctx.fillRect(x*BLOCK_SIZE + 10, y*BLOCK_SIZE + 6, 4, 4);
+                        ctx.fillRect(x*BLOCK_SIZE + 18, y*BLOCK_SIZE + 14, 4, 4);
+                        ctx.fillRect(x*BLOCK_SIZE + 11, y*BLOCK_SIZE + 24, 4, 4);
+                    }
+                    else if (block === BlockType.MOSS) {
+                        ctx.fillStyle = BLOCK_COLORS[block];
+                        ctx.fillRect(x*BLOCK_SIZE, y*BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                        ctx.fillStyle = '#2e7d32'; // darker moss spots
+                        ctx.fillRect(x*BLOCK_SIZE + 4, y*BLOCK_SIZE + 4, 8, 4);
+                        ctx.fillRect(x*BLOCK_SIZE + 16, y*BLOCK_SIZE + 16, 12, 6);
+                        ctx.fillRect(x*BLOCK_SIZE + 24, y*BLOCK_SIZE + 4, 4, 4);
+                    }
+                    else if (block === BlockType.CABLE || block === BlockType.CABLE_ON) {
+                        const isOn = block === BlockType.CABLE_ON;
+                        ctx.fillStyle = isOn ? '#ff5252' : '#8c2020';
+                        const wDown = y < WORLD_HEIGHT - 1 ? world.blocks[(y + 1) * WORLD_WIDTH + x] : BlockType.AIR;
+                        const wLeft = x > 0 ? world.blocks[y * WORLD_WIDTH + x - 1] : BlockType.AIR;
+                        const wRight = x < WORLD_WIDTH - 1 ? world.blocks[y * WORLD_WIDTH + x + 1] : BlockType.AIR;
+                        const wUp = y > 0 ? world.blocks[(y - 1) * WORLD_WIDTH + x] : BlockType.AIR;
+
+                        const isSolidBg = (b: number) => !NON_COLLIDABLE_BLOCKS.has(b);
+                        const isNode = (b: number) => b === BlockType.CABLE || b === BlockType.CABLE_ON || b === BlockType.LAMP || b === BlockType.LAMP_ON || b === BlockType.BUTTON || b === BlockType.BUTTON_ON || b === BlockType.LEVER || b === BlockType.LEVER_ON;
+
+                        let cx = x * BLOCK_SIZE + BLOCK_SIZE / 2 - 2;
+                        let cy = y * BLOCK_SIZE + BLOCK_SIZE / 2 - 2;
+                        
+                        if (isSolidBg(wDown)) cy = y * BLOCK_SIZE + BLOCK_SIZE - 4;
+                        else if (isSolidBg(wLeft)) cx = x * BLOCK_SIZE;
+                        else if (isSolidBg(wRight)) cx = x * BLOCK_SIZE + BLOCK_SIZE - 4;
+                        else if (isSolidBg(wUp)) cy = y * BLOCK_SIZE;
+
+                        ctx.fillRect(cx, cy, 4, 4);
+
+                        // Connect lines
+                        if (isNode(wLeft)) ctx.fillRect(x * BLOCK_SIZE, cy, cx - x * BLOCK_SIZE, 4);
+                        if (isNode(wRight)) ctx.fillRect(cx + 4, cy, BLOCK_SIZE - (cx + 4 - x * BLOCK_SIZE), 4);
+                        if (isNode(wUp)) ctx.fillRect(cx, y * BLOCK_SIZE, 4, cy - y * BLOCK_SIZE);
+                        if (isNode(wDown)) ctx.fillRect(cx, cy + 4, 4, BLOCK_SIZE - (cy + 4 - y * BLOCK_SIZE));
                     }
                     else if (block === BlockType.LADDER) {
                         // Draw wall background if needed? No, just draw ladder.
@@ -3328,30 +3815,34 @@ export const GameCanvas: React.FC = () => {
                             ctx.fillRect(x * BLOCK_SIZE + 6, y * BLOCK_SIZE + (i * 8) + 2, 20, 4);
                         }
                     }
-                    else if (block === BlockType.DOOR_BOTTOM_CLOSED || block === BlockType.DOOR_TOP_CLOSED) { 
+                    else if (block === BlockType.DOOR_BOTTOM_CLOSED || block === BlockType.DOOR_TOP_CLOSED || block === BlockType.DOOR_STONE_BOTTOM_CLOSED || block === BlockType.DOOR_STONE_TOP_CLOSED || block === BlockType.DOOR_IRON_BOTTOM_CLOSED || block === BlockType.DOOR_IRON_TOP_CLOSED) { 
+                        const isStone = block === BlockType.DOOR_STONE_BOTTOM_CLOSED || block === BlockType.DOOR_STONE_TOP_CLOSED;
+                        const isIron = block === BlockType.DOOR_IRON_BOTTOM_CLOSED || block === BlockType.DOOR_IRON_TOP_CLOSED;
                         // Draw detailed door
-                        ctx.fillStyle = '#5d4037'; // Dark wood frame
+                        ctx.fillStyle = isIron ? '#78909c' : (isStone ? '#424242' : '#5d4037'); // Dark wood frame
                         ctx.fillRect(x * BLOCK_SIZE + 6, y * BLOCK_SIZE, 20, BLOCK_SIZE);
                         
                         // Inner panel
-                        ctx.fillStyle = '#8d6e63'; // Lighter wood
+                        ctx.fillStyle = isIron ? '#b0bec5' : (isStone ? '#616161' : '#8d6e63'); // Lighter wood
                         ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 2, 16, BLOCK_SIZE - 4);
                         
                         // Knob (only on bottom part)
-                        if (block === BlockType.DOOR_BOTTOM_CLOSED) {
-                            ctx.fillStyle = '#ffd700'; // Gold knob
+                        if (block === BlockType.DOOR_BOTTOM_CLOSED || block === BlockType.DOOR_STONE_BOTTOM_CLOSED || block === BlockType.DOOR_IRON_BOTTOM_CLOSED) {
+                            ctx.fillStyle = isIron ? '#37474f' : '#ffd700'; // Gold knob
                             ctx.beginPath();
                             ctx.arc(x * BLOCK_SIZE + 22, y * BLOCK_SIZE + 16, 2, 0, Math.PI * 2);
                             ctx.fill();
                         }
                     }
-                    else if (block === BlockType.DOOR_BOTTOM_OPEN || block === BlockType.DOOR_TOP_OPEN) { 
+                    else if (block === BlockType.DOOR_BOTTOM_OPEN || block === BlockType.DOOR_TOP_OPEN || block === BlockType.DOOR_STONE_BOTTOM_OPEN || block === BlockType.DOOR_STONE_TOP_OPEN || block === BlockType.DOOR_IRON_BOTTOM_OPEN || block === BlockType.DOOR_IRON_TOP_OPEN) { 
+                        const isStone = block === BlockType.DOOR_STONE_BOTTOM_OPEN || block === BlockType.DOOR_STONE_TOP_OPEN;
+                        const isIron = block === BlockType.DOOR_IRON_BOTTOM_OPEN || block === BlockType.DOOR_IRON_TOP_OPEN;
                         // Draw open door (side view)
-                        ctx.fillStyle = '#5d4037';
+                        ctx.fillStyle = isIron ? '#78909c' : (isStone ? '#424242' : '#5d4037');
                         ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE, 6, BLOCK_SIZE);
                         
                         // Detail line
-                        ctx.fillStyle = '#3e2723';
+                        ctx.fillStyle = isIron ? '#546e7a' : (isStone ? '#212121' : '#3e2723');
                         ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE, 2, BLOCK_SIZE);
                     }
                     else if (block === BlockType.CROP_WHEAT || block === BlockType.CROP_CARROT || block === BlockType.CROP_POTATO) {
@@ -3717,6 +4208,114 @@ export const GameCanvas: React.FC = () => {
                             ctx.fillStyle = '#cfd8dc'; ctx.fillRect(x * BLOCK_SIZE + 12, y * BLOCK_SIZE + 4, 8, 4);
                             ctx.fillStyle = '#ffb74d'; ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE + 4, 6, 2);
                         }
+                        else if (block === BlockType.CABINET) {
+                            const tx = x * BLOCK_SIZE; const ty = y * BLOCK_SIZE;
+                            ctx.fillStyle = '#4e342e'; ctx.fillRect(tx, ty, 32, 32);
+                            ctx.fillStyle = '#5d4037'; ctx.fillRect(tx+2, ty+2, 28, 28);
+                            ctx.fillStyle = '#3e2723'; ctx.fillRect(tx+14, ty+2, 4, 28);
+                            ctx.fillStyle = '#ffcc80'; ctx.fillRect(tx+10, ty+14, 2, 4); ctx.fillRect(tx+20, ty+14, 2, 4);
+                        }
+                        else if (block === BlockType.TABLE) {
+                            const tx = x * BLOCK_SIZE; const ty = y * BLOCK_SIZE;
+                            ctx.fillStyle = '#6d4c41'; ctx.fillRect(tx, ty + 8, 32, 6);
+                            ctx.fillStyle = '#3e2723'; ctx.fillRect(tx+4, ty+14, 4, 18); ctx.fillRect(tx+24, ty+14, 4, 18);
+                        }
+                        else if (block === BlockType.CAMPFIRE) {
+                            const tx = x * BLOCK_SIZE; const ty = y * BLOCK_SIZE;
+                            ctx.fillStyle = '#3e2723'; ctx.fillRect(tx+4, ty+26, 24, 6); ctx.fillRect(tx+8, ty+24, 16, 4);
+                            ctx.fillStyle = '#f44336'; ctx.fillRect(tx+14, ty+16, 4, 8);
+                            ctx.fillStyle = '#ff9800'; ctx.fillRect(tx+10, ty+20, 12, 4);
+                            ctx.fillStyle = '#ffeb3b'; ctx.fillRect(tx+14, ty+22, 4, 2);
+                            // Bloom
+                            ctx.globalCompositeOperation = 'screen';
+                            const grad = ctx.createRadialGradient(tx+16, ty+20, 2, tx+16, ty+20, 20);
+                            grad.addColorStop(0, 'rgba(255, 152, 0, 0.5)');
+                            grad.addColorStop(1, 'rgba(0,0,0,0)');
+                            ctx.fillStyle = grad;
+                            ctx.fillRect(tx - 16, ty - 16, 64, 64);
+                            ctx.globalCompositeOperation = 'source-over';
+                        }
+                        else if (block === BlockType.ROOF_STONE || block === BlockType.ROOF_STONE_LEFT) {
+                            const isLeft = block === BlockType.ROOF_STONE_LEFT;
+                            const tx = x * BLOCK_SIZE; const ty = y * BLOCK_SIZE;
+                            ctx.fillStyle = '#616161';
+                            ctx.beginPath();
+                            if (isLeft) { ctx.moveTo(tx+32, ty); ctx.lineTo(tx+32, ty+32); ctx.lineTo(tx, ty+32); }
+                            else { ctx.moveTo(tx, ty); ctx.lineTo(tx+32, ty+32); ctx.lineTo(tx, ty+32); }
+                            ctx.fill();
+                            ctx.strokeStyle = '#424242'; ctx.lineWidth = 2; ctx.stroke();
+                        }
+                        else if (block === BlockType.ROOF_WOOD || block === BlockType.ROOF_WOOD_LEFT) {
+                            const isLeft = block === BlockType.ROOF_WOOD_LEFT;
+                            const tx = x * BLOCK_SIZE; const ty = y * BLOCK_SIZE;
+                            ctx.fillStyle = '#8d6e63';
+                            ctx.beginPath();
+                            if (isLeft) { ctx.moveTo(tx+32, ty); ctx.lineTo(tx+32, ty+32); ctx.lineTo(tx, ty+32); }
+                            else { ctx.moveTo(tx, ty); ctx.lineTo(tx+32, ty+32); ctx.lineTo(tx, ty+32); }
+                            ctx.fill();
+                            ctx.strokeStyle = '#5d4037'; ctx.lineWidth = 2; ctx.stroke();
+                        }
+                        else if (block === BlockType.COPPER_BLOCK) {
+                            ctx.fillStyle = '#b87333'; ctx.fillRect(x*BLOCK_SIZE, y*BLOCK_SIZE, 32, 32);
+                            ctx.fillStyle = '#cd7f32'; ctx.fillRect(x*BLOCK_SIZE+2, y*BLOCK_SIZE+2, 28, 28);
+                        }
+                        else if (block === BlockType.IRON_BLOCK) {
+                            ctx.fillStyle = '#b0bec5'; ctx.fillRect(x*BLOCK_SIZE, y*BLOCK_SIZE, 32, 32);
+                            ctx.fillStyle = '#cfd8dc'; ctx.fillRect(x*BLOCK_SIZE+2, y*BLOCK_SIZE+2, 28, 28);
+                        }
+                        else if (block === BlockType.GOLD_BLOCK) {
+                            ctx.fillStyle = '#ffd700'; ctx.fillRect(x*BLOCK_SIZE, y*BLOCK_SIZE, 32, 32);
+                            ctx.fillStyle = '#ffecb3'; ctx.fillRect(x*BLOCK_SIZE+2, y*BLOCK_SIZE+2, 28, 28);
+                        }
+                        else if (block === BlockType.DIAMOND_BLOCK) {
+                            ctx.fillStyle = '#00bcd4'; ctx.fillRect(x*BLOCK_SIZE, y*BLOCK_SIZE, 32, 32);
+                            ctx.fillStyle = '#84ffff'; ctx.fillRect(x*BLOCK_SIZE+2, y*BLOCK_SIZE+2, 28, 28);
+                            ctx.fillStyle = '#e0f7fa'; ctx.fillRect(x*BLOCK_SIZE+4, y*BLOCK_SIZE+4, 4, 4);
+                        }
+                        else if (block === BlockType.TORCH) {
+                            // Draw an actual torch instead of a solid colored block
+                            const tx = x * BLOCK_SIZE;
+                            const ty = y * BLOCK_SIZE;
+                            
+                            // Detect neighbors to attach to
+                            const blockLeft = x > 0 ? world.blocks[idx - 1] : BlockType.AIR;
+                            const blockRight = x < WORLD_WIDTH - 1 ? world.blocks[idx + 1] : BlockType.AIR;
+                            
+                            const attachedLeft = !NON_COLLIDABLE_BLOCKS.has(blockLeft);
+                            const attachedRight = !NON_COLLIDABLE_BLOCKS.has(blockRight);
+                            
+                            ctx.save();
+                            ctx.translate(tx + 16, ty + 24); // Bottom center of torch space
+                            if (attachedLeft && !attachedRight) {
+                                ctx.translate(-14, -8);
+                                ctx.rotate(45 * Math.PI / 180);
+                            } else if (attachedRight && !attachedLeft) {
+                                ctx.translate(14, -8);
+                                ctx.rotate(-45 * Math.PI / 180);
+                            }
+
+                            // Stick
+                            ctx.fillStyle = '#5d4037';
+                            ctx.fillRect(-2, -14, 4, 14);
+                            // Coal tip
+                            ctx.fillStyle = '#212121';
+                            ctx.fillRect(-2, -18, 4, 4);
+                            // Flame
+                            ctx.fillStyle = '#ffeb3b';
+                            ctx.fillRect(-2, -22, 4, 4);
+                            ctx.fillStyle = '#ff9800';
+                            ctx.fillRect(0, -20, 2, 2);
+                            
+                            // Small local bloom
+                            ctx.globalCompositeOperation = 'screen';
+                            const grad = ctx.createRadialGradient(0, -20, 2, 0, -20, 10);
+                            grad.addColorStop(0, 'rgba(255, 152, 0, 0.8)');
+                            grad.addColorStop(1, 'rgba(0,0,0,0)');
+                            ctx.fillStyle = grad;
+                            ctx.fillRect(-16, -32, 32, 32);
+                            
+                            ctx.restore();
+                        }
                         else {
                             ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
                         }
@@ -3741,6 +4340,7 @@ export const GameCanvas: React.FC = () => {
         }
 
         // --- NEW PLAYER RENDERING ---
+        if (options.gameMode !== 'SPECTATOR') {
         ctx.save();
         ctx.translate(player.x + player.width/2, player.y + player.height/2);
         if (!player.facingRight) ctx.scale(-1, 1);
@@ -4053,6 +4653,7 @@ export const GameCanvas: React.FC = () => {
         }
 
         ctx.restore();
+        }
 
         otherPlayersRef.current.forEach(p => {
             ctx.fillStyle = '#7e57c2'; ctx.fillRect(p.x, p.y, p.width, p.height);
@@ -4122,8 +4723,18 @@ export const GameCanvas: React.FC = () => {
                 p.x += p.vx;
                 p.y += p.vy;
                 
-                // Reset if out of bounds
-                if (p.y > cameraRef.current.y + cvs.height || p.x < cameraRef.current.x || p.x > cameraRef.current.x + cvs.width) {
+                let hitBlock = false;
+                const bx = Math.floor(p.x / BLOCK_SIZE);
+                const by = Math.floor(p.y / BLOCK_SIZE);
+                if (by >= 0 && by < WORLD_HEIGHT && bx >= 0 && bx < WORLD_WIDTH) {
+                    const block = world.blocks[by * WORLD_WIDTH + bx];
+                    if (!NON_COLLIDABLE_BLOCKS.has(block)) {
+                        hitBlock = true;
+                    }
+                }
+
+                // Reset if out of bounds or hit block
+                if (hitBlock || p.y > cameraRef.current.y + cvs.height || p.x < cameraRef.current.x || p.x > cameraRef.current.x + cvs.width) {
                     p.x = cameraRef.current.x + Math.random() * cvs.width;
                     p.y = cameraRef.current.y - 10;
                     p.type = wType === 'SNOW' ? 'SNOW' : 'RAIN';
@@ -4163,7 +4774,7 @@ export const GameCanvas: React.FC = () => {
                     if (furnace && furnace.burnTime > 0) isFurnaceActive = true;
                 }
 
-                if (block === BlockType.TORCH || block === BlockType.URANIUM_ORE || block === BlockType.URANIUM_BLOCK || isFurnaceActive) {
+                if (block === BlockType.TORCH || block === BlockType.LAMP_ON || block === BlockType.LAVA || block === BlockType.URANIUM_ORE || block === BlockType.URANIUM_BLOCK || isFurnaceActive) {
                    const cx = x * BLOCK_SIZE + BLOCK_SIZE/2;
                    const cy = y * BLOCK_SIZE + BLOCK_SIZE/2;
                    const isUranium = block === BlockType.URANIUM_ORE || block === BlockType.URANIUM_BLOCK;
@@ -4369,18 +4980,119 @@ export const GameCanvas: React.FC = () => {
                         />
                     )}
 
-                    <div className="absolute top-4 left-4 flex flex-col gap-2 pointer-events-none z-10">
-                        <div className="flex gap-1">{Array.from({length: Math.ceil(playerRef.current.maxHealth / 2) * 2 / 2}).map((_, i) => (<span key={i} className="text-2xl drop-shadow-md">{i < Math.floor(hearts) ? '❤️' : (i < hearts ? '💔' : '🖤')}</span>))}</div>
-                        <div className="flex gap-1">{Array.from({length: 10}).map((_, i) => (<span key={i} className="text-2xl drop-shadow-md">{i < Math.floor(hunger) ? '🍗' : '🦴'}</span>))}</div>
-                        <div className="w-48 h-3 bg-gray-800 border border-gray-600 rounded mt-1 relative overflow-hidden"><div className="h-full bg-yellow-400 transition-all duration-200" style={{ width: `${(stamina / maxStaminaCalc) * 100}%` }}></div><span className="absolute inset-0 text-[8px] flex items-center justify-center text-black font-bold">⚡</span></div>
+                    <div className="absolute top-4 left-4 flex flex-col gap-2 pointer-events-none z-10 w-full pr-8">
+                        {options.gameMode !== 'CREATIVE' && options.gameMode !== 'SPECTATOR' && (
+                            <>
+                                <div className="flex gap-1">{Array.from({length: Math.ceil(playerRef.current.maxHealth / 2) * 2 / 2}).map((_, i) => (<span key={i} className="text-2xl drop-shadow-md">{i < Math.floor(hearts) ? (temperatureState === 'COLD' ? '💙' : temperatureState === 'HOT' ? '🧡' : '❤️') : (i < hearts ? '💔' : '🖤')}</span>))}</div>
+                                <div className="flex gap-1">{Array.from({length: 10}).map((_, i) => (<span key={i} className="text-2xl drop-shadow-md">{i < Math.floor(hunger) ? '🍗' : '🦴'}</span>))}</div>
+                                <div className="w-48 h-3 bg-gray-800 border border-gray-600 rounded mt-1 relative overflow-hidden"><div className="h-full bg-yellow-400 transition-all duration-200" style={{ width: `${(stamina / maxStaminaCalc) * 100}%` }}></div><span className="absolute inset-0 text-[8px] flex items-center justify-center text-black font-bold">⚡</span></div>
+                                
+                                {oxygenRef.current < 100 && (
+                                    <div className="flex gap-1 mt-1">
+                                        {Array.from({length: Math.ceil(oxygenRef.current / 10)}).map((_, i) => (<span key={i} className="text-xl drop-shadow-md">🫧</span>))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                        
+                        {Object.keys(activePotionsRef.current).length > 0 && (
+                            <div className="absolute top-0 right-8 flex flex-col gap-2 opacity-80 items-end">
+                                {Object.keys(activePotionsRef.current).map(p => {
+                                    const emoji = p === 'potion_regen' ? '💖' : p === 'potion_resistance' ? '🛡️' : p === 'potion_fire' ? '🔥' : p === 'potion_cold' ? '❄️' : '🧟';
+                                    const timeRem = Math.max(0, Math.ceil((activePotionsRef.current[p] - Date.now())/1000));
+                                    return <div key={p} className="bg-black/50 text-white font-mono text-sm px-2 py-1 rounded border border-gray-500 shadow flex items-center gap-2">{emoji} {timeRem}s</div>;
+                                })}
+                            </div>
+                        )}
+                        
                         {spearChargeStartRef.current && (<div className="absolute left-16 top-32 w-8 h-32 bg-black border-2 border-black rounded-lg overflow-hidden flex flex-col-reverse relative"><div className="absolute inset-0 w-full h-full" style={{ background: 'linear-gradient(to top, #00ff00 0%, #ffff00 50%, #ff0000 100%)' }}></div><div className="absolute w-full h-2 bg-gray-400 border-y border-black/50" style={{ bottom: `${chargePct * 100}%`, transition: 'bottom 75ms linear' }}></div></div>)}
                         {options.showCoordinates && (<div className="text-white font-mono text-sm bg-black/50 p-2 rounded w-fit absolute top-0 left-0 m-1 border border-gray-600 shadow-md">X: {Math.floor(playerRef.current.x / BLOCK_SIZE)} Y: {SEA_LEVEL - (Math.floor(playerRef.current.y / BLOCK_SIZE) - INTERNAL_SURFACE_Y)}</div>)}
                         {options.adminMode && !isAdminMenuOpen && (<div className="text-red-400 font-mono text-xs bg-black/50 p-1 rounded w-fit absolute top-20 left-0 m-1">{t.ADMIN_HINT}</div>)}
                         {options.multiplayer && (<div className="bg-purple-900/80 border border-purple-500 p-2 rounded text-white font-mono text-sm mt-2 shadow-lg"><div className="font-bold text-yellow-300">ONLINE: {options.multiplayer.mode}</div><div>Room: {options.multiplayer.roomId}</div></div>)}
                         <div className="fixed top-10 left-1/2 transform -translate-x-1/2 flex flex-col gap-2 pointer-events-none w-full items-center z-50">{notifications.map(note => (<div key={note.id} className="bg-black/70 text-yellow-300 px-4 py-2 rounded-full border border-yellow-500 shadow-lg animate-fade-in-out font-bold">{note.message}</div>))}</div>
+                        
+                        {/* Chat Messages */}
+                        <div className="absolute bottom-20 left-4 pointer-events-none z-30 flex flex-col gap-1 w-64">
+                             {chatMessages.length > 0 && chatMessages.slice(-5).map((m, idx) => (
+                                  <div key={idx} className="bg-black/60 rounded px-2 py-1 text-sm font-mono shadow animate-fade-in-out" style={{ color: m.color || 'white' }}>{m.msg}</div>
+                             ))}
+                        </div>
+
+                        {/* Recent Achievement Toast */}
+                        {recentAchievement && (
+                            <div className="fixed top-20 right-0 z-50 pointer-events-none animate-toast">
+                                <div className="bg-gray-800 border-2 border-yellow-500 rounded-l-lg p-3 shadow-lg flex items-center gap-3 w-64">
+                                    <div className="text-3xl">{recentAchievement.icon}</div>
+                                    <div className="flex flex-col">
+                                        <span className="text-yellow-400 font-bold text-xs uppercase tracking-wider text-left">Conquista Desbloqueada!</span>
+                                        <span className="text-white font-medium text-sm text-left">{recentAchievement.text}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
+                    
+                    {/* Map / Mobile Chat button */}
+                    {options.isMobile && !isChatOpen && (
+                        <div className="absolute top-24 right-4 z-40">
+                             <button onClick={() => setIsChatOpen(true)} className="bg-gray-800/80 border-2 border-gray-500 rounded p-2 text-white">
+                                  💬
+                             </button>
+                        </div>
+                    )}
+                    
+                    {/* Chat Input UI */}
+                    {isChatOpen && (
+                        <div className="absolute inset-0 flex flex-col justify-end pb-[10vh] px-[2vw] z-50 pointer-events-auto bg-black/20">
+                            <form onSubmit={(e) => {
+                                e.preventDefault();
+                                const text = chatInput.trim();
+                                if(!text) { setIsChatOpen(false); return; }
+                                let isCommand = false;
+                                if(text.startsWith('/chet apenas f') || text.startsWith('/chet modo f')) {
+                                    setOptions(prev => ({...prev, gameMode: 'SPECTATOR'}));
+                                    setAdminFlags(prev => ({...prev, noClip: true}));
+                                    setChatMessages(p => [...p, {msg: 'Modo espectador ativado.', color: '#00ff00'}]);
+                                    isCommand = true;
+                                } else if(text.startsWith('/chet modo s')) {
+                                    setOptions(prev => ({...prev, gameMode: 'SURVIVAL'}));
+                                    setAdminFlags(prev => ({...prev, noClip: false}));
+                                    setChatMessages(p => [...p, {msg: 'Modo sobrevivência ativado.', color: '#00ff00'}]);
+                                    isCommand = true;
+                                } else if(text.startsWith('/chet modo c')) {
+                                    setOptions(prev => ({...prev, gameMode: 'CREATIVE'}));
+                                    setAdminFlags(prev => ({...prev, noClip: false}));
+                                    setChatMessages(p => [...p, {msg: 'Modo criativo ativado.', color: '#00ff00'}]);
+                                    isCommand = true;
+                                } else if(text.startsWith('/chet matar jogador') || text.startsWith('/chet matar player')) {
+                                    playerRef.current.health = 0;
+                                    setHearts(0);
+                                    setChatMessages(p => [...p, {msg: 'Jogador morto.', color: '#00ff00'}]);
+                                    isCommand = true;
+                                } else if(text.startsWith('/chet hora')) {
+                                    const val = parseInt(text.split(' ')[2]);
+                                    if (!isNaN(val)) {
+                                         setCheatTimeMultiplier(val);
+                                         setChatMessages(p => [...p, {msg: `Multiplicador de tempo: ${val}`, color: '#00ff00'}]);
+                                    }
+                                    isCommand = true;
+                                }
+                                
+                                if (!isCommand) setChatMessages(p => [...p, {msg: `Você: ${text}`}]);
+                                setChatInput("");
+                                setIsChatOpen(false);
+                            }} className="flex w-full max-w-lg mx-auto bg-gray-800 border-2 border-gray-600 rounded">
+                                <input autoFocus type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={(e)=>{if(e.key === 'Escape') setIsChatOpen(false);}} className="flex-1 bg-transparent text-white px-3 py-2 outline-none font-mono" placeholder="Digite uma mensagem ou /chet..." />
+                                <button type="submit" className="bg-green-600 text-white px-4 py-2 font-bold cursor-pointer">Enviar</button>
+                            </form>
+                        </div>
+                    )}
+
+                    {!isInventoryOpen && (<div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 text-2xl drop-shadow-md z-10 pointer-events-none select-none">
+                        {temperatureState === 'HOT' ? '🥵' : (temperatureState === 'COLD' ? '🥶' : '😐')}
+                    </div>)}
                     {!isInventoryOpen && (<div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 w-[350px] sm:w-[450px] z-10 pointer-events-none"><div className="w-full h-2 bg-gray-900 border border-gray-600 rounded-full relative overflow-hidden"><div className="h-full bg-green-500 transition-all duration-500" style={{ width: `${xpProgress * 100}%` }}></div></div><div className="text-center text-xs text-green-300 font-bold drop-shadow-md mt-1">{playerLevel}</div></div>)}
-                    {currentItemName && (<div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 text-white font-bold drop-shadow-md text-lg pointer-events-none z-10">{currentItemName}</div>)}
+                    {currentItemName && (<div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 text-white font-bold drop-shadow-md text-lg pointer-events-none z-10">{currentItemName}</div>)}
                     {interactionPrompt && (
                         <div 
                             className="absolute bg-black/80 text-white text-xs px-2 py-1 rounded pointer-events-none z-20 border border-white/50"
@@ -4416,11 +5128,15 @@ export const GameCanvas: React.FC = () => {
                         isMobile={options.isMobile}
                         gameMode={options.gameMode}
                         onCreativeGive={handleCreativeGive}
+                        onDropItem={dropItem}
+                        onClearInventory={() => setInventory(Array(36).fill(null))}
                     />
                     {isFurnaceOpen && activeFurnacePos && furnacesRef.current.get(activeFurnacePos) && (<FurnaceUI input={furnacesRef.current.get(activeFurnacePos)!.input} fuel={furnacesRef.current.get(activeFurnacePos)!.fuel} output={furnacesRef.current.get(activeFurnacePos)!.output} progress={furnacesRef.current.get(activeFurnacePos)!.cookTime / 200} burnProgress={furnacesRef.current.get(activeFurnacePos)!.maxBurnTime ? furnacesRef.current.get(activeFurnacePos)!.burnTime / furnacesRef.current.get(activeFurnacePos)!.maxBurnTime : 0} onClose={() => { setIsFurnaceOpen(false); if(cursorItem) setCursorItem(null); }} onSlotClick={(slotType) => activeFurnacePos && handleFurnaceClick(activeFurnacePos, slotType)} playerInv={inventory} onPlayerSlotClick={(idx) => handleInventorySlotClick(idx, 0)} selectedSlot={selectedSlot} />)}
                     {isChestOpen && activeChestPos && chestsRef.current.has(activeChestPos) && (<ChestUI slots={activeChestSize} contents={chestsRef.current.get(activeChestPos)!} onClose={() => { setIsChestOpen(false); if(cursorItem) setCursorItem(null); }} onSlotClick={handleChestSlotClick} playerInv={inventory} onPlayerSlotClick={(idx) => handleInventorySlotClick(idx, 0)} selectedSlot={selectedSlot} />)}
                     {isHammerMenuOpen && (<HammerBuildUI onClose={() => setIsHammerMenuOpen(false)} onSelectBuild={handleHammerBuild} lang={lang} playerInv={inventory} />)}
                     {isArmorBenchOpen && (<ArmorBenchUI onClose={() => { setIsArmorBenchOpen(false); if(cursorItem) setCursorItem(null); }} playerInv={inventory} onPlayerSlotClick={(idx) => handleInventorySlotClick(idx, 0)} selectedSlot={selectedSlot} lang={lang} onReturnItem={handleArmorBenchReturn} onCraft={handleCraft} />)}
+                    {showAchievementsUI && (<AchievementsOverlay unlocked={unlockedAchievements} onClose={() => setShowAchievementsUI(false)} />)}
+                    {isFishing && (<FishingMinigame onSuccess={handleFishingSuccess} onFail={handleFishingFail} />)}
                     {isAdminMenuOpen && (<AdminPanel onClose={() => setIsAdminMenuOpen(false)} adminState={adminFlags} setAdminState={setAdminFlags} onGiveItem={handleAdminGiveItem} onSetTime={handleAdminSetTime} onChangeWeather={(w) => { if(worldRef.current) { if(!worldRef.current.weather) worldRef.current.weather = {type:'CLEAR', intensity:0, duration:0}; worldRef.current.weather.type = w; worldRef.current.weather.duration = w === 'CLEAR' ? 0 : 999999; worldRef.current.weather.intensity = w === 'HEAVY_RAIN' ? 1.0 : 0.5; } }} onChangeMoon={(m) => moonPhaseRef.current = m} lang={lang} />)}
                     {isSleepUIOpen && (<SleepUI onClose={() => setIsSleepUIOpen(false)} onSleep={handleSleep} lang={lang} />)}
                     {activeNpc && (<NpcUI npc={activeNpc} onClose={() => setActiveNpc(null)} onCompleteQuest={handleCompleteQuest} inventory={inventory} lang={lang} />)}

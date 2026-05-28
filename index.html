@@ -13,6 +13,15 @@
       canvas { display: block; image-rendering: pixelated; }
       /* Disable selection for game UI */
       .no-select { user-select: none; -webkit-user-select: none; }
+      @keyframes slideInRight {
+          0% { transform: translateX(100%); opacity: 0; }
+          10% { transform: translateX(0); opacity: 1; }
+          90% { transform: translateX(0); opacity: 1; }
+          100% { transform: translateX(100%); opacity: 0; }
+      }
+      .animate-toast {
+          animation: slideInRight 5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+      }
     </style>
   <script type="importmap">
 {

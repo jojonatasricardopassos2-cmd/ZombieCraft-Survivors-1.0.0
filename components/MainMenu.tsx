@@ -5,6 +5,7 @@ import { SavedWorld, GameOptions } from '../types.ts';
 import { loadAllSavesMetadata, loadWorldFromDB, saveWorldToDB, deleteWorldFromDB } from '../utils/storage.ts';
 import { audio } from '../utils/audio.ts';
 import { TouchConfigUI } from './UI/TouchConfigUI.tsx';
+import { ACHIEVEMENTS_LIST } from '../utils/achievementsList.ts';
 
 interface MainMenuProps {
   onStartGame: (world: SavedWorld | null, newWorldConfig?: { name: string, seed: number, options: GameOptions }) => void;
@@ -793,29 +794,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
   const renderAchievements = () => (
       <div className="flex flex-col w-[600px] h-[500px] bg-gray-800/90 border-4 border-gray-500 shadow-2xl p-6">
          <h1 className="text-3xl font-bold text-white mb-6 text-center">{t.ACHIEVEMENTS || 'Achievements'}</h1>
-         <div className="flex-1 overflow-y-auto space-y-4">
-            {/* Placeholder Achievements */}
-            <div className="bg-gray-700 border-2 border-green-500 p-4 rounded flex items-center gap-4">
-                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center text-xl">🌲</div>
-                <div>
-                    <h3 className="text-xl text-white font-bold">First Wood</h3>
-                    <p className="text-gray-300 text-sm">Gathered some wood to start your journey.</p>
+         <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+            {ACHIEVEMENTS_LIST.map((ach) => (
+                <div key={ach.id} className="bg-gray-700 border-2 border-gray-500 p-4 rounded flex items-center gap-4 opacity-50 hover:opacity-100 transition-opacity">
+                    <div className="w-12 h-12 bg-gray-600 rounded-full flex items-center justify-center text-xl shrink-0">{ach.icon}</div>
+                    <div>
+                        <h3 className="text-xl text-gray-300 font-bold">{ach.title}</h3>
+                        <p className="text-gray-400 text-sm">{ach.desc}</p>
+                    </div>
                 </div>
-            </div>
-            <div className="bg-gray-700 border-2 border-gray-500 p-4 rounded flex items-center gap-4 opacity-50">
-                <div className="w-12 h-12 bg-gray-600 rounded-full flex items-center justify-center text-xl">⛏️</div>
-                <div>
-                    <h3 className="text-xl text-gray-300 font-bold">Stone Age</h3>
-                    <p className="text-gray-400 text-sm">Found your first stone.</p>
-                </div>
-            </div>
-            <div className="bg-gray-700 border-2 border-gray-500 p-4 rounded flex items-center gap-4 opacity-50">
-                <div className="w-12 h-12 bg-gray-600 rounded-full flex items-center justify-center text-xl">🧟</div>
-                <div>
-                    <h3 className="text-xl text-gray-300 font-bold">First Blood</h3>
-                    <p className="text-gray-400 text-sm">Defeated a zombie.</p>
-                </div>
-            </div>
+            ))}
          </div>
          <button onClick={() => setMenuState('MAIN')} className="mt-6 bg-red-700 hover:bg-red-600 border-2 border-red-500 text-white font-bold p-3 uppercase self-center w-48 text-xl">
              {t.BACK || 'Back'}
