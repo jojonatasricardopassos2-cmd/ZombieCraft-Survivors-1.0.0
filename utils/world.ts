@@ -470,28 +470,42 @@ export function generateWorld(seedInput: number): WorldData {
             const isForest = x >= 500;
 
             // Trees
-            if (r < (isForest ? 0.08 : 0.05) && x > 2 && x < WORLD_WIDTH - 2) {
+            if (r < (isForest ? 0.08 : 0.05) && x > 2 && x < WORLD_WIDTH - 3) {
+                const isLargeTree = !isForest && rng.next() < 0.3; // 30% chance in plains
                 const heightAdd = isForest ? Math.floor(rng.next() * 4) + 4 : Math.floor(rng.next() * 2);
-                const treeHeight = 4 + heightAdd; // Forest trees 8-12, Normal 4-6
+                const treeHeight = 4 + heightAdd + (isLargeTree ? 2 : 0);
                 const logType = isForest ? BlockType.DARK_WOOD : BlockType.WOOD;
                 const leafType = isForest ? BlockType.DARK_LEAVES : BlockType.LEAVES;
+                const appleLeafType = BlockType.APPLE_LEAVES; // Apple spawn in leaves
 
-                for (let i = 1; i <= treeHeight; i++) {
-                    blocks[(groundY - i) * WORLD_WIDTH + x] = logType;
+                const treeWidth = isLargeTree ? 2 : 1;
+                
+                for (let dx = 0; dx < treeWidth; dx++) {
+                    for (let i = 1; i <= treeHeight; i++) {
+                        blocks[(groundY - i) * WORLD_WIDTH + x + dx] = logType;
+                    }
                 }
                 
-                const leafRadius = isForest ? 3 : 2;
+                const leafRadius = isForest ? 3 : (isLargeTree ? 3 : 2);
+                const centerLogX = isLargeTree ? x + 0.5 : x;
                 
-                for (let lx = x - leafRadius; lx <= x + leafRadius; lx++) {
-                    for (let ly = groundY - treeHeight - leafRadius; ly <= groundY - treeHeight; ly++) {
+                for (let lx = x - leafRadius; lx <= x + treeWidth - 1 + leafRadius; lx++) {
+                    for (let ly = groundY - treeHeight - leafRadius; ly <= groundY - treeHeight + (isLargeTree ? 1 : 0); ly++) {
                         const lIdx = ly * WORLD_WIDTH + lx;
                         if (lIdx >= 0 && blocks[lIdx] === BlockType.AIR) {
-                            if (lx !== x || ly < groundY - treeHeight) {
+                            if (Math.abs(lx - centerLogX) > leafRadius - 0.5 && ly < groundY - treeHeight - leafRadius + 1) continue; // round corners
+                            if (!isForest && rng.next() < 0.05) {
+                                blocks[lIdx] = appleLeafType;
+                            } else {
                                 blocks[lIdx] = leafType;
                             }
                         }
                     }
                 }
+                
+                // If we generated a large tree, skip the next column
+                // but we can't easily skip x in this map mapping since x is standard loop,
+                // so we just rely on tree overlapping being handled by blocks[lIdx] === AIR checks above.
             } 
             // Bushes
             else if (r < 0.08) {
@@ -519,7 +533,7 @@ export function generateWorld(seedInput: number): WorldData {
                 const heightAdd = Math.floor(rng.next() * 4) + 4;
                 const treeHeight = 4 + heightAdd;
                 const logType = BlockType.DARK_WOOD;
-                const leafType = BlockType.DARK_LEAVES;
+                const leafType = BlockType.SNOWY_LEAVES;
 
                 for (let i = 1; i <= treeHeight; i++) {
                     blocks[(groundY - i) * WORLD_WIDTH + x] = logType;

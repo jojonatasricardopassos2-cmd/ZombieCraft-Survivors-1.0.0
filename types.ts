@@ -94,7 +94,8 @@ export enum BlockType {
   CABLE_ON = 91,
   BUTTON_ON = 92,
   LEVER_ON = 93,
-  LAMP_ON = 94
+  LAMP_ON = 94,
+  APPLE_LEAVES = 95
 }
 
 export enum ItemType {
@@ -127,7 +128,7 @@ export interface Equipment {
 
 export interface Entity {
   id: number;
-  type: 'PLAYER' | 'ZOMBIE' | 'PIG' | 'COW' | 'SHEEP' | 'DROP' | 'PROJECTILE' | 'MUTANT_ZOMBIE' | 'SCORPION' | 'CAMEL' | 'SNAKE' | 'RABBIT' | 'POLAR_BEAR' | 'DOG' | 'NPC' | 'ZOMBIE_RUNNER' | 'ZOMBIE_TANK' | 'ZOMBIE_EXPLOSIVE' | 'ZOMBIE_TOXIC' | 'ZOMBIE_SKELETON' | 'ZOMBIE_INFECTOR' | 'ZOMBIE_DARK' | 'ZOMBIE_FROZEN' | 'ZOMBIE_KING' | 'PLAGUE_KING' | 'BUSH_MOB' | 'SPIDER';
+  type: 'PLAYER' | 'ZOMBIE' | 'PIG' | 'COW' | 'SHEEP' | 'DROP' | 'PROJECTILE' | 'MUTANT_ZOMBIE' | 'SCORPION' | 'CAMEL' | 'SNAKE' | 'RABBIT' | 'POLAR_BEAR' | 'DOG' | 'NPC' | 'ZOMBIE_RUNNER' | 'ZOMBIE_TANK' | 'ZOMBIE_EXPLOSIVE' | 'ZOMBIE_TOXIC' | 'ZOMBIE_SKELETON' | 'ZOMBIE_INFECTOR' | 'ZOMBIE_DARK' | 'ZOMBIE_FROZEN' | 'ZOMBIE_KING' | 'PLAGUE_KING' | 'BUSH_MOB' | 'SPIDER' | 'BLOOD_ZOMBIE';
   x: number;
   y: number;
   width: number;

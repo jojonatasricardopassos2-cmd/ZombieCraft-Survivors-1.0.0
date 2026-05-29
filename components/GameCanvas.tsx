@@ -40,7 +40,7 @@ const generateEntityId = () => Math.floor(Math.random() * 1000000000);
 // 1. Blocks that light passes through (Visual Transparency)
 const LIGHT_TRANSPARENT_BLOCKS = new Set([
     BlockType.AIR, BlockType.GLASS, BlockType.WATER, BlockType.TORCH, BlockType.LAVA,
-    BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH,
+    BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH,
     BlockType.ROOF_WOOD, BlockType.ROOF_STONE, BlockType.ROOF_WOOD_LEFT, BlockType.ROOF_STONE_LEFT,
     BlockType.WALL_WOOD, BlockType.DOOR_BOTTOM_OPEN, BlockType.DOOR_TOP_OPEN,
     BlockType.DOOR_IRON_BOTTOM_OPEN, BlockType.DOOR_IRON_TOP_OPEN, BlockType.DOOR_STONE_BOTTOM_OPEN, BlockType.DOOR_STONE_TOP_OPEN,
@@ -57,7 +57,7 @@ const LIGHT_TRANSPARENT_BLOCKS = new Set([
 // NOTE: Glass is NOT here, so it has physics (solid). Chests ARE here, so they have no physics (intangible).
 const NON_COLLIDABLE_BLOCKS = new Set([
     BlockType.AIR, BlockType.WATER, BlockType.TORCH, BlockType.LAVA,
-    BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH,
+    BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH,
     BlockType.ROOF_WOOD, BlockType.ROOF_STONE, BlockType.ROOF_WOOD_LEFT, BlockType.ROOF_STONE_LEFT,
     BlockType.WALL_WOOD, BlockType.DOOR_BOTTOM_OPEN, BlockType.DOOR_TOP_OPEN,
     BlockType.DOOR_IRON_BOTTOM_OPEN, BlockType.DOOR_IRON_TOP_OPEN, BlockType.DOOR_STONE_BOTTOM_OPEN, BlockType.DOOR_STONE_TOP_OPEN,
@@ -265,7 +265,7 @@ export const GameCanvas: React.FC = () => {
         const handBreakable = new Set([
             BlockType.AIR, BlockType.WATER,
             BlockType.DIRT, BlockType.GRASS, BlockType.DARK_GRASS, BlockType.SAND,
-            BlockType.LEAVES, BlockType.DARK_LEAVES,
+            BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES,
             BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH,
             BlockType.FLOWER_RED, BlockType.FLOWER_GREEN, BlockType.FLOWER_BLUE,
             BlockType.CROP_WHEAT, BlockType.CROP_CARROT, BlockType.CROP_POTATO,
@@ -310,7 +310,7 @@ export const GameCanvas: React.FC = () => {
                 
                 if (isTransparent) {
                     lightMap[idx] = currentLight;
-                    if (block === BlockType.LEAVES || block === BlockType.DARK_LEAVES || block === BlockType.WATER || block === BlockType.ROOF_WOOD || block === BlockType.ROOF_STONE || block === BlockType.ROOF_WOOD_LEFT || block === BlockType.ROOF_STONE_LEFT) currentLight = Math.max(0, currentLight - 3); 
+                    if (block === BlockType.LEAVES || block === BlockType.APPLE_LEAVES || block === BlockType.DARK_LEAVES || block === BlockType.WATER || block === BlockType.ROOF_WOOD || block === BlockType.ROOF_STONE || block === BlockType.ROOF_WOOD_LEFT || block === BlockType.ROOF_STONE_LEFT) currentLight = Math.max(0, currentLight - 3); 
                     if (currentLight > 1) queue.push(idx);
                 } else {
                     lightMap[idx] = currentLight;
@@ -415,7 +415,7 @@ export const GameCanvas: React.FC = () => {
                         for (let n of neighbors) {
                             if (n >= 0) {
                                 const nb = world.blocks[n];
-                                if (nb === BlockType.PLANKS || nb === BlockType.WOOD || nb === BlockType.DARK_WOOD || nb === BlockType.LEAVES || nb === BlockType.CABINET || nb === BlockType.TABLE || nb === BlockType.WALL_WOOD || nb === BlockType.ROOF_WOOD) {
+                                if (nb === BlockType.PLANKS || nb === BlockType.WOOD || nb === BlockType.DARK_WOOD || nb === BlockType.LEAVES || nb === BlockType.APPLE_LEAVES || nb === BlockType.CABINET || nb === BlockType.TABLE || nb === BlockType.WALL_WOOD || nb === BlockType.ROOF_WOOD) {
                                     world.blocks[n] = BlockType.AIR;
                                     dirty = true;
                                 }
@@ -593,13 +593,36 @@ export const GameCanvas: React.FC = () => {
                      }
                  }
                  
+                 let foundValidY = false;
                  for(let y=0; y<WORLD_HEIGHT; y++) {
-                     if (worldRef.current.blocks[y * WORLD_WIDTH + spawnX] !== BlockType.AIR) {
-                         spawnY = (y - 3) * BLOCK_SIZE;
+                     const b = worldRef.current.blocks[y * WORLD_WIDTH + spawnX];
+                     if (b !== BlockType.AIR) {
+                         // found the surface block
+                         const blockAbove = y > 0 ? worldRef.current.blocks[(y - 1) * WORLD_WIDTH + spawnX] : BlockType.AIR;
+                         
+                         if (blockAbove !== BlockType.AIR) {
+                             break; // blocked above, try another column
+                         }
+                         
+                         let validBlock = false;
+                         if (type === 'DOG') {
+                             if (b === BlockType.DARK_GRASS) validBlock = true;
+                         } else if (type === 'COW' || type === 'PIG' || type === 'SHEEP') {
+                             if (b === BlockType.GRASS || b === BlockType.DARK_GRASS) validBlock = true;
+                         } else if (type === 'RABBIT' || type === 'CAMEL' || type === 'SCORPION' || type === 'SNAKE') {
+                             if (b === BlockType.SAND) validBlock = true;
+                         } else {
+                             validBlock = true; // Zombies etc
+                         }
+                         
+                         if (validBlock) {
+                             spawnY = (y - 3) * BLOCK_SIZE;
+                             foundValidY = true;
+                         }
                          break;
                      }
                  }
-                 if (spawnY > 0) break;
+                 if (foundValidY) break;
                  attempts++;
             }
         }
@@ -1615,8 +1638,16 @@ export const GameCanvas: React.FC = () => {
             const myPlayerId = Date.now() + Math.random(); 
 
             const onConnect = () => {
-                socket.emit('join-room', roomId);
-                // Send Join Signal
+                if (options.multiplayer?.mode === 'HOST') {
+                    socket.emit('create-room', { roomId, maxPlayers: 4, worldState: null }); // Host creates the room
+                    // Note: We don't wait for 'room-created' here, we just assume it works and join visually. 
+                    // Actually, let's just make it handle joining via the unique ID we generated locally.
+                    // To keep it simple, since we already have roomId locally, let's just listen to 'room-created'.
+                } else {
+                    socket.emit('join-room', roomId);
+                }
+                
+                // Send Join Signal to game clients
                 socket.emit('game-event', { type: 'JOIN', roomId, payload: { id: myPlayerId, name: options.multiplayer?.playerName } });
             };
 
@@ -1625,6 +1656,24 @@ export const GameCanvas: React.FC = () => {
             } else {
                 socket.on('connect', onConnect);
             }
+
+            socket.on('room-error', (data) => {
+                addNotification(`Connection Error: ${data.message}`);
+            });
+            
+            socket.on('player-joined', (data) => {
+                if (options.multiplayer?.mode === 'HOST' && worldRef.current) {
+                    // Send full world state back through game-event SYNC_WORLD
+                    socket.emit('game-event', { 
+                        type: 'SYNC_WORLD', 
+                        roomId,
+                        payload: { 
+                            seed: currentSeed,
+                            world: worldRef.current 
+                        } 
+                    });
+                }
+            });
 
             socket.on('game-event', (data) => {
                 const { type, payload } = data;
@@ -3289,8 +3338,8 @@ export const GameCanvas: React.FC = () => {
                 if ((player.attackCooldown || 0) <= 0) {
                      const isKatana = heldItem && heldItem.id.toString().includes('katana'); const isScythe = heldItem && heldItem.id.toString().includes('scythe');
                      const targets = entitiesRef.current.filter(ent => { if (ent.type === 'DROP' || ent.type === 'PROJECTILE') return false; return (worldMouseX >= ent.x && worldMouseX <= ent.x + ent.width && worldMouseY >= ent.y && worldMouseY <= ent.y + ent.height) || ((isKatana || isScythe) && Math.abs(ent.x - worldMouseX) < 60 && Math.abs(ent.y - worldMouseY) < 60); });
-                     let hitTargets = targets.slice(0, 1); if (isKatana) hitTargets = targets.slice(0, 3); if (isScythe) hitTargets = targets.slice(0, 5);
-                     if (hitTargets.length > 0) { hitEntity = true; const heldItemId = heldItem ? heldItem.id.toString() : 'hand'; let cooldown = 20; if (heldItemId.includes('war_hammer')) cooldown = 300; else if (heldItemId.includes('scythe')) cooldown = 240; else if (heldItemId.includes('battle_axe')) cooldown = 100; else if (isKatana) { if (heldItemId.includes('wood') || heldItemId.includes('copper') || heldItemId.includes('stone')) cooldown = 120; else if (heldItemId.includes('iron') || heldItemId.includes('gold') || heldItemId.includes('diamond')) cooldown = 180; else if (heldItemId.includes('titanium') || heldItemId.includes('uranium')) cooldown = 240; } else if (heldItemId.includes('knife')) cooldown = 10; else if (heldItemId.includes('short_sword')) cooldown = 15; 
+                     let hitTargets = targets.slice(0, 1); if (isKatana) hitTargets = targets.slice(0, 3);
+                     if (hitTargets.length > 0) { hitEntity = true; const heldItemId = heldItem ? heldItem.id.toString() : 'hand'; let cooldown = 20; if (isKatana) cooldown = 100; else if (heldItemId.includes('sword')) cooldown = 60; else if (heldItemId.includes('knife')) cooldown = 10; else if (heldItemId.includes('spear')) cooldown = 45; else if (heldItemId.includes('axe')) cooldown = 75;
                      
                      // REMOVED LEVEL LOGIC FOR COOLDOWN
                      
@@ -3355,6 +3404,7 @@ export const GameCanvas: React.FC = () => {
                                             spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.SNOW_BLOCK, 1);
                                         }
                                         else if (bType === BlockType.BERRY_BUSH) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'cherry', 1 + Math.floor(Math.random() * 2)); } 
+                                        else if (bType === BlockType.APPLE_LEAVES) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'apple', 1); }
                                         else if (bType === BlockType.SEED_BUSH) { const rand = Math.random(); if (rand < 0.33) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'wheat_seeds', 1); else if (rand < 0.66) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'carrot', 1); else spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'potato', 1); } 
                                         else if (bType === BlockType.BUSH) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'stick', 1); } 
                                         else if (bType === BlockType.GRASS || bType === BlockType.DARK_GRASS || bType === BlockType.SNOWY_GRASS) { if (Math.random() < 0.1) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'wheat_seeds', 1); if (Math.random() < 0.05) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'carrot', 1); if (Math.random() < 0.05) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'potato', 1); } 
@@ -3546,19 +3596,24 @@ export const GameCanvas: React.FC = () => {
             moonX = cvs.width * nightProgress;
             moonY = cvs.height * 0.8 - Math.sin(nightProgress * Math.PI) * (cvs.height * 0.6);
             
-            if (time < 21000) { // Dusk fading to night
-                const p = (time - 18000) / 3000;
-                skyColor = `rgb(${Math.floor(255 * (1-p))}, ${Math.floor(140 * (1-p))}, ${Math.floor(51 * p)})`;
-            } else if (time > 33000) { // Night fading to dawn
-                const p = (time - 33000) / 3000;
-                skyColor = `rgb(${Math.floor(255 * p)}, ${Math.floor(140 * p)}, ${Math.floor(51 * (1-p))})`;
+            if (moonPhaseRef.current === 'BLOOD') {
+                skyColor = '#3a0000'; // Deep red sky
+                cloudColor = '#1a0000';
             } else {
-                skyColor = '#000033';
+                if (time < 21000) { // Dusk fading to night
+                    const p = (time - 18000) / 3000;
+                    skyColor = `rgb(${Math.floor(255 * (1-p))}, ${Math.floor(140 * (1-p))}, ${Math.floor(51 * p)})`;
+                } else if (time > 33000) { // Night fading to dawn
+                    const p = (time - 33000) / 3000;
+                    skyColor = `rgb(${Math.floor(255 * p)}, ${Math.floor(140 * p)}, ${Math.floor(51 * (1-p))})`;
+                } else {
+                    skyColor = '#000033';
+                }
+                cloudColor = isPrecipitating ? '#4a5568' : '#2c3e50'; 
             }
-            cloudColor = isPrecipitating ? '#4a5568' : '#2c3e50'; 
         }
         
-        if (isPrecipitating) {
+        if (isPrecipitating && moonPhaseRef.current !== 'BLOOD') {
             skyColor = time < 18000 ? '#7f8c8d' : '#1a252f';
         }
 
@@ -3566,9 +3621,9 @@ export const GameCanvas: React.FC = () => {
         const skyGrad = ctx.createLinearGradient(0, 0, 0, cvs.height);
         skyGrad.addColorStop(0, skyColor);
         // Slightly lighter towards the horizon
-        skyGrad.addColorStop(1, time >= DUSK_START || time < DAWN_START ? '#0a0a1a' : '#b3e5fc');
+        skyGrad.addColorStop(1, moonPhaseRef.current === 'BLOOD' ? '#200000' : (time >= DUSK_START || time < DAWN_START ? '#0a0a1a' : '#b3e5fc'));
         
-        ctx.fillStyle = skyGrad; 
+        ctx.fillStyle = skyGrad;
         ctx.fillRect(0, 0, cvs.width, cvs.height);
         
         // Draw Sun
@@ -4069,7 +4124,7 @@ export const GameCanvas: React.FC = () => {
                         ctx.fillRect(x * BLOCK_SIZE + 22, y * BLOCK_SIZE, 2, BLOCK_SIZE);
                         ctx.fillRect(x * BLOCK_SIZE + 28, y * BLOCK_SIZE, 2, BLOCK_SIZE);
                     }
-                    else if (block === BlockType.LEAVES || block === BlockType.DARK_LEAVES || block === BlockType.SNOWY_LEAVES) {
+                    else if (block === BlockType.LEAVES || block === BlockType.APPLE_LEAVES || block === BlockType.DARK_LEAVES || block === BlockType.SNOWY_LEAVES) {
                         ctx.fillStyle = BLOCK_COLORS[block];
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
                         
@@ -4085,8 +4140,14 @@ export const GameCanvas: React.FC = () => {
                             ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 22, 4, 4);
                         };
 
-                        if (block === BlockType.LEAVES) {
+                        if (block === BlockType.LEAVES || block === BlockType.APPLE_LEAVES) {
                             drawLeafDetails('#2a4508', '#4e800f');
+                            if (block === BlockType.APPLE_LEAVES) {
+                                ctx.fillStyle = '#d32f2f'; // Red apple
+                                ctx.fillRect(x * BLOCK_SIZE + 18, y * BLOCK_SIZE + 14, 6, 6);
+                                ctx.fillStyle = '#2e7d32'; // Apple stem
+                                ctx.fillRect(x * BLOCK_SIZE + 20, y * BLOCK_SIZE + 12, 2, 2);
+                            }
                         } else if (block === BlockType.DARK_LEAVES) {
                             drawLeafDetails('#162604', '#2d5209');
                             if (x > 830 && snowCoverRef.current > 0) {
@@ -4188,6 +4249,20 @@ export const GameCanvas: React.FC = () => {
                             ctx.fillStyle = '#9e9e9e'; ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 2, 6, 4);
                             ctx.fillStyle = '#ff9800'; ctx.fillRect(x * BLOCK_SIZE + 20, y * BLOCK_SIZE + 2, 8, 2);
                             ctx.fillStyle = '#757575'; ctx.fillRect(x * BLOCK_SIZE + 20, y * BLOCK_SIZE + 1, 4, 4);
+                        }
+                        else if (block === BlockType.SCIENCE_BENCH) {
+                            ctx.fillStyle = '#b2dfdb'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                            ctx.fillStyle = '#80cbc4'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, 8);
+                            ctx.fillStyle = '#004d40'; ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE + 10, 4, 22); ctx.fillRect(x * BLOCK_SIZE + 26, y * BLOCK_SIZE + 10, 4, 22);
+                            ctx.fillStyle = '#00695c'; ctx.fillRect(x * BLOCK_SIZE + 10, y * BLOCK_SIZE + 12, 12, 16);
+                            ctx.fillStyle = '#64ffda'; ctx.fillRect(x * BLOCK_SIZE + 12, y * BLOCK_SIZE + 16, 8, 4); 
+                        }
+                        else if (block === BlockType.MEDICAL_BENCH) {
+                            ctx.fillStyle = '#e0f7fa'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                            ctx.fillStyle = '#b2ebf2'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, 8);
+                            ctx.fillStyle = '#006064'; ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE + 10, 4, 22); ctx.fillRect(x * BLOCK_SIZE + 26, y * BLOCK_SIZE + 10, 4, 22);
+                            ctx.fillStyle = '#ef5350'; ctx.fillRect(x * BLOCK_SIZE + 14, y * BLOCK_SIZE + 12, 4, 12); 
+                            ctx.fillRect(x * BLOCK_SIZE + 10, y * BLOCK_SIZE + 16, 12, 4); 
                         }
                         else if (block === BlockType.FURNACE) {
                             ctx.fillStyle = '#424242'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);

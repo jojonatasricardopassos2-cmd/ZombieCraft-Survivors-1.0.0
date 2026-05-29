@@ -34,6 +34,8 @@ interface InventoryProps {
 export const ItemIcon: React.FC<{ item: ItemStack | null }> = ({ item }) => {
   if (!item) return <div className="w-full h-full pointer-events-none" />;
 
+  if (item.type === ItemType.SHIELD) return <div className="w-full h-full pointer-events-none bg-transparent" />; // Invisible shield in inventory
+
   let bg = 'transparent';
   let char = '';
 
@@ -216,6 +218,10 @@ export const Inventory: React.FC<InventoryProps> = ({
         if (activeTab === 'DECOR') recipes = RECIPES.filter(r => r.category === 'DECOR');
         else if (activeTab === 'ITEMS') recipes = RECIPES.filter(r => r.category === 'ITEMS');
         else if (activeTab === 'COMBAT') recipes = RECIPES.filter(r => r.category === 'COMBAT');
+    } else if (nearbyStation === BlockType.MEDICAL_BENCH) {
+        if (activeTab === 'MEDICAL') recipes = RECIPES.filter(r => r.station === BlockType.MEDICAL_BENCH);
+    } else if (nearbyStation === BlockType.SCIENCE_BENCH) {
+        if (activeTab === 'SCIENCE') recipes = RECIPES.filter(r => r.station === BlockType.SCIENCE_BENCH);
     } else {
         // Hand Crafting
         if (activeTab === 'CRAFTING') recipes = RECIPES.filter(r => r.station === 'NONE');

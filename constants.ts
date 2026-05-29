@@ -53,6 +53,7 @@ export const BLOCK_COLORS: Record<number, string> = {
   [BlockType.DEEP_STONE]: '#3b434a', 
   [BlockType.WOOD]: '#5c4033',
   [BlockType.DARK_WOOD]: '#3b2f2f', 
+  [BlockType.APPLE_LEAVES]: '#3a5f0b',
   [BlockType.LEAVES]: '#3a5f0b',
   [BlockType.DARK_LEAVES]: '#223c07', 
   [BlockType.PLANKS]: '#c19a6b',
@@ -107,6 +108,10 @@ export const BLOCK_COLORS: Record<number, string> = {
   [BlockType.FLOWER_BLUE]: '#1e88e5',
   [BlockType.URANIUM_BLOCK]: '#76ff03', // Light Green
   [BlockType.TITANIUM_BLOCK]: '#0d47a1', // Dark Blue
+  [BlockType.IRON_BLOCK]: '#cfd8dc',
+  [BlockType.GOLD_BLOCK]: '#fbc02d',
+  [BlockType.COPPER_BLOCK]: '#e65100',
+  [BlockType.DIAMOND_BLOCK]: '#00bcd4',
   [BlockType.ARMOR_BENCH]: '#37474f', // Blue Grey
   [BlockType.LADDER]: '#8d6e63', // Wood-like
   [BlockType.CACTUS]: '#4caf50', // Green
@@ -163,7 +168,7 @@ export const HIDDEN_CREATIVE_BLOCKS = [
 
 // Hardness values
 export const BLOCK_HARDNESS: Record<number, number> = {
-    [BlockType.LEAVES]: 20, [BlockType.DARK_LEAVES]: 25, [BlockType.BUSH]: 10, [BlockType.BERRY_BUSH]: 10, [BlockType.SEED_BUSH]: 10,
+    [BlockType.APPLE_LEAVES]: 20, [BlockType.LEAVES]: 20, [BlockType.DARK_LEAVES]: 25, [BlockType.BUSH]: 10, [BlockType.BERRY_BUSH]: 10, [BlockType.SEED_BUSH]: 10,
     [BlockType.FLOWER_RED]: 5, [BlockType.FLOWER_GREEN]: 5, [BlockType.FLOWER_BLUE]: 5, [BlockType.DIRT]: 50, [BlockType.GRASS]: 50,
     [BlockType.DARK_GRASS]: 60, [BlockType.FARMLAND]: 50, [BlockType.SAND]: 40, [BlockType.WOOL]: 30, [BlockType.GLASS]: 20,
     [BlockType.PLANKS]: 150, [BlockType.DOOR_BOTTOM_CLOSED]: 150, [BlockType.DOOR_TOP_CLOSED]: 150, [BlockType.DOOR_BOTTOM_OPEN]: 150,
@@ -211,52 +216,45 @@ const MATERIALS = [
     { id: 'uranium', tier: 'uranium', name_en: 'Uranium', name_pt: 'Urânio' }
 ];
 
-const WEAPON_RECIPES: CraftingRecipe[] = [];
+// --- DYNAMIC DAMAGE & COLORS ---
+const BASE_DAMAGE = {
+    'wood': 3, 'stone': 4, 'copper': 4.5, 'iron': 5, 'gold': 4, 'diamond': 7, 'titanium': 8, 'uranium': 10
+};
+export const ITEM_COLORS: Record<string, string> = {
+    'rope': '#8d6e63',
+    'fiber': '#dcedc8',
+    'arrow': '#cfd8dc',
+    'bow': '#8d6e63',
+    'crossbow': '#3e2723',
+    'uranium_totem': '#76ff03'
+};
+export const DAMAGE_VALUES: Record<string, number> = { 'hand': 1, 'bow': 3, 'crossbow': 5 };
 
 MATERIALS.forEach(mat => {
-    const mId = mat.tier;
-    const pId = mat.id;
+    const base = BASE_DAMAGE[mat.id as keyof typeof BASE_DAMAGE];
+    const col = mat.id === 'uranium' ? '#76ff03' : 
+                mat.id === 'titanium' ? '#0d47a1' : 
+                mat.id === 'diamond' ? '#00bcd4' : 
+                mat.id === 'gold' ? '#fbc02d' : 
+                mat.id === 'iron' ? '#cfd8dc' : 
+                mat.id === 'copper' ? '#e65100' : 
+                mat.id === 'wood' ? '#5d4037' : 
+                mat.id === 'stone' ? '#9e9e9e' : 
+                '#bdbdbd';
+    
+    // Tools
+    ITEM_COLORS[`${mat.id}_pickaxe`] = col; DAMAGE_VALUES[`${mat.id}_pickaxe`] = base * 0.5;
+    ITEM_COLORS[`${mat.id}_axe`] = col; DAMAGE_VALUES[`${mat.id}_axe`] = base * 0.8;
+    ITEM_COLORS[`${mat.id}_shovel`] = col;
+    ITEM_COLORS[`${mat.id}_shield`] = col;
 
-    WEAPON_RECIPES.push({ 
-        result: { id: `${pId}_battle_axe`, count: 1, type: ItemType.TOOL }, 
-        ingredients: [{ id: mId, count: 3 }, { id: 'stick', count: 2 }], 
-        station: BlockType.CRAFTING_TABLE, category: 'COMBAT' 
-    });
-    WEAPON_RECIPES.push({
-        result: { id: `${pId}_hunting_spear`, count: 1, type: ItemType.TOOL },
-        ingredients: [{ id: mId, count: 1 }, { id: BlockType.DARK_WOOD, count: 1 }, { id: BlockType.DEEP_STONE, count: 1 }, { id: 'rope', count: 1 }],
-        station: BlockType.CRAFTING_TABLE, category: 'COMBAT'
-    });
-    WEAPON_RECIPES.push({
-        result: { id: `${pId}_dagger`, count: 1, type: ItemType.TOOL },
-        ingredients: [{ id: mId, count: 1 }, { id: 'leather', count: 1 }, { id: BlockType.WOOD, count: 1 }],
-        station: BlockType.CRAFTING_TABLE, category: 'COMBAT'
-    });
-    WEAPON_RECIPES.push({
-        result: { id: `${pId}_war_hammer`, count: 1, type: ItemType.TOOL },
-        ingredients: [{ id: mId, count: 3 }, { id: BlockType.DEEP_STONE, count: 2 }, { id: BlockType.WOOD, count: 1 }],
-        station: BlockType.CRAFTING_TABLE, category: 'COMBAT'
-    });
-    WEAPON_RECIPES.push({
-        result: { id: `${pId}_club`, count: 1, type: ItemType.TOOL },
-        ingredients: [{ id: mId, count: 2 }, { id: BlockType.DARK_WOOD, count: 1 }, { id: BlockType.STONE, count: 1 }, { id: 'green_resin', count: 1 }],
-        station: BlockType.CRAFTING_TABLE, category: 'COMBAT'
-    });
-    WEAPON_RECIPES.push({
-        result: { id: `${pId}_scythe`, count: 1, type: ItemType.TOOL },
-        ingredients: [{ id: mId, count: 3 }, { id: BlockType.WOOD, count: 2 }, { id: 'leather', count: 1 }],
-        station: BlockType.CRAFTING_TABLE, category: 'COMBAT'
-    });
-    WEAPON_RECIPES.push({
-        result: { id: `${pId}_short_sword`, count: 1, type: ItemType.TOOL },
-        ingredients: [{ id: mId, count: 1 }, { id: BlockType.WOOD, count: 1 }, { id: 'leather', count: 1 }],
-        station: BlockType.CRAFTING_TABLE, category: 'COMBAT'
-    });
-    WEAPON_RECIPES.push({
-        result: { id: `${pId}_knife`, count: 1, type: ItemType.TOOL },
-        ingredients: [{ id: mId, count: 1 }, { id: 'stick', count: 1 }],
-        station: BlockType.CRAFTING_TABLE, category: 'COMBAT'
-    });
+    // Standard Weapons
+    ITEM_COLORS[`${mat.id}_sword`] = col; DAMAGE_VALUES[`${mat.id}_sword`] = base;
+    ITEM_COLORS[`${mat.id}_katana`] = col; DAMAGE_VALUES[`${mat.id}_katana`] = base * 1.5; // High dmg
+    ITEM_COLORS[`${mat.id}_spear`] = col; DAMAGE_VALUES[`${mat.id}_spear`] = base * 0.9;
+    ITEM_COLORS[`${mat.id}_knife`] = col; DAMAGE_VALUES[`${mat.id}_knife`] = base * 0.4; // Low dmg but instant
+    ITEM_COLORS[`${mat.id}_hoe`] = col;
+    ITEM_COLORS[`${mat.id}_hammer`] = col; DAMAGE_VALUES[`${mat.id}_hammer`] = base * 0.6;
 });
 
 export const RECIPES: CraftingRecipe[] = [
@@ -353,10 +351,11 @@ export const RECIPES: CraftingRecipe[] = [
           recipes.push({ result: { id: `${pId}_leggings`, count: 1, type: ItemType.ARMOR }, ingredients: [{ id: mId, count: 7 }], station: BlockType.ARMOR_BENCH, category: 'ARMOR' });
           recipes.push({ result: { id: `${pId}_boots`, count: 1, type: ItemType.ARMOR }, ingredients: [{ id: mId, count: 4 }], station: BlockType.ARMOR_BENCH, category: 'ARMOR' });
       }
+      recipes.push({ result: { id: `${pId}_knife`, count: 1, type: ItemType.TOOL }, ingredients: [{ id: mId, count: 1 }, { id: 'stick', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'COMBAT' });
       return recipes;
   }),
 
-  ...WEAPON_RECIPES, // Add the 10 new weapon types
+  // removed WEAPON_RECIPES
   
   // Hazmat - ARMOR BENCH
   { result: { id: 'hazmat_helmet', count: 1, type: ItemType.ARMOR }, ingredients: [{ id: 'leather', count: 5 }], station: BlockType.ARMOR_BENCH, category: 'ARMOR' },
@@ -371,19 +370,23 @@ export const RECIPES: CraftingRecipe[] = [
   { result: { id: 'reinforced_iron_boots', count: 1, type: ItemType.ARMOR }, ingredients: [{ id: 'iron_ingot', count: 4 }, { id: 'diamond', count: 1 }], station: BlockType.ARMOR_BENCH, category: 'ARMOR' },
   
   // New recipes
-  { result: { id: BlockType.MEDICAL_BENCH, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 4 }, { id: 'iron_ingot', count: 2 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
-  { result: { id: BlockType.SCIENCE_BENCH, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 4 }, { id: 'copper_ingot', count: 2 }, { id: BlockType.GLASS, count: 2 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
-  { result: { id: 'syringe', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'iron_ingot', count: 1 }, { id: BlockType.GLASS, count: 1 }], station: BlockType.MEDICAL_BENCH, category: 'TOOLS' },
-  { result: { id: 'bandage', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.WOOL, count: 2 }], station: BlockType.MEDICAL_BENCH, category: 'TOOLS' },
-  { result: { id: 'medicine', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'syringe', count: 1 }, { id: 'berry', count: 2 }, { id: 'bone', count: 1 }], station: BlockType.MEDICAL_BENCH, category: 'TOOLS' },
-  { result: { id: 'potion_regen', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.GLASS, count: 1 }, { id: 'apple', count: 1 }, { id: BlockType.FLOWER_RED, count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
-  { result: { id: 'potion_resistance', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.GLASS, count: 1 }, { id: 'iron_ingot', count: 1 }, { id: BlockType.FLOWER_BLUE, count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
-  { result: { id: 'potion_fire', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.GLASS, count: 1 }, { id: 'coal', count: 1 }, { id: BlockType.FLOWER_GREEN, count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
-  { result: { id: 'potion_cold', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.GLASS, count: 1 }, { id: 'leather', count: 1 }, { id: BlockType.FLOWER_BLUE, count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
-  { result: { id: 'potion_antizombie', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.GLASS, count: 1 }, { id: 'zombie_meat', count: 1 }, { id: BlockType.BUSH, count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
-  { result: { id: 'bucket', count: 1, type: ItemType.TOOL }, ingredients: [{ id: 'iron_ingot', count: 3 }], station: BlockType.CRAFTING_TABLE, category: 'TOOLS' },
-  { result: { id: 'fishing_rod', count: 1, type: ItemType.TOOL }, ingredients: [{ id: 'stick', count: 2 }, { id: BlockType.COBWEB, count: 2 }], station: BlockType.CRAFTING_TABLE, category: 'TOOLS' },
+  { result: { id: BlockType.SCIENCE_BENCH, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 5 }, { id: BlockType.CRAFTING_TABLE, count: 1 }, { id: 'iron_ingot', count: 2 }, { id: 'gold_ingot', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.MEDICAL_BENCH, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 10 }, { id: 'iron_ingot', count: 5 }, { id: 'gold_ingot', count: 2 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.CABLE, count: 4, type: ItemType.BLOCK }, ingredients: [{ id: 'copper_ingot', count: 2 }, { id: 'gold_ingot', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+
+  { result: { id: 'potion_regen', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'glass_bottle', count: 1 }, { id: 'syringe', count: 2 }, { id: 'bandage', count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
+  { result: { id: 'potion_resistance', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'glass_bottle', count: 1 }, { id: 'medicine', count: 1 }, { id: 'syringe', count: 2 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
+  { result: { id: 'potion_fire', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'lava_bucket', count: 1 }, { id: 'glass_bottle', count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
+  { result: { id: 'potion_cold', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.ICE, count: 5 }, { id: 'water_bucket', count: 1 }, { id: 'glass_bottle', count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
+  { result: { id: 'potion_antizombie', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'uranium', count: 1 }, { id: 'glass_bottle', count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
+  { result: { id: 'bucket', count: 1, type: ItemType.TOOL }, ingredients: [{ id: 'iron_ingot', count: 5 }], station: BlockType.CRAFTING_TABLE, category: 'TOOLS' },
+  { result: { id: 'fishing_rod', count: 1, type: ItemType.TOOL }, ingredients: [{ id: BlockType.COBWEB, count: 2 }, { id: 'stick', count: 2 }], station: BlockType.CRAFTING_TABLE, category: 'TOOLS' },
+  
+  { result: { id: 'syringe', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'iron_ingot', count: 2 }, { id: BlockType.GLASS, count: 2 }], station: BlockType.MEDICAL_BENCH, category: 'TOOLS' },
+  { result: { id: 'bandage', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.GLASS, count: 5 }, { id: BlockType.WOOL, count: 3 }, { id: 'iron_ingot', count: 5 }], station: BlockType.MEDICAL_BENCH, category: 'TOOLS' },
+  { result: { id: 'medicine', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'syringe', count: 2 }, { id: 'antidote', count: 1 }], station: BlockType.MEDICAL_BENCH, category: 'TOOLS' },
+  { result: { id: 'antidote', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'medicine', count: 2 }, { id: 'syringe', count: 3 }], station: BlockType.MEDICAL_BENCH, category: 'TOOLS' },
+  
   { result: { id: BlockType.BUTTON, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'iron_ingot', count: 5 }, { id: 'copper_ingot', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.LEVER, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'stick', count: 1 }, { id: BlockType.STONE, count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.LAMP, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.GLASS, count: 1 }, { id: 'copper_ingot', count: 1 }, { id: 'iron_ingot', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
@@ -410,60 +413,7 @@ export const FUEL_VALUES: Record<string, number> = {
   'stick': 100, 
 };
 
-// --- DYNAMIC DAMAGE & COLORS ---
-const BASE_DAMAGE = {
-    'wood': 3, 'stone': 4, 'copper': 4.5, 'iron': 5, 'gold': 4, 'diamond': 7, 'titanium': 8, 'uranium': 10
-};
-
-// Colors for the new weapons/items
-const NEW_ITEM_COLORS: Record<string, string> = {
-    'rope': '#8d6e63',
-    'fiber': '#dcedc8',
-    'arrow': '#cfd8dc',
-    'bow': '#8d6e63',
-    'crossbow': '#3e2723',
-    'uranium_totem': '#76ff03'
-};
-
-// Generate Colors & Damage for all 10 new weapons across all 8 tiers
-export const ITEM_COLORS: Record<string, string> = { ...NEW_ITEM_COLORS };
-export const DAMAGE_VALUES: Record<string, number> = { 'hand': 1, 'bow': 3, 'crossbow': 5 };
-
-MATERIALS.forEach(mat => {
-    const base = BASE_DAMAGE[mat.id as keyof typeof BASE_DAMAGE];
-    const col = mat.id === 'uranium' ? '#76ff03' : 
-                mat.id === 'titanium' ? '#0d47a1' : 
-                mat.id === 'diamond' ? '#00bcd4' : 
-                mat.id === 'gold' ? '#fbc02d' : 
-                mat.id === 'iron' ? '#cfd8dc' : 
-                mat.id === 'copper' ? '#e65100' : 
-                mat.id === 'wood' ? '#5d4037' : 
-                mat.id === 'stone' ? '#9e9e9e' : 
-                '#bdbdbd';
-    
-    // Tools
-    ITEM_COLORS[`${mat.id}_pickaxe`] = col; DAMAGE_VALUES[`${mat.id}_pickaxe`] = base * 0.5;
-    ITEM_COLORS[`${mat.id}_axe`] = col; DAMAGE_VALUES[`${mat.id}_axe`] = base * 0.8;
-    ITEM_COLORS[`${mat.id}_shovel`] = col;
-    ITEM_COLORS[`${mat.id}_hoe`] = col;
-    ITEM_COLORS[`${mat.id}_hammer`] = col; DAMAGE_VALUES[`${mat.id}_hammer`] = base * 0.6;
-    ITEM_COLORS[`${mat.id}_shield`] = col;
-
-    // Standard Weapons
-    ITEM_COLORS[`${mat.id}_sword`] = col; DAMAGE_VALUES[`${mat.id}_sword`] = base;
-    ITEM_COLORS[`${mat.id}_katana`] = col; DAMAGE_VALUES[`${mat.id}_katana`] = base * 1.1;
-    ITEM_COLORS[`${mat.id}_spear`] = col; DAMAGE_VALUES[`${mat.id}_spear`] = base * 0.9;
-
-    // 10 New Weapons
-    ITEM_COLORS[`${mat.id}_battle_axe`] = col; DAMAGE_VALUES[`${mat.id}_battle_axe`] = base * 1.5; // High Dmg
-    ITEM_COLORS[`${mat.id}_hunting_spear`] = col; DAMAGE_VALUES[`${mat.id}_hunting_spear`] = base * 1.2;
-    ITEM_COLORS[`${mat.id}_dagger`] = col; DAMAGE_VALUES[`${mat.id}_dagger`] = base * 0.7; // Low base, bonus on hit
-    ITEM_COLORS[`${mat.id}_war_hammer`] = col; DAMAGE_VALUES[`${mat.id}_war_hammer`] = base * 2.5; // Huge dmg
-    ITEM_COLORS[`${mat.id}_club`] = col; DAMAGE_VALUES[`${mat.id}_club`] = base * 1.2;
-    ITEM_COLORS[`${mat.id}_scythe`] = col; DAMAGE_VALUES[`${mat.id}_scythe`] = base * 0.8; // AoE
-    ITEM_COLORS[`${mat.id}_short_sword`] = col; DAMAGE_VALUES[`${mat.id}_short_sword`] = base * 0.8;
-    ITEM_COLORS[`${mat.id}_knife`] = col; DAMAGE_VALUES[`${mat.id}_knife`] = base * 0.5;
-});
+// removed duplicate MATERIALS.forEach
 
 // Add other base item colors
 Object.assign(ITEM_COLORS, {
@@ -532,7 +482,7 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
     EN: {
         [BlockType.DIRT]: 'Dirt', [BlockType.GRASS]: 'Grass', [BlockType.DARK_GRASS]: 'Dark Grass', [BlockType.STONE]: 'Stone', [BlockType.DEEP_STONE]: 'Deep Slate',
         [BlockType.WOOD]: 'Wood Log', [BlockType.DARK_WOOD]: 'Dark Wood', [BlockType.PLANKS]: 'Wood Planks', [BlockType.CRAFTING_TABLE]: 'Crafting Table',
-        [BlockType.LEAVES]: 'Leaves', [BlockType.DARK_LEAVES]: 'Dark Leaves', [BlockType.BUSH]: 'Bush', [BlockType.BEDROCK]: 'Bedrock',
+        [BlockType.APPLE_LEAVES]: 'Apple Leaves', [BlockType.LEAVES]: 'Leaves', [BlockType.DARK_LEAVES]: 'Dark Leaves', [BlockType.BUSH]: 'Bush', [BlockType.BEDROCK]: 'Bedrock',
         [BlockType.FURNACE]: 'Furnace', [BlockType.TORCH]: 'Torch', [BlockType.CHEST]: 'Small Chest', [BlockType.CHEST_MEDIUM]: 'Medium Chest', [BlockType.CHEST_LARGE]: 'Large Chest', [BlockType.STONE_CHEST]: 'Stone Chest',
         [BlockType.BED]: 'Basic Bed', [BlockType.BED_MEDIUM]: 'Medium Bed', [BlockType.BED_ADVANCED]: 'Advanced Bed',
         [BlockType.COAL_ORE]: 'Coal Ore', [BlockType.IRON_ORE]: 'Iron Ore', [BlockType.GOLD_ORE]: 'Gold Ore', [BlockType.DIAMOND_ORE]: 'Diamond Ore', [BlockType.COPPER_ORE]: 'Copper Ore', [BlockType.TITANIUM_ORE]: 'Titanium Ore', [BlockType.URANIUM_ORE]: 'Uranium Ore',
@@ -580,7 +530,7 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         'copper_helmet': 'Copper Helmet', 'copper_chestplate': 'Copper Chestplate', 'copper_leggings': 'Copper Leggings', 'copper_boots': 'Copper Boots',
         'hazmat_helmet': 'Radiation Helmet', 'hazmat_chestplate': 'Radiation Chestplate', 'hazmat_leggings': 'Radiation Leggings', 'hazmat_boots': 'Radiation Boots',
         'leather_helmet': 'Leather Helmet', 'leather_chestplate': 'Leather Chestplate', 'leather_leggings': 'Leather Leggings', 'leather_boots': 'Leather Boots',
-        'spawn_zombie': 'Zombie Spawn Egg', 'spawn_pig': 'Pig Spawn Egg', 'spawn_cow': 'Cow Spawn Egg', 'spawn_sheep': 'Sheep Spawn Egg', 'spawn_scorpion': 'Scorpion Spawn Egg', 'spawn_camel': 'Camel Spawn Egg', 'spawn_snake': 'Snake Spawn Egg', 'spawn_rabbit': 'Rabbit Spawn Egg', 'spawn_mutant_zombie': 'Mutant Zombie Spawn Egg', 'spawn_polar_bear': 'Polar Bear Spawn Egg', 'spawn_dog': 'Dog Spawn Egg',
+        'spawn_zombie': 'Zombie Spawn Egg', 'spawn_zombie_runner': 'Runner Zombie Egg', 'spawn_zombie_tank': 'Tank Zombie Egg', 'spawn_zombie_explosive': 'Explosive Zombie Egg', 'spawn_zombie_toxic': 'Toxic Zombie Egg', 'spawn_zombie_skeleton': 'Skeleton Zombie Egg', 'spawn_zombie_infector': 'Infector Zombie Egg', 'spawn_zombie_dark': 'Dark Zombie Egg', 'spawn_zombie_frozen': 'Frozen Zombie Egg', 'spawn_zombie_king': 'Zombie King Egg', 'spawn_plague_king': 'Plague King Egg', 'spawn_blood_zombie': 'Blood Zombie Egg', 'spawn_pig': 'Pig Spawn Egg', 'spawn_cow': 'Cow Spawn Egg', 'spawn_sheep': 'Sheep Spawn Egg', 'spawn_scorpion': 'Scorpion Spawn Egg', 'spawn_camel': 'Camel Spawn Egg', 'spawn_snake': 'Snake Spawn Egg', 'spawn_rabbit': 'Rabbit Spawn Egg', 'spawn_mutant_zombie': 'Mutant Zombie Spawn Egg', 'spawn_polar_bear': 'Polar Bear Spawn Egg', 'spawn_dog': 'Dog Spawn Egg',
         SLEEP_MENU: "Sleep Menu",
         WAKE_TIME: "Wake up at:",
         SLEEP: "Sleep",
@@ -602,9 +552,23 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         green_herb: "Green Herb",
         glass_bottle: "Glass Bottle",
         water_bottle: "Water Bottle",
+        lava_bucket: "Lava Bucket",
         antidote: "Antidote",
         dark_crystal: "Dark Crystal",
         plague_totem: "Plague Totem",
+        syringe: "Syringe",
+        bandage: "Bandage",
+        medicine: "Medicine",
+        potion_regen: "Regeneration Potion",
+        potion_resistance: "Resistance Potion",
+        potion_fire: "Fire Resistance Potion",
+        potion_cold: "Cold Resistance Potion",
+        potion_antizombie: "Anti-Zombie Potion",
+        bucket: "Bucket",
+        water_bucket: "Water Bucket",
+        fishing_rod: "Fishing Rod",
+        knife: "Knife",
+        apple: "Apple"
     },
     PT: {
         [BlockType.DIRT]: 'Terra', [BlockType.GRASS]: 'Grama', [BlockType.DARK_GRASS]: 'Grama Escura', [BlockType.STONE]: 'Pedra', [BlockType.DEEP_STONE]: 'Pedra Profunda',
@@ -619,7 +583,7 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         [BlockType.DOOR_IRON_BOTTOM_CLOSED]: 'Porta de Ferro', [BlockType.DOOR_STONE_BOTTOM_CLOSED]: 'Porta de Pedra',
         [BlockType.LAVA]: 'Lava',
         [BlockType.WALL_WOOD]: 'Parede de Madeira', [BlockType.DOOR_BOTTOM_CLOSED]: 'Porta', [BlockType.FARMLAND]: 'Terra Arada',
-        [BlockType.LEAVES]: 'Folhas', [BlockType.DARK_LEAVES]: 'Folhas Escuras', [BlockType.BUSH]: 'Arbusto', [BlockType.BEDROCK]: 'Rocha Matriz',
+        [BlockType.APPLE_LEAVES]: 'Folhas com Maçã', [BlockType.LEAVES]: 'Folhas', [BlockType.DARK_LEAVES]: 'Folhas Escuras', [BlockType.BUSH]: 'Arbusto', [BlockType.BEDROCK]: 'Rocha Matriz',
         [BlockType.BERRY_BUSH]: 'Arbusto de Cereja', [BlockType.SEED_BUSH]: 'Arbusto de Sementes',
         [BlockType.FLOWER_RED]: 'Flor Vermelha', [BlockType.FLOWER_GREEN]: 'Flor Verde', [BlockType.FLOWER_BLUE]: 'Flor Azul',
         [BlockType.URANIUM_BLOCK]: 'Bloco de Urânio', [BlockType.TITANIUM_BLOCK]: 'Bloco de Titânio', [BlockType.ARMOR_BENCH]: 'Bancada de Armaduras', [BlockType.LADDER]: 'Escada',
@@ -657,7 +621,7 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         'copper_helmet': 'Capacete de Cobre', 'copper_chestplate': 'Peitoral de Cobre', 'copper_leggings': 'Calça de Cobre', 'copper_boots': 'Botas de Cobre',
         'hazmat_helmet': 'Capacete de Radiação', 'hazmat_chestplate': 'Peitoral de Radiação', 'hazmat_leggings': 'Calça de Radiação', 'hazmat_boots': 'Botas de Radiação',
         'leather_helmet': 'Capacete de Couro', 'leather_chestplate': 'Peitoral de Couro', 'leather_leggings': 'Calça de Couro', 'leather_boots': 'Botas de Couro',
-        'spawn_zombie': 'Ovo de Zumbi', 'spawn_pig': 'Ovo de Porco', 'spawn_cow': 'Ovo de Vaca', 'spawn_sheep': 'Ovo de Ovelha', 'spawn_scorpion': 'Ovo de Escorpião', 'spawn_camel': 'Ovo de Camelo', 'spawn_snake': 'Ovo de Cobra', 'spawn_rabbit': 'Ovo de Coelho', 'spawn_mutant_zombie': 'Ovo de Zumbi Mutante', 'spawn_polar_bear': 'Ovo de Urso Polar', 'spawn_dog': 'Ovo de Cachorro',
+        'spawn_zombie': 'Ovo de Zumbi', 'spawn_zombie_runner': 'Ovo de Zumbi Corredor', 'spawn_zombie_tank': 'Ovo de Zumbi Tanque', 'spawn_zombie_explosive': 'Ovo de Zumbi Explosivo', 'spawn_zombie_toxic': 'Ovo de Zumbi Tóxico', 'spawn_zombie_skeleton': 'Ovo de Zumbi Esqueleto', 'spawn_zombie_infector': 'Ovo de Zumbi Infectador', 'spawn_zombie_dark': 'Ovo de Zumbi Sombrio', 'spawn_zombie_frozen': 'Ovo de Zumbi de Gelo', 'spawn_zombie_king': 'Ovo do Rei Zumbi', 'spawn_plague_king': 'Ovo do Rei da Praga', 'spawn_blood_zombie': 'Ovo de Zumbi de Sangue', 'spawn_pig': 'Ovo de Porco', 'spawn_cow': 'Ovo de Vaca', 'spawn_sheep': 'Ovo de Ovelha', 'spawn_scorpion': 'Ovo de Escorpião', 'spawn_camel': 'Ovo de Camelo', 'spawn_snake': 'Ovo de Cobra', 'spawn_rabbit': 'Ovo de Coelho', 'spawn_mutant_zombie': 'Ovo de Zumbi Mutante', 'spawn_polar_bear': 'Ovo de Urso Polar', 'spawn_dog': 'Ovo de Cachorro',
         SLEEP_MENU: "Menu de Sono",
         WAKE_TIME: "Acordar às:",
         SLEEP: "Dormir",
@@ -683,6 +647,16 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         antidote: "Antídoto",
         dark_crystal: "Cristal Sombrio",
         plague_totem: "Totem da Praga",
+        wood_knife: "Faca de Madeira",
+        stone_knife: "Faca de Pedra",
+        iron_knife: "Faca de Ferro",
+        gold_knife: "Faca de Ouro",
+        diamond_knife: "Faca de Diamante",
+        titanium_knife: "Faca de Titânio",
+        uranium_knife: "Faca de Urânio",
+        copper_knife: "Faca de Cobre",
+        knife: "Faca",
+        apple: "Maçã"
     },
     ES: {
         [BlockType.DIRT]: 'Tierra', [BlockType.GRASS]: 'Césped', [BlockType.DARK_GRASS]: 'Césped Oscuro', [BlockType.STONE]: 'Piedra', [BlockType.DEEP_STONE]: 'Pizarra Profunda',
