@@ -222,6 +222,8 @@ export const Inventory: React.FC<InventoryProps> = ({
         if (activeTab === 'MEDICAL') recipes = RECIPES.filter(r => r.station === BlockType.MEDICAL_BENCH);
     } else if (nearbyStation === BlockType.SCIENCE_BENCH) {
         if (activeTab === 'SCIENCE') recipes = RECIPES.filter(r => r.station === BlockType.SCIENCE_BENCH);
+        if (activeTab === 'MEDICAL') recipes = RECIPES.filter(r => r.station === BlockType.MEDICAL_BENCH);
+        if (activeTab === 'CRAFTING') recipes = RECIPES.filter(r => r.station === 'NONE'); // Allowed to hand-craft
     } else {
         // Hand Crafting
         if (activeTab === 'CRAFTING') recipes = RECIPES.filter(r => r.station === 'NONE');
@@ -311,7 +313,7 @@ export const Inventory: React.FC<InventoryProps> = ({
     );
   }
 
-  const isTable = nearbyStation === BlockType.CRAFTING_TABLE;
+  const isTable = nearbyStation === BlockType.CRAFTING_TABLE || nearbyStation === BlockType.MEDICAL_BENCH || nearbyStation === BlockType.SCIENCE_BENCH;
 
   return (
     <>
@@ -344,7 +346,7 @@ export const Inventory: React.FC<InventoryProps> = ({
                             )}
                           </>
                       )}
-                      {isTable && (
+                      {nearbyStation === BlockType.CRAFTING_TABLE && (
                           <>
                             <button onClick={() => setActiveTab('DECOR')} className={`px-3 py-1 rounded ${activeTab === 'DECOR' ? 'bg-orange-600' : 'bg-gray-700'}`}>{t.DECOR}</button>
                             <button onClick={() => setActiveTab('ITEMS')} className={`px-3 py-1 rounded ${activeTab === 'ITEMS' ? 'bg-teal-600' : 'bg-gray-700'}`}>{t.ITEMS}</button>
@@ -352,10 +354,13 @@ export const Inventory: React.FC<InventoryProps> = ({
                           </>
                       )}
                       {nearbyStation === BlockType.MEDICAL_BENCH && (
-                            <button onClick={() => setActiveTab('MEDICAL')} className={`px-3 py-1 rounded bg-red-500`}>{lang === 'PT' ? 'Médico' : 'Medical'}</button>
+                          <button onClick={() => setActiveTab('MEDICAL')} className={`px-3 py-1 rounded ${activeTab === 'MEDICAL' ? 'bg-red-500' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Médico' : 'Medical'}</button>
                       )}
                       {nearbyStation === BlockType.SCIENCE_BENCH && (
-                            <button onClick={() => setActiveTab('SCIENCE')} className={`px-3 py-1 rounded bg-teal-500`}>{lang === 'PT' ? 'Ciência' : 'Science'}</button>
+                          <>
+                              <button onClick={() => setActiveTab('SCIENCE')} className={`px-3 py-1 rounded ${activeTab === 'SCIENCE' ? 'bg-teal-500' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Ciência' : 'Science'}</button>
+                              <button onClick={() => setActiveTab('MEDICAL')} className={`px-3 py-1 rounded ${activeTab === 'MEDICAL' ? 'bg-red-500' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Médico' : 'Medical'}</button>
+                          </>
                       )}
                   </div>
                   
@@ -539,7 +544,7 @@ export const Inventory: React.FC<InventoryProps> = ({
                   </div>
               )}
 
-              {(activeTab === 'CRAFTING' || activeTab === 'DECOR' || activeTab === 'ITEMS' || activeTab === 'COMBAT') && (
+              {(activeTab === 'CRAFTING' || activeTab === 'DECOR' || activeTab === 'ITEMS' || activeTab === 'COMBAT' || activeTab === 'MEDICAL' || activeTab === 'SCIENCE') && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {availableRecipes.map((recipe, idx) => {
                           const craftable = canCraft(recipe);

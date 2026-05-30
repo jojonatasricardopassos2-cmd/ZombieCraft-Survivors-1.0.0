@@ -95,7 +95,9 @@ export enum BlockType {
   BUTTON_ON = 92,
   LEVER_ON = 93,
   LAMP_ON = 94,
-  APPLE_LEAVES = 95
+  APPLE_LEAVES = 95,
+  SLAB_WOOD = 96,
+  SLAB_STONE = 97
 }
 
 export enum ItemType {
@@ -225,6 +227,24 @@ export interface PlayerStats {
     metabolism: number; 
     endurance: number;  
     agility: number;    
+}
+
+export interface SavedAccount {
+  name: string;
+  password?: string;
+  skin?: {
+    skinColor: string;
+    hairColor: string;
+    eyeColor: string;
+    mustacheColor: string;
+    clothes: string; // "1" to "10"
+    pants: string; // "1" to "10"
+    shoes: string; // "1" to "10"
+    mouthType: string; // "none", "happy", "sad", "neutral"
+    hasMustache: boolean;
+    hairVariant: string; // "1" to "10"
+  };
+  friends?: string[];
 }
 
 export interface GameOptions {

@@ -133,6 +133,8 @@ export const BLOCK_COLORS: Record<number, string> = {
   [BlockType.LEVER]: '#795548',
   [BlockType.LAMP]: '#5c4b18', // Unpowered lamp
   [BlockType.CABLE_ON]: '#ff0000',
+  [BlockType.SLAB_WOOD]: '#8d6e63',
+  [BlockType.SLAB_STONE]: '#888c8d',
   [BlockType.BUTTON_ON]: '#757575',
   [BlockType.LEVER_ON]: '#795548',
   [BlockType.LAMP_ON]: '#fff59d',
@@ -226,7 +228,12 @@ export const ITEM_COLORS: Record<string, string> = {
     'arrow': '#cfd8dc',
     'bow': '#8d6e63',
     'crossbow': '#3e2723',
-    'uranium_totem': '#76ff03'
+    'uranium_totem': '#76ff03',
+    'tray': '#cfd8dc',
+    'medkit': '#e53935',
+    'antidote': '#00e676',
+    'bandage': '#eeeeee',
+    'syringe': '#4fc3f7'
 };
 export const DAMAGE_VALUES: Record<string, number> = { 'hand': 1, 'bow': 3, 'crossbow': 5 };
 
@@ -374,6 +381,13 @@ export const RECIPES: CraftingRecipe[] = [
   { result: { id: BlockType.MEDICAL_BENCH, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 10 }, { id: 'iron_ingot', count: 5 }, { id: 'gold_ingot', count: 2 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
   { result: { id: BlockType.CABLE, count: 4, type: ItemType.BLOCK }, ingredients: [{ id: 'copper_ingot', count: 2 }, { id: 'gold_ingot', count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
 
+  { result: { id: BlockType.SLAB_WOOD, count: 2, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.PLANKS, count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.SLAB_STONE, count: 2, type: ItemType.BLOCK }, ingredients: [{ id: BlockType.STONE, count: 1 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+
+  { result: { id: 'tray', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'iron_ingot', count: 2 }], station: BlockType.MEDICAL_BENCH, category: 'TOOLS' },
+  { result: { id: 'medkit', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'tray', count: 1 }, { id: 'bandage', count: 2 }, { id: 'syringe', count: 1 }], station: BlockType.MEDICAL_BENCH, category: 'TOOLS' },
+  { result: { id: 'antidote', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'glass_bottle', count: 1 }, { id: 'syringe', count: 1 }, { id: 'apple', count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
+
   { result: { id: 'potion_regen', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'glass_bottle', count: 1 }, { id: 'syringe', count: 2 }, { id: 'bandage', count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
   { result: { id: 'potion_resistance', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'glass_bottle', count: 1 }, { id: 'medicine', count: 1 }, { id: 'syringe', count: 2 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
   { result: { id: 'potion_fire', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'lava_bucket', count: 1 }, { id: 'glass_bottle', count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'TOOLS' },
@@ -500,6 +514,8 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         [BlockType.SNOWY_GRASS]: 'Snowy Grass', [BlockType.SNOW_BLOCK]: 'Snow Block', [BlockType.ICE]: 'Ice', [BlockType.SNOWY_LEAVES]: 'Snowy Leaves',
         [BlockType.SPIKE]: 'Spikes', [BlockType.MOSS]: 'Moss', [BlockType.VINES]: 'Vines', [BlockType.COBWEB]: 'Cobweb',
         [BlockType.MEDICAL_BENCH]: 'Medical Bench', [BlockType.SCIENCE_BENCH]: 'Science Bench', [BlockType.CABLE]: 'Cable', [BlockType.BUTTON]: 'Button', [BlockType.LEVER]: 'Lever', [BlockType.LAMP]: 'Lamp',
+        [BlockType.SLAB_WOOD]: 'Wood Slab', [BlockType.SLAB_STONE]: 'Stone Slab',
+        'tray': 'Tray', 'medkit': 'Medkit', 'antidote': 'Antidote',
         'syringe': 'Syringe', 'bandage': 'Bandage', 'medicine': 'Medicine',
         'potion_regen': 'Regen Potion', 'potion_resistance': 'Resistance Potion', 'potion_fire': 'Fire Resist',
         'potion_cold': 'Cold Resist Potion', 'potion_antizombie': 'Anti-Zombie',
@@ -591,6 +607,8 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         [BlockType.SNOWY_GRASS]: 'Grama com Neve', [BlockType.SNOW_BLOCK]: 'Bloco de Neve', [BlockType.ICE]: 'Gelo', [BlockType.SNOWY_LEAVES]: 'Folhas com Neve',
         [BlockType.SPIKE]: 'Espinhos', [BlockType.MOSS]: 'Musgo', [BlockType.VINES]: 'Linhas Verdes (Escada)', [BlockType.COBWEB]: 'Teia de Aranha',
         [BlockType.MEDICAL_BENCH]: 'Bancada Médica', [BlockType.SCIENCE_BENCH]: 'Bancada de Cientista', [BlockType.CABLE]: 'Cabo', [BlockType.BUTTON]: 'Botão', [BlockType.LEVER]: 'Alavanca', [BlockType.LAMP]: 'Lâmpada',
+        [BlockType.SLAB_WOOD]: 'Laje de Madeira', [BlockType.SLAB_STONE]: 'Laje de Pedra',
+        'tray': 'Bandeja', 'medkit': 'Medkit', 'antidote': 'Antídoto',
         'syringe': 'Seringa', 'bandage': 'Bandagem', 'medicine': 'Remédio',
         'potion_regen': 'Poção de Regeneração', 'potion_resistance': 'Poção de Resistência', 'potion_fire': 'Poção contra Fogo',
         'potion_cold': 'Poção contra Frio', 'potion_antizombie': 'Poção contra Zumbis',

@@ -261,6 +261,56 @@ export const GameCanvas: React.FC = () => {
 
     // --- HELPER FUNCTIONS ---
 
+    // Check for Boss Ritual
+    const checkRitual = (x: number, y: number) => {
+        if (!worldRef.current) return;
+        const w = worldRef.current;
+        const b = (dx: number, dy: number) => {
+            const by = y + dy;
+            const bx = x + dx;
+            if (by < 0 || by >= WORLD_HEIGHT || bx < 0 || bx >= WORLD_WIDTH) return BlockType.AIR;
+            return w.blocks[by * WORLD_WIDTH + bx];
+        };
+        
+        // Vertical stack: Uranium (y-2), Titanium (y-1), Titanium (y)
+        if (
+            (b(0, 0) === BlockType.TITANIUM_BLOCK && b(0, -1) === BlockType.TITANIUM_BLOCK && b(0, -2) === BlockType.URANIUM_BLOCK) ||
+            (b(0, 0) === BlockType.URANIUM_BLOCK && b(0, 1) === BlockType.TITANIUM_BLOCK && b(0, 2) === BlockType.TITANIUM_BLOCK) ||
+            (b(0, 0) === BlockType.TITANIUM_BLOCK && ((b(0, -1) === BlockType.URANIUM_BLOCK && b(0, 1) === BlockType.TITANIUM_BLOCK) || (b(0, 1) === BlockType.URANIUM_BLOCK && b(0, -1) === BlockType.TITANIUM_BLOCK)))
+        ) {
+            let baseY = y;
+            if (b(0, 1) === BlockType.TITANIUM_BLOCK) baseY = y + 1;
+            if (b(0, 2) === BlockType.TITANIUM_BLOCK) baseY = y + 2;
+
+            setBlockAt(x, baseY, BlockType.AIR, true);
+            setBlockAt(x, baseY - 1, BlockType.AIR, true);
+            setBlockAt(x, baseY - 2, BlockType.AIR, true);
+
+            // Spawn boss slightly above ground
+            let spawnY = baseY - 2;
+            while(spawnY > 0 && w.blocks[(spawnY) * WORLD_WIDTH + x] !== BlockType.AIR) {
+                spawnY--;
+            }
+
+            entitiesRef.current.push({
+                id: Date.now() + Math.random(),
+                type: 'ZOMBIE_KING',
+                x: x * BLOCK_SIZE,
+                y: (spawnY - 5) * BLOCK_SIZE, // Spawns above
+                width: 64,
+                height: 128,
+                vx: 0,
+                vy: -5,
+                health: 500,
+                maxHealth: 500,
+                attackCooldown: 0,
+                facingRight: true
+            });
+            audio.playExplosion();
+            addNotification('O REI ZUMBI DESPERTOU!', 'error');
+        }
+    };
+
     const canDamageBlock = (block: BlockType, tool: ItemStack | null): boolean => {
         const handBreakable = new Set([
             BlockType.AIR, BlockType.WATER,
@@ -489,6 +539,11 @@ export const GameCanvas: React.FC = () => {
         if (worldRef.current.blocks[y * WORLD_WIDTH + x] === type) return;
 
         worldRef.current.blocks[y * WORLD_WIDTH + x] = type;
+        
+        if (type === BlockType.URANIUM_BLOCK || type === BlockType.TITANIUM_BLOCK) {
+            checkRitual(x, y);
+        }
+        
         updateRedstone(worldRef.current);
         updateLighting(worldRef.current, timeRef.current);
         
@@ -540,7 +595,18 @@ export const GameCanvas: React.FC = () => {
                     }
                 }
 
-                if (!NON_COLLIDABLE_BLOCKS.has(b)) return true;
+                if (!NON_COLLIDABLE_BLOCKS.has(b)) {
+                    if (b === BlockType.SLAB_WOOD || b === BlockType.SLAB_STONE) {
+                        // Top half is empty, bottom half is solid. Y increases downwards.
+                        const blockTopHalfEnd = y * BLOCK_SIZE + 16;
+                        // Collision only if entity overlaps with the bottom half
+                        if (ent.y + ent.height > blockTopHalfEnd) {
+                            return true;
+                        }
+                    } else {
+                        return true;
+                    }
+                }
             }
         }
         return false;
@@ -2370,6 +2436,20 @@ export const GameCanvas: React.FC = () => {
             const decayInterval = (HUNGER_DECAY_TICK + (playerStats.metabolism * 1000)) * (options.difficulty === 'EASY' ? 1.5 : 1); 
             if (!['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL') && timeRef.current % decayInterval < 1 && hungerRef.current > 0) hungerRef.current = Math.max(0, hungerRef.current - 0.5);
             
+            // Natural health regeneration if not dead
+            if (player.health > 0 && player.health < player.maxHealth) {
+                // Natural regeneration
+                if (timeRef.current % 120 === 0) {
+                    player.health = Math.min(player.maxHealth, player.health + 0.5);
+                }
+                // Potion regeneration (faster)
+                if (activePotionsRef.current['potion_regen'] && activePotionsRef.current['potion_regen'] > Date.now()) {
+                    if (timeRef.current % 30 === 0) {
+                        player.health = Math.min(player.maxHealth, player.health + 1);
+                    }
+                }
+            }
+            
             // --- TEMPERATURE MECHANIC ---
             if (timeRef.current % 10 === 0 && !['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) {
                 const px = Math.floor(player.x / BLOCK_SIZE);
@@ -2826,16 +2906,19 @@ export const GameCanvas: React.FC = () => {
                             } else if (idStr === 'syringe' || idStr === 'bandage') {
                                 player.health = Math.min(player.maxHealth, player.health + 4);
                             } else if (idStr.startsWith('potion_')) {
-                                const durationMs = idStr === 'potion_antizombie' ? 30000 : 180000;
+                                const durationMs = 60000;
                                 activePotionsRef.current[idStr] = Date.now() + durationMs;
+                                hungerRef.current = 10;
                             }
 
-                            const foodVal = FOOD_VALUES[idStr] || 1;
-                            if (hungerRef.current < 10) {
-                                hungerRef.current = Math.min(10, hungerRef.current + foodVal);
-                            } else {
-                                // Eat for health if full
-                                player.health = Math.min(player.maxHealth, player.health + foodVal / 2);
+                            const foodVal = FOOD_VALUES[idStr] || 0;
+                            if (foodVal > 0) {
+                                if (hungerRef.current < 10) {
+                                    hungerRef.current = Math.min(10, hungerRef.current + foodVal);
+                                } else {
+                                    // Eat for health if full
+                                    player.health = Math.min(player.maxHealth, player.health + foodVal / 2);
+                                }
                             }
                             
                             setInventory(prev => {
@@ -2975,7 +3058,9 @@ export const GameCanvas: React.FC = () => {
                     if (ent.projectileState === 'FLYING') { 
                         ent.vy += 0.2; ent.x += ent.vx; ent.y += ent.vy; ent.rotation = Math.atan2(ent.vy, ent.vx); 
                         if (ent.returnTime && ent.creationTime) { if (Date.now() - ent.creationTime > ent.returnTime) { ent.projectileState = 'RETURNING'; } }
-                        let projectileDestroyed = false; for (let j = entitiesRef.current.length - 1; j >= 0; j--) { const mob = entitiesRef.current[j]; if (mob.type === 'PLAYER' || mob.type === 'DROP' || mob.type === 'PROJECTILE') continue; if (ent.x < mob.x + mob.width && ent.x + ent.width > mob.x && ent.y < mob.y + mob.height && ent.y + ent.height > mob.y) { const heldItemId = ent.itemId ? ent.itemId.toString() : 'wood_spear'; const isArrow = heldItemId === 'arrow'; const isRadioactive = heldItemId === 'uranium'; const damage = isRadioactive ? 5 : (isArrow ? 4 : (DAMAGE_VALUES[heldItemId] || 1)); mob.health -= damage; mob.lastDamageTime = Date.now(); if (mob.health <= 0) { gainXP(XP_PER_MOB); entitiesRef.current.splice(j, 1); if (mob.type === 'COW') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 1); } if (mob.type === 'PIG') spawnDrop(mob.x, mob.y, 'raw_porkchop', 2); if (mob.type === 'SHEEP') spawnDrop(mob.x, mob.y, BlockType.WOOL, 1); if (mob.type === 'ZOMBIE') spawnDrop(mob.x, mob.y, 'raw_beef', 1); if (mob.type === 'MUTANT_ZOMBIE') { spawnDrop(mob.x, mob.y, 'uranium_totem', 1); spawnDrop(mob.x, mob.y, 'uranium', 5); } } if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(!isArrow && !isRadioactive) spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); } projectileDestroyed = true; break; } if (ent.itemId === 'uranium' || ent.itemId === 'spike') { const p = playerRef.current; if (ent.x < p.x + p.width && ent.x + ent.width > p.x && ent.y < p.y + p.height && ent.y + ent.height > p.y) { p.health -= (ent.itemId === 'spike' ? Math.floor(ent.vy * 1.5) + 3 : 5); audio.playHit(); entitiesRef.current.splice(i, 1); projectileDestroyed = true; break; } } } if (projectileDestroyed) continue; 
+                        let projectileDestroyed = false; for (let j = entitiesRef.current.length - 1; j >= 0; j--) { const mob = entitiesRef.current[j]; if (mob.type === 'PLAYER' || mob.type === 'DROP' || mob.type === 'PROJECTILE') continue; if (ent.x < mob.x + mob.width && ent.x + ent.width > mob.x && ent.y < mob.y + mob.height && ent.y + ent.height > mob.y) { const heldItemId = ent.itemId ? ent.itemId.toString() : 'wood_spear'; const isArrow = heldItemId === 'arrow'; const isRadioactive = heldItemId === 'uranium'; const damage = isRadioactive ? 5 : (isArrow ? 4 : (DAMAGE_VALUES[heldItemId] || 1)); mob.health -= damage; mob.lastDamageTime = Date.now(); if (mob.health <= 0) { gainXP(XP_PER_MOB); entitiesRef.current.splice(j, 1); if (mob.type === 'COW') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 1); } if (mob.type === 'PIG') spawnDrop(mob.x, mob.y, 'raw_porkchop', 2); if (mob.type === 'SHEEP') spawnDrop(mob.x, mob.y, BlockType.WOOL, 1); if (mob.type === 'ZOMBIE') spawnDrop(mob.x, mob.y, 'raw_beef', 1); if (mob.type === 'MUTANT_ZOMBIE') { spawnDrop(mob.x, mob.y, 'uranium_totem', 1); spawnDrop(mob.x, mob.y, 'uranium', 5); } } if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(!isArrow && !isRadioactive) spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); } projectileDestroyed = true; break; } } 
+                        if (!projectileDestroyed && (ent.itemId === 'uranium' || ent.itemId === 'spike' || ent.itemId === 'arrow')) { const p = playerRef.current; if (ent.x < p.x + p.width && ent.x + ent.width > p.x && ent.y < p.y + p.height && ent.y + ent.height > p.y) { p.health -= (ent.itemId === 'spike' ? 8 : ent.itemId === 'arrow' ? 5 : 5); audio.playHit(); entitiesRef.current.splice(i, 1); projectileDestroyed = true; } }
+                        if (projectileDestroyed) continue; 
                         if (checkCollision(ent, world)) { if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(ent.itemId !== 'arrow' && ent.itemId !== 'uranium' && ent.itemId !== 'spike') spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); continue; } } 
                     } else if (ent.projectileState === 'RETURNING') { 
                         const dx = player.x - ent.x; const dy = player.y - ent.y; const dist = Math.sqrt(dx*dx + dy*dy); const speed = 15; ent.vx = (dx / dist) * speed; ent.vy = (dy / dist) * speed; ent.x += ent.vx; ent.y += ent.vy; ent.rotation = Math.atan2(ent.vy, ent.vx) + Math.PI; 
@@ -3034,8 +3119,44 @@ export const GameCanvas: React.FC = () => {
                             }
                         }
                     } else if (ent.type === 'ZOMBIE_KING') {
-                        if (Math.abs(distToPlayer) < 600 && distY < 300) { 
-                            ent.facingRight = distToPlayer > 0; ent.vx = ent.facingRight ? 2 : -2; if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; 
+                        if (Math.abs(distToPlayer) < 800 && distY < 400) { 
+                            ent.facingRight = distToPlayer > 0;
+                            
+                            if (Math.abs(distToPlayer) > 200) {
+                                ent.vx = ent.facingRight ? 2 : -2; 
+                                if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; 
+                            } else {
+                                ent.vx = ent.facingRight ? -1 : 1; // back away a bit
+                            }
+                            
+                            // Shoot projectiles
+                            if (Math.random() < 0.03 && (ent.attackCooldown || 0) <= 0) {
+                                const angle = Math.atan2((targetY + 10) - ent.y, (targetX + 10) - ent.x); 
+                                entitiesRef.current.push({ id: generateEntityId(), type: 'PROJECTILE', x: ent.x + ent.width/2, y: ent.y + ent.height/3, width: 8, height: 8, vx: Math.cos(angle) * 12, vy: Math.sin(angle) * 12, grounded: false, health: 1, maxHealth: 1, facingRight: ent.facingRight, itemId: 'spike', projectileState: 'FLYING', creationTime: Date.now() });
+                                ent.attackCooldown = 80;
+                            }
+                            
+                            // Shockwave attack / Break blocks
+                            if (Math.random() < 0.01 && ent.grounded) {
+                                ent.vy = -10; // Jump shockwave
+                                const eX = Math.floor(ent.x / BLOCK_SIZE);
+                                const eY = Math.floor((ent.y + ent.height) / BLOCK_SIZE);
+                                for(let by = eY - 2; by <= eY + 2; by++){
+                                    for(let bx = eX - 3; bx <= eX + 3; bx++){
+                                        if (Math.abs(by - eY) + Math.abs(bx - eX) <= 3) { 
+                                            if (by >= 0 && by < WORLD_HEIGHT && bx >= 0 && bx < WORLD_WIDTH) {
+                                                const b = worldRef.current!.blocks[by * WORLD_WIDTH + bx];
+                                                if (b !== BlockType.AIR && b !== BlockType.BEDROCK) {
+                                                    setBlockAt(bx, by, BlockType.AIR, true);
+                                                    spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, b, 1);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                audio.playExplosion();
+                            }
+
                             if (Math.random() < 0.01) { 
                                 spawnMob('ZOMBIE', ent.x, ent.y - 20);
                             } 
@@ -3047,6 +3168,12 @@ export const GameCanvas: React.FC = () => {
                                 ent.vx = ent.facingRight ? 2 : -2; 
                             } else if (Math.abs(distToPlayer) < 150) {
                                 ent.vx = ent.facingRight ? -2 : 2; 
+                                // Shoot even while backing away
+                                if (Math.random() < 0.05 && (ent.attackCooldown || 0) <= 0) {
+                                    const angle = Math.atan2((targetY + 20) - ent.y, (targetX + 10) - ent.x); 
+                                    entitiesRef.current.push({ id: generateEntityId(), type: 'PROJECTILE', x: ent.x + ent.width/2, y: ent.y + ent.height/2, width: 12, height: 4, vx: Math.cos(angle) * 10, vy: Math.sin(angle) * 10, grounded: false, health: 1, maxHealth: 1, facingRight: ent.facingRight, itemId: 'arrow', projectileState: 'FLYING', creationTime: Date.now() });
+                                    ent.attackCooldown = 180;
+                                }
                             } else {
                                 ent.vx = 0; // Stop to shoot
                                 if (Math.random() < 0.05 && (ent.attackCooldown || 0) <= 0) {
@@ -4391,6 +4518,12 @@ export const GameCanvas: React.FC = () => {
                             
                             ctx.restore();
                         }
+                        else if (block === BlockType.SLAB_WOOD || block === BlockType.SLAB_STONE) {
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 16);
+                            if (block === BlockType.SLAB_WOOD) {
+                                ctx.fillStyle = 'rgba(0,0,0,0.1)'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 2);
+                            }
+                        }
                         else {
                             ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
                         }
@@ -4430,14 +4563,84 @@ export const GameCanvas: React.FC = () => {
         const isMoving = Math.abs(player.vx) > 0.1;
         const walkCycle = isMoving ? Math.sin(Date.now() / 100) * 5 : 0;
 
+        // Custom Skin Data (Fallback to default)
+        const accsStr = localStorage.getItem('zombiecraft_accounts');
+        const usrName = localStorage.getItem('zombiecraft_current_user');
+        let cSkin = null;
+        if (accsStr && usrName) {
+            const accs = JSON.parse(accsStr);
+            const usr = accs.find((a: any) => a.name === usrName);
+            if (usr && usr.skin) cSkin = usr.skin;
+        }
+
+        const skinColor = cSkin?.skinColor || '#ffcc80';
+        
+        // Clothes (1-10)
+        let shirtColor = skinColor;
+        switch(cSkin?.clothes) {
+            case '2': shirtColor = '#222'; break; // terno
+            case '3': shirtColor = '#1e3a8a'; break; // azul
+            case '4': shirtColor = '#b91c1c'; break; // vermelho
+            case '5': shirtColor = '#9ca3af'; break; // cinza
+            case '6': shirtColor = '#15803d'; break; // verde
+            case '7': shirtColor = '#ffffff'; break; // regata branca
+            case '8': shirtColor = '#451a03'; break; // jaqueta 
+            case '9': shirtColor = '#f59e0b'; break; // amarela/xadrez
+            case '10': shirtColor = '#facc15'; break; // amarela
+        }
+        
+        // Pants (1-10)
+        let pantsColor = skinColor;
+        switch(cSkin?.pants) {
+            case '2': pantsColor = '#222'; break; // terno
+            case '3': pantsColor = '#1d4ed8'; break; // jeans azul
+            case '4': pantsColor = '#1f2937'; break; // jeans preto
+            case '5': pantsColor = '#ffed4a'; break; // shorts
+            case '6': pantsColor = '#6b7280'; break; // moletom
+            case '7': pantsColor = '#a16207'; break; // cargo
+            case '8': pantsColor = '#78350f'; break; // couro
+            case '9': pantsColor = '#4d7c0f'; break; // camuflado
+            case '10': pantsColor = '#ef4444'; break; // shorts vermelho
+        }
+
+        const isBareChest = !cSkin?.clothes || cSkin?.clothes === '1';
+        const isBarePants = !cSkin?.pants || cSkin?.pants === '1';
+
         // Legs
-        ctx.fillStyle = '#1a237e'; // Pants
+        ctx.fillStyle = isBarePants ? skinColor : pantsColor;
         ctx.fillRect(-6 + walkCycle, 12, 6, 16); // Back Leg
         ctx.fillRect(-6 - walkCycle, 12, 6, 16); // Front Leg
+        
+        // Shoes (1-10)
+        if (cSkin?.shoes && cSkin?.shoes !== '1') {
+            let shoeCol = '#111';
+            switch(cSkin.shoes) {
+                case '2': shoeCol = '#000'; break;
+                case '3': shoeCol = '#fff'; break;
+                case '4': shoeCol = '#3f3f46'; break;
+                case '5': shoeCol = '#dc2626'; break;
+                case '6': shoeCol = '#78350f'; break; // sandálias/sapatilha
+                case '7': shoeCol = '#8b5cf6'; break;
+                case '8': shoeCol = '#92400e'; break;
+                case '9': shoeCol = '#fcd34d'; break;
+                case '10': shoeCol = '#c2410c'; break;
+            }
+            ctx.fillStyle = shoeCol;
+            ctx.fillRect(-8 + walkCycle, 24, 10, 4);
+            ctx.fillRect(-8 - walkCycle, 24, 10, 4);
+        }
 
         // Body
-        ctx.fillStyle = 'blue'; // Shirt
+        ctx.fillStyle = shirtColor; 
         ctx.fillRect(-10, -16, 20, 28);
+        if (isBareChest) {
+            ctx.fillStyle = '#ccc';
+            ctx.fillRect(-10, 8, 20, 4); // Underwear band
+        } else if (cSkin?.clothes === '2') { // terno
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(-2, -16, 4, 28); // white shirt middle
+        }
+
 
         // Armor: Leggings
         if (equipment.leggings) {
@@ -4478,14 +4681,64 @@ export const GameCanvas: React.FC = () => {
         ctx.fillStyle = '#ffcc80'; // Skin
         ctx.fillRect(-8, -28, 16, 16);
         
-        // Eyes (Look at mouse)
-        const lookUp = worldMouseY < player.y;
-        const eyeY = -24 + (lookUp ? -2 : 2);
+        // Hair
+        if (cSkin?.hairVariant === 'normal' || !cSkin?.hairVariant) {
+             ctx.fillStyle = cSkin?.hairColor || '#ff9800';
+             ctx.fillRect(-8, -30, 16, 4); // Hair top
+             ctx.fillRect(-8, -26, 4, 4); // Hair side
+        } else if (cSkin?.hairVariant === 'calvo') {
+             // Bald is no hair
+        }
+
+        // Mustache
+        if (cSkin?.hasMustache) {
+             ctx.fillStyle = cSkin?.mustacheColor || '#111';
+             ctx.fillRect(-5, -16, 10, 2);
+        }
+
+        // Mouth (none, neutral, happy, sad, surprised)
+        const mouthType = cSkin?.mouthType || 'neutral';
+        if (mouthType !== 'none') {
+            ctx.fillStyle = '#6a1b9a'; // Inside mouth color
+            if (mouthType === 'neutral') ctx.fillRect(-3, -13, 6, 1);
+            else if (mouthType === 'happy') {
+                ctx.fillRect(-3, -13, 6, 1);
+                ctx.fillRect(-4, -14, 1, 2);
+                ctx.fillRect(3, -14, 1, 2);
+            }
+            else if (mouthType === 'sad') {
+                ctx.fillRect(-3, -14, 6, 1);
+                ctx.fillRect(-4, -13, 1, 2);
+                ctx.fillRect(3, -13, 1, 2);
+            }
+            else if (mouthType === 'surprised') {
+                ctx.fillRect(-2, -14, 4, 3);
+            }
+        }
+
+        // Eyes (Look at mouse/cursor)
+        // Ensure eyes correctly track direction relative to facingRight
+        const eyeXOffset = player.facingRight ? 4 : -4;
+        
+        // Calculate vertical and horizontal eye track direction based on mouse
+        const lookUp = worldMouseY < player.y - 16;
+        const lookDown = worldMouseY > player.y + 16;
+        const eyeY = -24 + (lookDown ? 2 : lookUp ? -2 : 0);
         
         ctx.fillStyle = 'white';
-        ctx.fillRect(2, eyeY, 4, 4);
-        ctx.fillStyle = 'black';
-        ctx.fillRect(4, eyeY, 2, 2);
+        ctx.fillRect(-2 + eyeXOffset, eyeY, 4, 4);
+        
+        // Pupil
+        ctx.fillStyle = cSkin?.eyeColor || 'black';
+        
+        let pupilXDiff = 0;
+        if (player.facingRight) {
+             pupilXDiff = worldMouseX > player.x + 16 ? 1 : (worldMouseX < player.x - 16 ? -1 : 0);
+        } else {
+             pupilXDiff = worldMouseX < player.x - 16 ? -1 : (worldMouseX > player.x + 16 ? 1 : 0);
+        }
+
+        ctx.fillRect(-1 + eyeXOffset + pupilXDiff, eyeY + 1, 2, 2);
 
         // Armor: Chestplate
         if (equipment.chestplate) { 
@@ -4572,8 +4825,22 @@ export const GameCanvas: React.FC = () => {
         ctx.rotate(angle);
         
         // Arm
-        ctx.fillStyle = 'blue'; 
-        ctx.fillRect(0 + stabOffset, -2, 12, 4);
+        // Draw sleeve color
+        if (isBareChest) {
+            ctx.fillStyle = skinColor;
+            ctx.fillRect(0 + stabOffset, -2, 12, 4);
+        } else {
+            ctx.fillStyle = shirtColor; 
+            ctx.fillRect(0 + stabOffset, -2, 8, 4); // Sleeve
+            ctx.fillStyle = skinColor; 
+            ctx.fillRect(8 + stabOffset, -2, 4, 4); // Hand
+            if (cSkin?.clothes === '2') {
+                // Terno detail
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(7 + stabOffset, -2, 1, 4); 
+            }
+        }
+        
         if (equipment.chestplate) {
             let col = '#cfd8dc'; const id = equipment.chestplate.id.toString(); 
             if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
@@ -4744,6 +5011,18 @@ export const GameCanvas: React.FC = () => {
                 if (ent.itemId === 'uranium') { ctx.fillStyle = '#76ff03'; ctx.beginPath(); ctx.arc(ent.x + ent.width/2, ent.y + ent.height/2, 6, 0, Math.PI * 2); ctx.fill(); } 
                 else if (ent.itemId === 'uranium_totem') { ctx.fillStyle = Math.random() < 0.5 ? '#76ff03' : '#ffd600'; ctx.beginPath(); ctx.arc(ent.x + ent.width/2, ent.y + ent.height/2, 4, 0, Math.PI * 2); ctx.fill(); } 
                 else if (ent.itemId === 'spike') { ctx.fillStyle = '#5c5c5c'; ctx.beginPath(); ctx.moveTo(ent.x + ent.width/2, ent.y + ent.height); ctx.lineTo(ent.x, ent.y); ctx.lineTo(ent.x + ent.width, ent.y); ctx.fill(); } 
+                else if (ent.itemId === 'arrow') { 
+                    ctx.save();
+                    ctx.translate(ent.x + ent.width/2, ent.y + ent.height/2);
+                    ctx.rotate(ent.rotation || 0);
+                    ctx.fillStyle = '#8d6e63'; // wood shaft
+                    ctx.fillRect(-8, -1, 12, 2);
+                    ctx.fillStyle = '#cfd8dc'; // iron head
+                    ctx.beginPath(); ctx.moveTo(4, -2); ctx.lineTo(8, 0); ctx.lineTo(4, 2); ctx.fill();
+                    ctx.fillStyle = '#fff'; // feathers
+                    ctx.fillRect(-10, -2, 2, 4);
+                    ctx.restore();
+                }
                 else { drawMob(ctx, ent); }
             } else { drawMob(ctx, ent); } 
         });

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { TRANSLATIONS } from '../constants.ts';
-import { SavedWorld, GameOptions } from '../types.ts';
+import { SavedWorld, GameOptions, SavedAccount } from '../types.ts';
 import { loadAllSavesMetadata, loadWorldFromDB, saveWorldToDB, deleteWorldFromDB } from '../utils/storage.ts';
 import { audio } from '../utils/audio.ts';
 import { TouchConfigUI } from './UI/TouchConfigUI.tsx';
@@ -13,16 +13,25 @@ interface MainMenuProps {
   setLang: (l: 'EN' | 'PT' | 'ES' | 'JA') => void;
 }
 
-type MenuState = 'MAIN' | 'SELECT_WORLD' | 'CREATE_WORLD' | 'EDIT_WORLD' | 'OPTIONS' | 'ACHIEVEMENTS' | 'ONLINE_LOBBY' | 'CREATE_ROOM' | 'JOIN_ROOM';
+type MenuState = 'MAIN' | 'SELECT_WORLD' | 'CREATE_WORLD' | 'EDIT_WORLD' | 'OPTIONS' | 'ACHIEVEMENTS' | 'ONLINE_LOBBY' | 'CREATE_ROOM' | 'JOIN_ROOM' | 'LOGIN' | 'FRIENDS' | 'EDIT_SKIN';
 
 export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }) => {
-  const [menuState, setMenuState] = useState<MenuState>('MAIN');
+  const [menuState, setMenuState] = useState<MenuState>('LOGIN');
   const [showTouchConfig, setShowTouchConfig] = useState(false);
   const [saves, setSaves] = useState<SavedWorld[]>([]);
   const [selectedWorldId, setSelectedWorldId] = useState<string | null>(null);
+
+  // Accounts
+  const [accounts, setAccounts] = useState<SavedAccount[]>([]);
+  const [currentUser, setCurrentUser] = useState<SavedAccount | null>(null);
   
+  // Login fields
+  const [loginName, setLoginName] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+
   // Options
-  const [optionsTab, setOptionsTab] = useState<'GAME' | 'VIDEO' | 'AUDIO' | 'LANGUAGE' | 'TOUCH'>('GAME');
+  const [optionsTab, setOptionsTab] = useState<'GAME' | 'VIDEO' | 'AUDIO' | 'LANGUAGE' | 'TOUCH' | 'ACCOUNTS'>('GAME');
   const [showCoordinates, setShowCoordinates] = useState(false);
   const [showMinimap, setShowMinimap] = useState(true);
   const [adminMode, setAdminMode] = useState(false);
@@ -50,6 +59,26 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
   const t = TRANSLATIONS[lang];
 
   useEffect(() => {
+      // Load Accounts
+      const savedAccs = localStorage.getItem('zombiecraft_accounts');
+      if (savedAccs) {
+          try {
+              const accs: SavedAccount[] = JSON.parse(savedAccs);
+              setAccounts(accs);
+              const currUser = localStorage.getItem('zombiecraft_current_user');
+              if (currUser) {
+                  const acc = accs.find(a => a.name === currUser);
+                  if (acc) {
+                      setCurrentUser(acc);
+                      setMenuState('MAIN');
+                  }
+              }
+          } catch (e) { console.error(e); }
+      }
+      
+      const skipped = sessionStorage.getItem('zombiecraft_skipped_login');
+      if (skipped) setMenuState('MAIN');
+
       // Check for mobile device initially
       if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
           setIsMobile(true);
@@ -84,7 +113,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
       }
 
       migrate();
-  }, [menuState]);
+  }, []);
 
   const handleCreateWorld = () => {
       const seed = newWorldSeed.trim() === '' ? Math.floor(Math.random() * 999999) : parseInt(newWorldSeed) || 0;
@@ -208,6 +237,47 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
       });
   };
 
+  const handleLoginSubmit = () => {
+      if (!loginName) return setLoginError('Nome obrigatório!');
+      let updatedAccs = [...accounts];
+      let acc = updatedAccs.find(a => a.name === loginName);
+      if (acc) {
+          if (acc.password !== loginPassword) {
+              return setLoginError('Senha incorreta!');
+          }
+      } else {
+          // Create new account
+          acc = { name: loginName, password: loginPassword, friends: [], skin: { hairColor: '#ffcc00', eyeColor: '#000000', clothes: '1', pants: '1', shoes: '1', bodySize: 'normal', hasMustache: false, eyeType: 'normal', hairVariant: 'normal' } };
+          updatedAccs.push(acc);
+          setAccounts(updatedAccs);
+          localStorage.setItem('zombiecraft_accounts', JSON.stringify(updatedAccs));
+      }
+      setCurrentUser(acc);
+      localStorage.setItem('zombiecraft_current_user', acc.name);
+      sessionStorage.removeItem('zombiecraft_skipped_login');
+      setMenuState('MAIN');
+      setLoginError('');
+  };
+
+  const renderLogin = () => (
+      <div className="absolute inset-0 bg-[#2b3a32] flex items-center justify-center z-50">
+          <div className="bg-gray-900 border-4 border-gray-600 p-8 flex flex-col gap-4 w-96 shadow-2xl rounded text-white text-center">
+              <h1 className="text-4xl font-bold text-red-500 mb-2">Criar Conta</h1>
+              <input type="text" placeholder="Nome" value={loginName} onChange={e => setLoginName(e.target.value)} className="bg-black/50 border border-gray-500 p-3 text-xl" />
+              <input type="password" placeholder="Senha" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="bg-black/50 border border-gray-500 p-3 text-xl" />
+              {loginError && <div className="text-red-400 font-bold">{loginError}</div>}
+              
+              <button onClick={handleLoginSubmit} className="bg-green-700 hover:bg-green-600 p-4 font-bold text-xl rounded mt-2 border-2 border-green-500 shadow-md">
+                  Entrar / Criar
+              </button>
+              
+              <button onClick={() => { sessionStorage.setItem('zombiecraft_skipped_login', 'true'); setCurrentUser(null); setMenuState('MAIN'); }} className="bg-gray-700 hover:bg-gray-600 p-2 text-sm rounded mt-4 border border-gray-500">
+                  Pular (Sem Online/Mods/Skins)
+              </button>
+          </div>
+      </div>
+  );
+
   const renderMain = () => (
     <div className="flex flex-col items-start gap-4 w-full pl-10">
         <style>{`
@@ -230,8 +300,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
           {t.PLAY}
         </button>
         <button 
-          onClick={() => setMenuState('ONLINE_LOBBY')}
-          className="text-black font-bold text-4xl hover-bounce text-left"
+          onClick={() => { if (currentUser) setMenuState('ONLINE_LOBBY'); else alert('Faça login (Criar Conta) para acessar o Modo Online!'); }}
+          className={`text-black font-bold text-4xl hover-bounce text-left ${!currentUser ? 'opacity-50 line-through' : ''}`}
         >
           {t.ONLINE_MODE}
         </button>
@@ -693,11 +763,38 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
              <button onClick={() => setOptionsTab('VIDEO')} className={`flex-1 p-2 border-r border-gray-600 ${optionsTab === 'VIDEO' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Video</button>
              <button onClick={() => setOptionsTab('AUDIO')} className={`flex-1 p-2 border-r border-gray-600 ${optionsTab === 'AUDIO' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Audio</button>
              <button onClick={() => setOptionsTab('LANGUAGE')} className={`flex-1 p-2 border-r border-gray-600 ${optionsTab === 'LANGUAGE' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Language</button>
-             <button onClick={() => setOptionsTab('TOUCH')} className={`flex-1 p-2 ${optionsTab === 'TOUCH' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Touch</button>
+             <button onClick={() => setOptionsTab('TOUCH')} className={`flex-1 p-2 border-r border-gray-600 ${optionsTab === 'TOUCH' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Touch</button>
+             <button onClick={() => setOptionsTab('ACCOUNTS')} className={`flex-1 p-2 ${optionsTab === 'ACCOUNTS' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Contas</button>
          </div>
 
          {/* Content */}
          <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-4">
+             {optionsTab === 'ACCOUNTS' && (
+                 <>
+                     <h2 className="text-xl font-bold text-white mb-2">Sua Conta</h2>
+                     {currentUser ? (
+                         <div className="bg-gray-700 p-4 border border-gray-500 rounded flex justify-between items-center text-white">
+                             <span className="font-bold text-lg">{currentUser.name}</span>
+                             <button onClick={() => { setCurrentUser(null); localStorage.removeItem('zombiecraft_current_user'); sessionStorage.removeItem('zombiecraft_skipped_login'); setMenuState('LOGIN'); }} className="bg-red-700 p-2 font-bold hover:bg-red-600">Sair da Conta</button>
+                         </div>
+                     ) : (
+                         <div className="text-gray-400">Você não está logado.</div>
+                     )}
+
+                     <h2 className="text-xl font-bold text-white mb-2 mt-4">Outras Contas ({accounts.length})</h2>
+                     <div className="flex flex-col gap-2">
+                         {accounts.map(acc => (
+                             <div key={acc.name} className="bg-gray-800 p-4 border border-gray-600 flex justify-between items-center text-white">
+                                 <span>{acc.name}</span>
+                                 {currentUser?.name !== acc.name && (
+                                     <button onClick={() => { setCurrentUser(acc); localStorage.setItem('zombiecraft_current_user', acc.name); setMenuState('MAIN'); }} className="bg-green-700 p-2 font-bold hover:bg-green-600">Entrar</button>
+                                 )}
+                             </div>
+                         ))}
+                     </div>
+                     <button onClick={() => { setCurrentUser(null); localStorage.removeItem('zombiecraft_current_user'); sessionStorage.removeItem('zombiecraft_skipped_login'); setMenuState('LOGIN'); }} className="bg-blue-600 hover:bg-blue-500 text-white p-3 font-bold mt-4">Criar uma Nova Conta / Login</button>
+                 </>
+             )}
              {optionsTab === 'GAME' && (
                  <>
                      <button onClick={() => setShowCoordinates(!showCoordinates)} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
@@ -811,6 +908,179 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
       </div>
   );
 
+  const [friendSearch, setFriendSearch] = useState('');
+  
+  const handleAddFriend = () => {
+      if (!friendSearch) return;
+      // Add fake/mock logic if they don't exist
+      const accs = JSON.parse(localStorage.getItem('zombiecraft_accounts') || '[]');
+      const found = accs.find((a: any) => a.name === friendSearch);
+      if (found) {
+          alert('Adicionado com sucesso!');
+          const newFriends = [...(currentUser?.friends || []), friendSearch];
+          const newUser = { ...currentUser, friends: newFriends } as SavedAccount;
+          setCurrentUser(newUser);
+          
+          let updatedAccs = [...accounts];
+          const accI = updatedAccs.findIndex(a => a.name === currentUser?.name);
+          if (accI > -1) {
+              updatedAccs[accI] = newUser;
+              setAccounts(updatedAccs);
+              localStorage.setItem('zombiecraft_accounts', JSON.stringify(updatedAccs));
+          }
+      } else {
+          alert('Amigo não existe!');
+      }
+  };
+
+  const saveSkin = () => {
+      if (!currentUser) return;
+      let updatedAccs = [...accounts];
+      const accI = updatedAccs.findIndex(a => a.name === currentUser.name);
+      if (accI > -1) {
+          updatedAccs[accI] = currentUser;
+          setAccounts(updatedAccs);
+          localStorage.setItem('zombiecraft_accounts', JSON.stringify(updatedAccs));
+      }
+      setMenuState('MAIN');
+  };
+
+  const renderEditSkin = () => {
+      if (!currentUser || !currentUser.skin) return null;
+      return (
+          <div className="flex flex-col w-[800px] h-fit max-h-[90vh] bg-gray-900 border-4 border-gray-600 p-6 shadow-2xl overflow-hidden">
+              <h1 className="text-3xl font-bold text-white mb-4 text-center">Editar Personagem</h1>
+              <div className="flex flex-col md:flex-row gap-4 h-[65vh] overflow-y-auto">
+                  <div className="w-full md:w-1/2 flex flex-col gap-2">
+                       <label className="text-white text-sm mt-2">Cor da Pele</label>
+                       <input type="color" value={currentUser.skin.skinColor || '#ffcc80'} onChange={e => setCurrentUser({...currentUser, skin: {...currentUser.skin!, skinColor: e.target.value}})} className="w-full" />
+
+                       <label className="text-white text-sm mt-2">Cabelo (1-10)</label>
+                       <select value={currentUser.skin.hairVariant || '1'} onChange={e => setCurrentUser({...currentUser, skin: {...currentUser.skin!, hairVariant: e.target.value}})} className="bg-gray-800 text-white p-2">
+                           <option value="1">Cabelo Normal</option>
+                           <option value="2">Calvo (Sem Cabelo)</option>
+                           <option value="3">Moicano</option>
+                           <option value="4">Franja Longa</option>
+                           <option value="5">Cabelo Curto</option>
+                           <option value="6">Tranças</option>
+                           <option value="7">Cabelo Arrepiado</option>
+                           <option value="8">Undercut</option>
+                           <option value="9">Cachos</option>
+                           <option value="10">Black Power</option>
+                       </select>
+                       
+                       {currentUser.skin.hairVariant !== '2' && (
+                           <>
+                               <label className="text-white text-sm mt-0">Cor do Cabelo</label>
+                               <input type="color" value={currentUser.skin.hairColor || '#ff9800'} onChange={e => setCurrentUser({...currentUser, skin: {...currentUser.skin!, hairColor: e.target.value}})} className="w-full" />
+                           </>
+                       )}
+                       
+                       <label className="text-white text-sm mt-2">Cor do Olho</label>
+                       <input type="color" value={currentUser.skin.eyeColor || '#000000'} onChange={e => setCurrentUser({...currentUser, skin: {...currentUser.skin!, eyeColor: e.target.value}})} className="w-full" />
+                       
+                       <label className="text-white text-sm mt-2">Estilo da Boca</label>
+                       <select value={currentUser.skin.mouthType || 'neutral'} onChange={e => setCurrentUser({...currentUser, skin: {...currentUser.skin!, mouthType: e.target.value}})} className="bg-gray-800 text-white p-2">
+                           <option value="none">Sem Boca</option>
+                           <option value="neutral">Neutra</option>
+                           <option value="happy">Feliz</option>
+                           <option value="sad">Triste</option>
+                       </select>
+
+                       <label className="text-white text-sm mt-2">Roupa (1-10)</label>
+                       <select value={currentUser.skin.clothes || '1'} onChange={e => setCurrentUser({...currentUser, skin: {...currentUser.skin!, clothes: e.target.value}})} className="bg-gray-800 text-white p-2">
+                           <option value="1">Sem Roupa</option>
+                           <option value="2">Terno Preto</option>
+                           <option value="3">Camisa Azul</option>
+                           <option value="4">Camisa Vermelha</option>
+                           <option value="5">Moletom Cinza</option>
+                           <option value="6">Moletom Verde</option>
+                           <option value="7">Regata Branca</option>
+                           <option value="8">Jaqueta de Couro</option>
+                           <option value="9">Camisa Xadrez</option>
+                           <option value="10">Camiseta Amarela</option>
+                       </select>
+
+                       <label className="text-white text-sm mt-2">Calça / Shorts (1-10)</label>
+                       <select value={currentUser.skin.pants || '1'} onChange={e => setCurrentUser({...currentUser, skin: {...currentUser.skin!, pants: e.target.value}})} className="bg-gray-800 text-white p-2">
+                           <option value="1">Cueca</option>
+                           <option value="2">Calça de Terno</option>
+                           <option value="3">Jeans Azul</option>
+                           <option value="4">Jeans Preto</option>
+                           <option value="5">Shorts Praia</option>
+                           <option value="6">Calça Moletom</option>
+                           <option value="7">Shorts Cargo</option>
+                           <option value="8">Calça de Couro</option>
+                           <option value="9">Calça Camuflada</option>
+                           <option value="10">Shorts Vermelho</option>
+                       </select>
+
+                       <label className="text-white text-sm mt-2">Sapatos (1-10)</label>
+                       <select value={currentUser.skin.shoes || '1'} onChange={e => setCurrentUser({...currentUser, skin: {...currentUser.skin!, shoes: e.target.value}})} className="bg-gray-800 text-white p-2">
+                           <option value="1">Descalço</option>
+                           <option value="2">Sapato Social Preto</option>
+                           <option value="3">Tênis Branco</option>
+                           <option value="4">Coturno Militar</option>
+                           <option value="5">Tênis Vermelho</option>
+                           <option value="6">Sapatilha</option>
+                           <option value="7">Bota de Couro</option>
+                           <option value="8">Tênis Cano Alto</option>
+                           <option value="9">Pantufa de Urso</option>
+                           <option value="10">Sandália</option>
+                       </select>
+
+                       <div className="flex items-center gap-2 mt-4 text-white">
+                            <input type="checkbox" checked={currentUser.skin.hasMustache || false} onChange={e => setCurrentUser({...currentUser, skin: {...currentUser.skin!, hasMustache: e.target.checked}})} />
+                            <span>Ter Bigode</span>
+                       </div>
+                       
+                       {currentUser.skin.hasMustache && (
+                           <>
+                               <label className="text-white text-sm mt-2">Cor do Bigode</label>
+                               <input type="color" value={currentUser.skin.mustacheColor || '#111111'} onChange={e => setCurrentUser({...currentUser, skin: {...currentUser.skin!, mustacheColor: e.target.value}})} className="w-full" />
+                           </>
+                       )}
+                  </div>
+                  
+                  {/* PREVIEW */}
+                  <div className="w-full md:w-1/2 flex items-center justify-center relative bg-gray-800 border-2 border-gray-600 rounded p-4 h-[350px]">
+                        <div className="text-white text-center flex flex-col items-center">
+                            <span className="text-6xl mb-4">👀</span>
+                            <h2 className="font-bold text-xl mb-2">Preview in-game</h2>
+                            <p className="text-gray-400 text-sm px-4">As alterações que você fizer aqui serão refletidas detalhadamente em jogo com físicas e animações.</p>
+                        </div>
+                  </div>
+              </div>
+              <button onClick={saveSkin} className="w-full bg-green-700 hover:bg-green-600 text-white font-bold p-3 mt-6 border-2 border-green-500">Salvar e Sair</button>
+          </div>
+      );
+  };
+
+  const renderFriends = () => (
+      <div className="flex flex-col w-[500px] h-[500px] bg-gray-900 border-4 border-gray-600 p-6 shadow-2xl text-white">
+           <h1 className="text-3xl font-bold mb-4 text-center">Amigos</h1>
+           <div className="flex gap-2 mb-4">
+               <input type="text" value={friendSearch} onChange={e => setFriendSearch(e.target.value)} placeholder="Pesquisar nome do amigo..." className="flex-1 bg-black/50 border border-gray-500 p-2" />
+               <button onClick={handleAddFriend} className="bg-blue-700 font-bold px-4 hover:bg-blue-600 border border-blue-500">Adicionar</button>
+           </div>
+           
+           <div className="flex-1 overflow-y-auto border border-gray-700 p-2">
+                {!currentUser?.friends || currentUser.friends.length === 0 ? (
+                    <div className="text-gray-500 text-center mt-10">Você não tem nenhum amigo.</div>
+                ) : (
+                    currentUser.friends.map(f => (
+                        <div key={f} className="p-3 bg-gray-800 border-b border-gray-600 hover:bg-gray-700 cursor-pointer flex justify-between items-center" onClick={() => alert(`${f} está offline/jogando...`)}>
+                            <span className="font-bold text-lg">{f}</span>
+                            <span className="text-xs text-green-400">● Online</span>
+                        </div>
+                    ))
+                )}
+           </div>
+
+           <button onClick={() => setMenuState('MAIN')} className="w-full mt-4 bg-red-700 hover:bg-red-600 font-bold p-3 border border-red-500">Voltar</button>
+      </div>
+  );
+
   return (
     <div className="absolute inset-0 flex flex-col z-50 overflow-hidden" style={{ backgroundColor: '#2b3a32' }}>
         {menuState === 'MAIN' && (
@@ -822,29 +1092,71 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
                      </div>
                      {renderMain()}
                  </div>
-                 <div className="w-1/2 flex items-center justify-center">
-                     {/* Pixel Art Hammer */}
-                     <div className="relative w-64 h-64" style={{ transform: 'rotate(45deg)' }}>
-                         {/* Handle */}
-                         <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-32 bg-yellow-700 border-2 border-black" style={{ boxShadow: 'inset -2px 0 0 rgba(0,0,0,0.3)' }}></div>
-                         {/* Head */}
-                         <div className="absolute top-10 left-1/2 -translate-x-1/2 w-32 h-20 bg-cyan-400 border-4 border-black grid grid-cols-4 grid-rows-3 gap-0" style={{ boxShadow: 'inset -4px -4px 0 rgba(0,0,0,0.3), inset 4px 4px 0 rgba(255,255,255,0.3)' }}>
-                             {/* Pixel details on hammer head */}
-                             {Array(12).fill(0).map((_, i) => (
-                                 <div key={i} className="border border-cyan-500/30"></div>
-                             ))}
+                 <div className="w-1/2 flex items-center justify-center relative">
+                     {currentUser && (
+                         <div className="absolute top-4 right-10 flex flex-col items-center cursor-pointer hover:scale-105 transition-transform" onClick={() => setMenuState('FRIENDS')}>
+                             <div className="w-16 h-16 bg-[#e3d1a3] border-4 border-black rounded shadow-md flex items-center justify-center mb-1">
+                                 <span className="text-2xl font-bold">-_-</span>
+                             </div>
+                             <span className="text-black font-bold text-xl uppercase">amigos</span>
                          </div>
-                     </div>
+                     )}
+
+                     {currentUser ? (
+                         <div className="flex flex-col items-center gap-4">
+                             <div className="flex gap-4 mb-2">
+                                 <button onClick={() => setMenuState('EDIT_SKIN')} className="bg-transparent text-black font-mono border-4 border-black rounded-full px-6 py-2 hover:bg-black/10 uppercase font-bold tracking-widest text-lg">editar</button>
+                                 <button onClick={() => { setCurrentUser(null); localStorage.removeItem('zombiecraft_current_user'); sessionStorage.removeItem('zombiecraft_skipped_login'); setMenuState('LOGIN'); }} className="bg-transparent text-red-700 font-mono border-4 border-red-700 rounded-full px-4 py-2 hover:bg-red-700/10 uppercase font-bold tracking-widest text-lg flex items-center justify-center gap-2" title="Sair da Conta">
+                                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                                 </button>
+                             </div>
+                             <div className="relative w-48 h-64 border-2 border-transparent pointer-events-none">
+                                 {/* Head */}
+                                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-16 h-16 border-4 border-black rounded bg-[#ffd8a8]">
+                                     {currentUser.skin?.hasMustache && <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-8 h-2 bg-black rounded" />}
+                                     <div className="absolute top-4 left-3 w-2 h-2 rounded-full" style={{ backgroundColor: currentUser.skin?.eyeColor || '#000' }} />
+                                     <div className="absolute top-4 right-3 w-2 h-2 rounded-full" style={{ backgroundColor: currentUser.skin?.eyeColor || '#000' }} />
+                                     {currentUser.skin?.hairVariant === 'normal' && <div className="absolute -top-2 left-0 w-full h-4 rounded-t-lg" style={{ backgroundColor: currentUser.skin.hairColor }} />}
+                                 </div>
+                                 {/* Body */}
+                                 <div className="absolute top-16 left-1/2 -translate-x-1/2 w-20 h-28 border-4 border-black bg-[#ffd8a8]" style={{ backgroundColor: currentUser.skin?.clothes === 'terno' ? '#222' : (currentUser.skin?.clothes === '2' ? 'blue' : (currentUser.skin?.clothes === '3' ? 'red' : '#ffd8a8')) }}>
+                                     {(!currentUser.skin?.clothes || currentUser.skin?.clothes === '1') && <div className="absolute bottom-0 w-full h-8 bg-gray-300 border-t-2 border-gray-400" />}
+                                     {currentUser.skin?.clothes === 'terno' && <div className="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-full bg-white border-x-2 border-black" />} 
+                                 </div>
+                                 {/* Arms */}
+                                 <div className="absolute top-16 left-2 w-6 h-28 border-4 border-black origin-top rotate-[20deg] bg-[#ffd8a8]" style={{ backgroundColor: currentUser.skin?.clothes === 'terno' ? '#222' : '#ffd8a8' }} />
+                                 <div className="absolute top-16 right-2 w-6 h-28 border-4 border-black origin-top -rotate-[20deg] bg-[#ffd8a8]" style={{ backgroundColor: currentUser.skin?.clothes === 'terno' ? '#222' : '#ffd8a8' }} />
+                                 {/* Legs */}
+                                 <div className="absolute top-44 left-10 w-8 h-20 border-4 border-black bg-[#ffd8a8]" style={{ backgroundColor: currentUser.skin?.pants === 'terno' ? '#222' : (currentUser.skin?.pants === '2' ? 'blue' : '#ffd8a8') }} />
+                                 <div className="absolute top-44 right-10 w-8 h-20 border-4 border-black bg-[#ffd8a8]" style={{ backgroundColor: currentUser.skin?.pants === 'terno' ? '#222' : (currentUser.skin?.pants === '2' ? 'blue' : '#ffd8a8') }} />
+                                 {/* Shoes */}
+                                 {currentUser.skin?.shoes === 'sapato preto' && (
+                                     <>
+                                         <div className="absolute -bottom-2 left-8 w-12 h-6 bg-black border-4 border-black rounded" />
+                                         <div className="absolute -bottom-2 right-8 w-12 h-6 bg-black border-4 border-black rounded" />
+                                     </>
+                                 )}
+                             </div>
+                             <div className="bg-transparent text-black font-mono border-4 border-black rounded-full px-6 py-2 uppercase font-bold tracking-widest text-lg">{currentUser.name}</div>
+                         </div>
+                     ) : (
+                         <div className="text-gray-600 font-bold border-4 border-gray-600 rounded-lg p-6 text-center shadow-inner pointer-events-none">
+                            Faça Login para<br/>editar seu personagem
+                         </div>
+                     )}
                  </div>
              </div>
         )}
         {menuState !== 'MAIN' && (
             <div className="absolute inset-0 flex items-center justify-center">
+                {menuState === 'LOGIN' && renderLogin()}
                 {menuState === 'SELECT_WORLD' && renderSelectWorld()}
                 {menuState === 'CREATE_WORLD' && renderCreateWorld()}
                 {menuState === 'EDIT_WORLD' && renderEditWorld()}
                 {menuState === 'OPTIONS' && renderOptions()}
                 {menuState === 'ACHIEVEMENTS' && renderAchievements()}
+                {menuState === 'EDIT_SKIN' && renderEditSkin()}
+                {menuState === 'FRIENDS' && renderFriends()}
                 
                 {/* MULTIPLAYER MENUS */}
                 {menuState === 'ONLINE_LOBBY' && renderOnlineLobby()}
