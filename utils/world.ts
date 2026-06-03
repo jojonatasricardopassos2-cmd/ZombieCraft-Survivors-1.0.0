@@ -28,6 +28,16 @@ function smoothNoise(x: number, seed: number, scale: number): number {
   return v1 * (1 - fracX) + v2 * fracX;
 }
 
+
+export const getBiome = (x: number, noiseSeed: number): string => {
+    const biomeNoise = smoothNoise(Math.floor(x / 500) * 500, noiseSeed + 1000, 2000);
+    const val = Math.abs(biomeNoise * 100) % 5;
+    if (val < 1) return 'plains';
+    if (val < 2) return 'desert';
+    if (val < 3) return 'forest';
+    return 'snow';
+};
+
 export function generateWorld(seedInput: number): WorldData {
   const blocks = new Array(WORLD_WIDTH * WORLD_HEIGHT).fill(BlockType.AIR);
   const light = new Array(WORLD_WIDTH * WORLD_HEIGHT).fill(0);
@@ -35,21 +45,46 @@ export function generateWorld(seedInput: number): WorldData {
   const rng = new SeededRNG(seedInput);
   const noiseSeed = seedInput; 
 
+  // Biome map generation
+  // 0: plains, 1: desert, 2: forest, 3: snow
+  
+
   // Surface generation
   const surfaceHeight = new Array(WORLD_WIDTH);
+  const biomeMap = new Array(WORLD_WIDTH);
   for (let x = 0; x < WORLD_WIDTH; x++) {
-    const baseHeight = INTERNAL_SURFACE_Y; 
-    const variation = Math.floor(
+    biomeMap[x] = getBiome(x, noiseSeed);
+    let baseHeight = INTERNAL_SURFACE_Y; 
+    let variation = Math.floor(
       smoothNoise(x, noiseSeed, 30) * 15 + 
       smoothNoise(x, noiseSeed + 100, 10) * 5
     );
+    
+    // Mountains in snow?
+    if (biomeMap[x] === 'snow') {
+        variation += Math.floor(smoothNoise(x, noiseSeed + 200, 50) * 20);
+    } else if (biomeMap[x] === 'river') {
+        // Drop the terrain to make a river bed
+        variation += 10;
+        // make it more flat
+        variation = Math.floor(variation * 0.2) + 15;
+    }
+    
+    // Ocean bounds (last 300 blocks)
+    const oceanBorder = 300;
+    if (x < oceanBorder) {
+        baseHeight += Math.floor(((oceanBorder - x) / oceanBorder) * 40); // slope down
+    } else if (x > WORLD_WIDTH - oceanBorder) {
+        baseHeight += Math.floor(((x - (WORLD_WIDTH - oceanBorder)) / oceanBorder) * 40); // slope down
+    }
+
     surfaceHeight[x] = baseHeight + variation;
   }
 
   // 1. Basic Solid Terrain
   for (let x = 0; x < WORLD_WIDTH; x++) {
     const h = surfaceHeight[x];
-    const isForestBiome = x >= 500;
+    const biome = biomeMap[x];
     
     // Jagged Deep Slate Transition Noise
     const deepNoise = smoothNoise(x, noiseSeed + 500, 10); 
@@ -66,9 +101,15 @@ export function generateWorld(seedInput: number): WorldData {
       let blockType = BlockType.AIR;
 
       if (y === h) {
-          blockType = isForestBiome ? BlockType.DARK_GRASS : BlockType.GRASS;
+          if (biome === 'forest') blockType = BlockType.DARK_GRASS;
+          else if (biome === 'snow') blockType = BlockType.SNOWY_GRASS;
+          else if (biome === 'desert') blockType = BlockType.SAND;
+          else if (biome === 'river') blockType = BlockType.WET_SAND;
+          else blockType = BlockType.GRASS;
       } else if (y > h && y < h + 4) {
-          blockType = BlockType.DIRT;
+          if (biome === 'desert') blockType = BlockType.SAND;
+          else if (biome === 'river') blockType = BlockType.STONE;
+          else blockType = BlockType.DIRT;
       } else if (y >= h + 4) {
           if (y > deepThreshold) {
               blockType = BlockType.DEEP_STONE;
@@ -77,127 +118,32 @@ export function generateWorld(seedInput: number): WorldData {
           }
       }
       
-      if (blockType === BlockType.AIR && y > h && y > SEA_LEVEL) {
-          blockType = BlockType.WATER;
+      // Oceans on the edges and Rivers
+      if (blockType === BlockType.AIR) {
+          const isOcean = y > h && y > INTERNAL_SURFACE_Y + 10;
+          const isRiverWater = biome === 'river' && y > INTERNAL_SURFACE_Y && y <= h; 
+          // Wait, 'h' is the river bed, it's pushed down. The water level should be flat.
+          
+          let waterLevel = INTERNAL_SURFACE_Y + 10;
+          if (biome === 'river') waterLevel = INTERNAL_SURFACE_Y + 5;
+          
+          if (y > waterLevel && y <= h + (biome==='river' ? 15 : 0) ) {
+              // wait, if y > waterLevel AND blockType==AIR, AIR means it's above ground... 
+          }
+      }
+      
+      // Simple water logic
+      if (blockType === BlockType.AIR) {
+         let waterLevel = INTERNAL_SURFACE_Y + 10; // Global water level
+         if (biome === 'river') waterLevel = INTERNAL_SURFACE_Y + 2; 
+         if (y > waterLevel) {
+              if (y === waterLevel + 1 && biome === 'snow') blockType = BlockType.ICE;
+              else blockType = BlockType.WATER;
+         }
       }
 
       blocks[idx] = blockType;
     }
-  }
-  
-  // 1.5 Transition Lake (between Plains and Forest ~500)
-  // Lake spans from 480 to 520 roughly
-  const lakeStartX = 480;
-  const lakeEndX = 520;
-  
-  // Desert Biome (Left of Plains, separated by River)
-  // Plains starts at 0? No, Forest starts at 500. So Plains is 0-500.
-  // Let's put Desert at 0-150. River at 150-180. Plains 180-480.
-  const desertEndX = 150;
-  const riverStartX = 150;
-  const riverEndX = 180;
-  
-  // Snow Biome (Right of Forest, separated by Frozen Lake)
-  // Forest 520-800. Frozen Lake 800-830. Snow 830-1000.
-  const forestEndX = 800;
-  const frozenLakeStartX = 800;
-  const frozenLakeEndX = 830;
-  const snowStartX = 830;
-
-  for (let x = 0; x < WORLD_WIDTH; x++) {
-       // Desert River
-       if (x >= riverStartX && x <= riverEndX) {
-           const riverBottom = surfaceHeight[x] + 6 + Math.floor(rng.next() * 3);
-           const riverSurface = INTERNAL_SURFACE_Y + 5; 
-           
-           for(let y = 0; y < WORLD_HEIGHT; y++) {
-                const idx = y * WORLD_WIDTH + x;
-                if (y > riverSurface && y <= riverBottom) {
-                     blocks[idx] = BlockType.WATER;
-                } else if (y > riverBottom) {
-                     if (blocks[idx] === BlockType.AIR || blocks[idx] === BlockType.WATER) blocks[idx] = BlockType.SAND; 
-                     else if (y <= riverBottom + 2) blocks[idx] = BlockType.SAND; 
-                } else if (y <= riverSurface && y > riverSurface - 2) {
-                     blocks[idx] = BlockType.AIR; 
-                }
-           }
-           continue;
-       }
-
-       // Central Lake
-       if (x >= lakeStartX && x <= lakeEndX) {
-           const lakeBottom = surfaceHeight[x] + 6 + Math.floor(rng.next() * 3);
-           const lakeSurface = INTERNAL_SURFACE_Y + 5; 
-           
-           for(let y = 0; y < WORLD_HEIGHT; y++) {
-                const idx = y * WORLD_WIDTH + x;
-                if (y > lakeSurface && y <= lakeBottom) {
-                     blocks[idx] = BlockType.WATER;
-                } else if (y > lakeBottom) {
-                     if (blocks[idx] === BlockType.AIR || blocks[idx] === BlockType.WATER) blocks[idx] = BlockType.SAND; 
-                     else if (y <= lakeBottom + 2) blocks[idx] = BlockType.SAND; 
-                } else if (y <= lakeSurface && y > lakeSurface - 2) {
-                     blocks[idx] = BlockType.AIR; 
-                }
-           }
-           continue;
-       }
-       
-       // Frozen Lake
-       if (x >= frozenLakeStartX && x <= frozenLakeEndX) {
-           const lakeBottom = surfaceHeight[x] + 6 + Math.floor(rng.next() * 3);
-           const lakeSurface = INTERNAL_SURFACE_Y + 5; 
-           
-           for(let y = 0; y < WORLD_HEIGHT; y++) {
-                const idx = y * WORLD_WIDTH + x;
-                if (y === lakeSurface) {
-                     blocks[idx] = BlockType.ICE;
-                } else if (y > lakeSurface && y <= lakeBottom) {
-                     blocks[idx] = BlockType.WATER;
-                } else if (y > lakeBottom) {
-                     if (blocks[idx] === BlockType.AIR || blocks[idx] === BlockType.WATER) blocks[idx] = BlockType.DIRT; 
-                     else if (y <= lakeBottom + 2) blocks[idx] = BlockType.DIRT; 
-                } else if (y < lakeSurface && y > lakeSurface - 2) {
-                     blocks[idx] = BlockType.AIR; 
-                }
-           }
-           continue;
-       }
-       
-       // Desert Terrain Override
-       if (x < desertEndX) {
-           const h = surfaceHeight[x];
-           for (let y = 0; y < WORLD_HEIGHT; y++) {
-               const idx = y * WORLD_WIDTH + x;
-               if (y >= h && y < h + 5) {
-                   blocks[idx] = BlockType.SAND;
-               } else if (y >= h + 5 && y < h + 8) {
-                   blocks[idx] = BlockType.SAND; // Deep sand
-               }
-           }
-       }
-       
-       // Snow Terrain Override
-       if (x > snowStartX) {
-           const h = surfaceHeight[x];
-           // Make mountains higher in snow biome
-           const mountainBoost = Math.floor(smoothNoise(x, noiseSeed + 200, 20) * 20);
-           const newH = Math.max(10, h - mountainBoost); // Higher Y is lower value
-           surfaceHeight[x] = newH;
-           
-           for (let y = 0; y < WORLD_HEIGHT; y++) {
-               const idx = y * WORLD_WIDTH + x;
-               if (y === newH) {
-                   blocks[idx] = BlockType.SNOWY_GRASS;
-               } else if (y > newH && y < newH + 4) {
-                   blocks[idx] = BlockType.DIRT;
-               } else if (y >= newH + 4 && y <= h + 4) { // Fill gap if we raised terrain
-                   blocks[idx] = BlockType.STONE;
-               } else if (y < newH && y >= h) { // Clear air if we raised terrain
-                   blocks[idx] = BlockType.AIR;
-               }
-           }
-       }
   }
 
   // Surface Lava Pools
@@ -403,39 +349,9 @@ export function generateWorld(seedInput: number): WorldData {
            }
       }
   }
-  
-  // 3.5 Rare Structure: Uranium Altar (Forest Only)
-  // Try to place it once
-  let altarPlaced = false;
-  let attempts = 0;
-  while (!altarPlaced && attempts < 100) {
-      // Forest starts at 500
-      const sx = 550 + Math.floor(rng.next() * (WORLD_WIDTH - 600)); 
-      const sy = surfaceHeight[sx];
-      
-      // Check if flat enough (3 blocks wide)
-      if (Math.abs(surfaceHeight[sx] - surfaceHeight[sx+1]) < 2 && Math.abs(surfaceHeight[sx] - surfaceHeight[sx+2]) < 2) {
-          // Place 3 Uranium Blocks
-          blocks[(sy - 1) * WORLD_WIDTH + sx] = BlockType.URANIUM_BLOCK;
-          blocks[(sy - 1) * WORLD_WIDTH + sx + 1] = BlockType.URANIUM_BLOCK;
-          blocks[(sy - 1) * WORLD_WIDTH + sx + 2] = BlockType.URANIUM_BLOCK;
-          
-          // Clear space above
-          for(let i=0; i<3; i++) {
-             blocks[(sy - 2) * WORLD_WIDTH + sx + i] = BlockType.AIR;
-             blocks[(sy - 3) * WORLD_WIDTH + sx + i] = BlockType.AIR;
-          }
-          altarPlaced = true;
-          console.log(`Uranium Altar placed at X: ${sx}, Y: ${sy}`);
-      }
-      attempts++;
-  }
 
   // 4. Vegetation
   for (let x = 0; x < WORLD_WIDTH; x++) {
-      // Skip lake/river area
-      if ((x >= lakeStartX - 2 && x <= lakeEndX + 2) || (x >= riverStartX - 2 && x <= riverEndX + 2)) continue;
-
       let groundY = -1;
       for(let y=0; y<WORLD_HEIGHT; y++) {
           const b = blocks[y * WORLD_WIDTH + x];
@@ -449,8 +365,17 @@ export function generateWorld(seedInput: number): WorldData {
       if (groundY !== -1) {
         const groundBlock = blocks[groundY * WORLD_WIDTH + x];
         
+        // Scope variables for biome check
+        const biomeNoise = smoothNoise(Math.floor(x / 500) * 500, noiseSeed + 1000, 2000);
+        const val = Math.abs(biomeNoise * 100) % 5;
+        let biome = 'snow';
+        if (val < 1) biome = 'plains';
+        else if (val < 2) biome = 'desert';
+        else if (val < 3) biome = 'forest';
+        else if (val < 4) biome = 'river';
+
         // DESERT VEGETATION
-        if (x < desertEndX && groundBlock === BlockType.SAND && blocks[(groundY-1)*WORLD_WIDTH + x] === BlockType.AIR) {
+        if (biome === 'desert' && groundBlock === BlockType.SAND && blocks[(groundY-1)*WORLD_WIDTH + x] === BlockType.AIR) {
             const r = rng.next();
             // Cactus
             if (r < 0.05) {
@@ -459,15 +384,11 @@ export function generateWorld(seedInput: number): WorldData {
                     blocks[(groundY - i) * WORLD_WIDTH + x] = BlockType.CACTUS;
                 }
             } 
-            // Dry Leaves (Dead Bushes)
-            else if (r < 0.15) {
-                blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.DRY_LEAVES;
             }
-        }
         // NORMAL VEGETATION
         else if ((groundBlock === BlockType.GRASS || groundBlock === BlockType.DARK_GRASS) && blocks[(groundY-1)*WORLD_WIDTH + x] === BlockType.AIR) {
             const r = rng.next();
-            const isForest = x >= 500;
+            const isForest = biome === 'forest';
 
             // Trees
             if (r < (isForest ? 0.08 : 0.05) && x > 2 && x < WORLD_WIDTH - 3) {
@@ -532,8 +453,8 @@ export function generateWorld(seedInput: number): WorldData {
             if (r < 0.08 && x > 2 && x < WORLD_WIDTH - 2) {
                 const heightAdd = Math.floor(rng.next() * 4) + 4;
                 const treeHeight = 4 + heightAdd;
-                const logType = BlockType.DARK_WOOD;
-                const leafType = BlockType.SNOWY_LEAVES;
+                const logType = BlockType.PINE_WOOD;
+                const leafType = BlockType.PINE_LEAVES;
 
                 for (let i = 1; i <= treeHeight; i++) {
                     blocks[(groundY - i) * WORLD_WIDTH + x] = logType;
@@ -557,89 +478,121 @@ export function generateWorld(seedInput: number): WorldData {
   }
 
   // Generate Abandoned Houses
-  const npcSpawns: {x: number, y: number}[] = [];
+  const npcSpawns: {x: number, y: number, type?: string}[] = [];
   const initialChests: {x: number, y: number, items: {id: number | string, count: number, type: 'BLOCK' | 'ITEM'}[]}[] = [];
+  const structures: {name: string, x: number}[] = [];
   
-  let housesGenerated = 0;
-  let houseAttempts = 0;
-  while (housesGenerated < 2 && houseAttempts < 100) {
-      houseAttempts++;
-      const hx = Math.floor(rng.next() * (WORLD_WIDTH - 40)) + 20;
-      // Find surface
-      let hy = 0;
+  // Generate 1 Big City
+  let cityGenerated = false;
+
+  let attempts = 0;
+  while (!cityGenerated && attempts < 100) {
+      attempts++;
+      const startX = Math.floor(rng.next() * (WORLD_WIDTH - 200)) + 100;
+      let startY = 0;
       for (let y = 0; y < WORLD_HEIGHT; y++) {
-          const block = blocks[y * WORLD_WIDTH + hx];
-          if (block !== BlockType.AIR && block !== BlockType.WATER && block !== BlockType.LEAVES && block !== BlockType.DARK_LEAVES && block !== BlockType.SNOWY_LEAVES) {
-              hy = y;
+          if (blocks[y * WORLD_WIDTH + startX] !== BlockType.AIR) {
+              startY = y;
               break;
           }
       }
       
-      // Check if flat enough
-      let isFlat = true;
-      for (let dx = -4; dx <= 4; dx++) {
-          let localY = 0;
-          for (let y = 0; y < WORLD_HEIGHT; y++) {
-              const block = blocks[y * WORLD_WIDTH + (hx + dx)];
-              if (block !== BlockType.AIR && block !== BlockType.WATER && block !== BlockType.LEAVES && block !== BlockType.DARK_LEAVES && block !== BlockType.SNOWY_LEAVES) {
-                  localY = y;
-                  break;
-              }
+      if (startY > SEA_LEVEL - 5 && startY < SEA_LEVEL + 50) {
+          structures.push({ name: 'cidade grande', x: startX });
+          // Flatten land for 30 blocks
+          for (let ix = 0; ix < 30; ix++) {
+              let ground = startY;
+              for(let iy=startY-10; iy<=startY; iy++) blocks[iy * WORLD_WIDTH + startX + ix] = BlockType.AIR;
+              blocks[startY * WORLD_WIDTH + startX + ix] = BlockType.STONE;
           }
-          if (Math.abs(localY - hy) > 2) {
-              isFlat = false;
-              break;
-          }
-      }
-      
-      if (isFlat && hy > 0) {
-          // Build house
-          const width = 7;
-          const height = 5;
-          const startX = hx - 3;
-          const startY = hy - height;
           
-          for (let y = startY; y <= hy; y++) {
-              for (let x = startX; x < startX + width; x++) {
-                  const idx = y * WORLD_WIDTH + x;
-                  if (y === hy) {
-                      blocks[idx] = BlockType.PLANKS; // Floor
-                  } else if (x === startX || x === startX + width - 1 || y === startY) {
-                      blocks[idx] = BlockType.PLANKS; // Walls and roof
-                  } else {
-                      blocks[idx] = BlockType.AIR; // Interior
+          // Build a 4-story building
+          const bStartX = startX + 5;
+          const bWidth = 15;
+          
+          for(let floor=0; floor<4; floor++) {
+              const floorY = startY - 1 - (floor * 5);
+              for(let ix = 0; ix < bWidth; ix++) {
+                  blocks[floorY * WORLD_WIDTH + bStartX + ix] = BlockType.WOOD; // Floor
+                  if (ix === 0 || ix === bWidth - 1) { // Walls
+                      blocks[(floorY - 1) * WORLD_WIDTH + bStartX + ix] = BlockType.WALL_WOOD;
+                      blocks[(floorY - 2) * WORLD_WIDTH + bStartX + ix] = BlockType.GLASS_BLUE;
+                      blocks[(floorY - 3) * WORLD_WIDTH + bStartX + ix] = BlockType.GLASS_BLUE;
+                      blocks[(floorY - 4) * WORLD_WIDTH + bStartX + ix] = BlockType.WALL_WOOD;
                   }
               }
+              // Stairs
+              if (floor < 3) {
+                  blocks[(floorY - 1) * WORLD_WIDTH + bStartX + 2] = BlockType.LADDER;
+                  blocks[(floorY - 2) * WORLD_WIDTH + bStartX + 2] = BlockType.LADDER;
+                  blocks[(floorY - 3) * WORLD_WIDTH + bStartX + 2] = BlockType.LADDER;
+                  blocks[(floorY - 4) * WORLD_WIDTH + bStartX + 2] = BlockType.LADDER;
+                  blocks[(floorY - 5) * WORLD_WIDTH + bStartX + 2] = BlockType.AIR; // Hole in ceiling
+              }
+              // Door
+              if (floor === 0) {
+                  blocks[(floorY - 1) * WORLD_WIDTH + bStartX] = BlockType.DOOR_BOTTOM_CLOSED;
+                  blocks[(floorY - 2) * WORLD_WIDTH + bStartX] = BlockType.DOOR_TOP_CLOSED;
+                  blocks[(floorY - 1) * WORLD_WIDTH + bStartX + bWidth - 1] = BlockType.DOOR_BOTTOM_CLOSED;
+                  blocks[(floorY - 2) * WORLD_WIDTH + bStartX + bWidth - 1] = BlockType.DOOR_TOP_CLOSED;
+              }
+              // Furniture
+              blocks[(floorY - 1) * WORLD_WIDTH + bStartX + 4] = BlockType.BED;
+              blocks[(floorY - 1) * WORLD_WIDTH + bStartX + 6] = BlockType.CHEST;
+              initialChests.push({ x: bStartX + 6, y: floorY - 1, items: [{ id: 'diamond', count: 2, type: 'ITEM' }] });
+              blocks[(floorY - 1) * WORLD_WIDTH + bStartX + 8] = BlockType.CABINET;
+              blocks[(floorY - 1) * WORLD_WIDTH + bStartX + 10] = BlockType.TABLE;
           }
-          
-          // Door
-          blocks[(hy - 1) * WORLD_WIDTH + startX] = BlockType.AIR;
-          blocks[(hy - 2) * WORLD_WIDTH + startX] = BlockType.AIR;
-          
-          // Furniture
-          blocks[(hy - 1) * WORLD_WIDTH + (startX + 1)] = BlockType.BED;
-          blocks[(hy - 1) * WORLD_WIDTH + (startX + width - 2)] = BlockType.CHEST;
-          blocks[(hy - 1) * WORLD_WIDTH + (startX + width - 3)] = BlockType.FURNACE;
-          blocks[(hy - 1) * WORLD_WIDTH + (startX + width - 4)] = BlockType.CRAFTING_TABLE;
-          
-          // Loot
-          const loot = [];
-          if (rng.next() > 0.5) loot.push({ id: 'iron_ingot', count: Math.floor(rng.next() * 5) + 1, type: 'ITEM' as const });
-          if (rng.next() > 0.7) loot.push({ id: 'gold_ingot', count: Math.floor(rng.next() * 3) + 1, type: 'ITEM' as const });
-          if (rng.next() > 0.3) loot.push({ id: 'cooked_meat', count: Math.floor(rng.next() * 5) + 1, type: 'ITEM' as const });
-          if (rng.next() > 0.8) loot.push({ id: 'iron_sword', count: 1, type: 'ITEM' as const });
-          if (rng.next() > 0.9) loot.push({ id: 'diamond', count: Math.floor(rng.next() * 2) + 1, type: 'ITEM' as const });
-          
-          initialChests.push({ x: startX + width - 2, y: hy - 1, items: loot });
-          
-          // NPC Spawn
-          npcSpawns.push({ x: startX + Math.floor(width / 2), y: hy - 1 });
-          
-          housesGenerated++;
+          // Roof
+          const roofY = startY - 1 - (4 * 5);
+          for(let ix = 0; ix < bWidth; ix++) {
+              blocks[roofY * WORLD_WIDTH + bStartX + ix] = BlockType.ROOF_STONE;
+          }
+
+          npcSpawns.push({ x: startX + 15, y: startY - 2, type: 'QUEST_GIVER' });
+          cityGenerated = true;
       }
   }
 
-  return { width: WORLD_WIDTH, height: WORLD_HEIGHT, blocks, light, npcSpawns, initialChests };
+  // Generate 2 Farms
+  let farmsGenerated = 0;
+  attempts = 0;
+  while (farmsGenerated < 2 && attempts < 200) {
+      attempts++;
+      const startX = Math.floor(rng.next() * (WORLD_WIDTH - 200)) + 100;
+      let startY = 0;
+      for (let y = 0; y < WORLD_HEIGHT; y++) {
+          if (blocks[y * WORLD_WIDTH + startX] !== BlockType.AIR) {
+              startY = y;
+              break;
+          }
+      }
+      
+      if (getBiome(startX, rng.next()) === 'plains' && startY > SEA_LEVEL - 5 && startY < SEA_LEVEL + 50) {
+          // Flatten land for 20 blocks
+          for (let ix = 0; ix < 20; ix++) {
+              let ground = startY;
+              for(let iy=startY-5; iy<=startY; iy++) blocks[iy * WORLD_WIDTH + startX + ix] = BlockType.AIR;
+              blocks[startY * WORLD_WIDTH + startX + ix] = BlockType.GRASS;
+          }
+          // Fence around
+          for (let ix = 0; ix < 20; ix++) {
+              if (ix === 0 || ix === 19) {
+                  blocks[(startY - 1) * WORLD_WIDTH + startX + ix] = BlockType.FENCE;
+              } else if (rng.next() > 0.5) {
+                  // Crops inside
+                  blocks[startY * WORLD_WIDTH + startX + ix] = BlockType.DIRT; // tilled
+                  blocks[(startY - 1) * WORLD_WIDTH + startX + ix] = BlockType.CROP_WHEAT;
+              }
+          }
+          // Animals spawn naturally, but we specify a farm center
+          npcSpawns.push({ x: startX + 10, y: startY - 2, type: 'FARM_ANIMAL' });
+          structures.push({ name: 'fazenda', x: startX });
+          farmsGenerated++;
+      }
+  }
+
+  return { width: WORLD_WIDTH, height: WORLD_HEIGHT, blocks, light, npcSpawns, initialChests, structures };
 }
 
 function generateOreCluster(blocks: number[], oreType: BlockType, startX: number, probability: number, minDepth: number, maxDepth: number, minSize: number, maxSize: number, rng: SeededRNG) {

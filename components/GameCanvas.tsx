@@ -10,7 +10,7 @@ import {
     ARMOR_PROTECTION, ITEM_NAMES, MAX_DURABILITY, XP_PER_MOB, DEFAULT_STATS, MAX_STAMINA, BASE_STAMINA_DRAIN, BASE_STAMINA_REGEN, HUNGER_DECAY_TICK, SPRINT_HUNGER_DRAIN, DEEP_SLATE_LEVEL, TICKS_PER_HOUR, SEA_LEVEL, INTERNAL_SURFACE_Y, NPC_NAMES, QUESTS
 } from '../constants.ts';
 import { BlockType, Entity, ItemStack, ItemType, WorldData, CraftingRecipe, FurnaceData, Equipment, SavedWorld, PlayerStats, CropData, GameOptions } from '../types.ts';
-import { generateWorld } from '../utils/world.ts';
+import { generateWorld, getBiome } from '../utils/world.ts';
 import { saveWorldToDB, deleteWorldFromDB } from '../utils/storage.ts';
 import { Inventory } from './UI/Inventory.tsx';
 import { FurnaceUI } from './UI/FurnaceUI.tsx';
@@ -40,7 +40,7 @@ const generateEntityId = () => Math.floor(Math.random() * 1000000000);
 // 1. Blocks that light passes through (Visual Transparency)
 const LIGHT_TRANSPARENT_BLOCKS = new Set([
     BlockType.AIR, BlockType.GLASS, BlockType.WATER, BlockType.TORCH, BlockType.LAVA,
-    BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH,
+    BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH, BlockType.COBWEB, BlockType.PINE_LEAVES, BlockType.FLOWER_YELLOW, BlockType.FLOWER_PURPLE,
     BlockType.ROOF_WOOD, BlockType.ROOF_STONE, BlockType.ROOF_WOOD_LEFT, BlockType.ROOF_STONE_LEFT,
     BlockType.WALL_WOOD, BlockType.DOOR_BOTTOM_OPEN, BlockType.DOOR_TOP_OPEN,
     BlockType.DOOR_IRON_BOTTOM_OPEN, BlockType.DOOR_IRON_TOP_OPEN, BlockType.DOOR_STONE_BOTTOM_OPEN, BlockType.DOOR_STONE_TOP_OPEN,
@@ -55,11 +55,11 @@ const LIGHT_TRANSPARENT_BLOCKS = new Set([
 
 // 2. Blocks that entities can walk through (No Collision)
 // NOTE: Glass is NOT here, so it has physics (solid). Chests ARE here, so they have no physics (intangible).
-const NON_COLLIDABLE_BLOCKS = new Set([
+const NON_COLLIDABLE_BLOCKS = new Set([BlockType.FLOWER_RED, BlockType.FLOWER_BLUE, BlockType.FLOWER_GREEN, BlockType.FLOWER_YELLOW, BlockType.FLOWER_PURPLE, 
     BlockType.AIR, BlockType.WATER, BlockType.TORCH, BlockType.LAVA,
     BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH,
     BlockType.ROOF_WOOD, BlockType.ROOF_STONE, BlockType.ROOF_WOOD_LEFT, BlockType.ROOF_STONE_LEFT,
-    BlockType.WALL_WOOD, BlockType.DOOR_BOTTOM_OPEN, BlockType.DOOR_TOP_OPEN,
+    BlockType.WALL_WOOD, BlockType.PINE_WOOD, BlockType.DOOR_BOTTOM_OPEN, BlockType.DOOR_TOP_OPEN,
     BlockType.DOOR_IRON_BOTTOM_OPEN, BlockType.DOOR_IRON_TOP_OPEN, BlockType.DOOR_STONE_BOTTOM_OPEN, BlockType.DOOR_STONE_TOP_OPEN,
     BlockType.CROP_WHEAT, BlockType.CROP_CARROT, BlockType.CROP_POTATO,
     BlockType.BED, BlockType.BED_MEDIUM, BlockType.BED_ADVANCED,
@@ -197,6 +197,7 @@ export const GameCanvas: React.FC = () => {
     const [activeBedType, setActiveBedType] = useState<BlockType | null>(null);
     const [activeNpc, setActiveNpc] = useState<Entity | null>(null);
     const [showDeathScreen, setShowDeathScreen] = useState(false);
+    const [tutorialStep, setTutorialStep] = useState(0);
     
     const [interactionPrompt, setInteractionPrompt] = useState<{ msg: string, x: number, y: number } | null>(null);
     const isClimbingRef = useRef(false);
@@ -261,56 +262,6 @@ export const GameCanvas: React.FC = () => {
 
     // --- HELPER FUNCTIONS ---
 
-    // Check for Boss Ritual
-    const checkRitual = (x: number, y: number) => {
-        if (!worldRef.current) return;
-        const w = worldRef.current;
-        const b = (dx: number, dy: number) => {
-            const by = y + dy;
-            const bx = x + dx;
-            if (by < 0 || by >= WORLD_HEIGHT || bx < 0 || bx >= WORLD_WIDTH) return BlockType.AIR;
-            return w.blocks[by * WORLD_WIDTH + bx];
-        };
-        
-        // Vertical stack: Uranium (y-2), Titanium (y-1), Titanium (y)
-        if (
-            (b(0, 0) === BlockType.TITANIUM_BLOCK && b(0, -1) === BlockType.TITANIUM_BLOCK && b(0, -2) === BlockType.URANIUM_BLOCK) ||
-            (b(0, 0) === BlockType.URANIUM_BLOCK && b(0, 1) === BlockType.TITANIUM_BLOCK && b(0, 2) === BlockType.TITANIUM_BLOCK) ||
-            (b(0, 0) === BlockType.TITANIUM_BLOCK && ((b(0, -1) === BlockType.URANIUM_BLOCK && b(0, 1) === BlockType.TITANIUM_BLOCK) || (b(0, 1) === BlockType.URANIUM_BLOCK && b(0, -1) === BlockType.TITANIUM_BLOCK)))
-        ) {
-            let baseY = y;
-            if (b(0, 1) === BlockType.TITANIUM_BLOCK) baseY = y + 1;
-            if (b(0, 2) === BlockType.TITANIUM_BLOCK) baseY = y + 2;
-
-            setBlockAt(x, baseY, BlockType.AIR, true);
-            setBlockAt(x, baseY - 1, BlockType.AIR, true);
-            setBlockAt(x, baseY - 2, BlockType.AIR, true);
-
-            // Spawn boss slightly above ground
-            let spawnY = baseY - 2;
-            while(spawnY > 0 && w.blocks[(spawnY) * WORLD_WIDTH + x] !== BlockType.AIR) {
-                spawnY--;
-            }
-
-            entitiesRef.current.push({
-                id: Date.now() + Math.random(),
-                type: 'ZOMBIE_KING',
-                x: x * BLOCK_SIZE,
-                y: (spawnY - 5) * BLOCK_SIZE, // Spawns above
-                width: 64,
-                height: 128,
-                vx: 0,
-                vy: -5,
-                health: 500,
-                maxHealth: 500,
-                attackCooldown: 0,
-                facingRight: true
-            });
-            audio.playExplosion();
-            addNotification('O REI ZUMBI DESPERTOU!', 'error');
-        }
-    };
-
     const canDamageBlock = (block: BlockType, tool: ItemStack | null): boolean => {
         const handBreakable = new Set([
             BlockType.AIR, BlockType.WATER,
@@ -325,14 +276,14 @@ export const GameCanvas: React.FC = () => {
         if (handBreakable.has(block)) return true;
         if (!tool) return false;
 
-        const id = tool.id.toString();
+        const id = (tool.id?.toString() || '');
         const woodTypes = new Set([
             BlockType.WOOD, BlockType.DARK_WOOD, BlockType.PLANKS,
             BlockType.DOOR_BOTTOM_CLOSED, BlockType.DOOR_TOP_CLOSED,
             BlockType.DOOR_BOTTOM_OPEN, BlockType.DOOR_TOP_OPEN,
             BlockType.CRAFTING_TABLE, BlockType.CHEST, BlockType.CHEST_MEDIUM, 
             BlockType.CHEST_LARGE, BlockType.BED, BlockType.BED_MEDIUM, BlockType.BED_ADVANCED,
-            BlockType.ROOF_WOOD, BlockType.ROOF_WOOD_LEFT, BlockType.WALL_WOOD,
+            BlockType.ROOF_WOOD, BlockType.ROOF_WOOD_LEFT, BlockType.WALL_WOOD, BlockType.PINE_WOOD,
             BlockType.ARMOR_BENCH
         ]);
 
@@ -341,8 +292,20 @@ export const GameCanvas: React.FC = () => {
     };
 
     const updateLighting = (world: WorldData, time: number) => {
-        const lightMap = new Int8Array(WORLD_WIDTH * WORLD_HEIGHT).fill(0);
-        const queue: number[] = [];
+        // Optimizing to only update visible area + 100 blocks buffer
+        const pbx = Math.floor(playerRef.current.x / BLOCK_SIZE);
+        const pby = Math.floor(playerRef.current.y / BLOCK_SIZE);
+        const startX = Math.max(0, pbx - 150);
+        const endX = Math.min(WORLD_WIDTH - 1, pbx + 150);
+        
+        // Use existing light array if we have it, else create new
+        if (!world.light || world.light.length !== WORLD_WIDTH * WORLD_HEIGHT) {
+             world.light = new Array(WORLD_WIDTH * WORLD_HEIGHT).fill(MAX_LIGHT);
+        }
+        
+        const queue = new Int32Array((endX - startX + 1) * WORLD_HEIGHT * 2);
+        let head = 0;
+        let tail = 0;
         let skyLight = MAX_LIGHT; 
         
         if (time >= DUSK_START && time < NIGHT_START) {
@@ -351,7 +314,7 @@ export const GameCanvas: React.FC = () => {
             skyLight = 5;
         }
         
-        for (let x = 0; x < WORLD_WIDTH; x++) {
+        for (let x = startX; x <= endX; x++) {
             let currentLight = skyLight;
             for (let y = 0; y < WORLD_HEIGHT; y++) {
                 const idx = y * WORLD_WIDTH + x;
@@ -359,42 +322,46 @@ export const GameCanvas: React.FC = () => {
                 const isTransparent = LIGHT_TRANSPARENT_BLOCKS.has(block);
                 
                 if (isTransparent) {
-                    lightMap[idx] = currentLight;
+                    world.light[idx] = currentLight;
                     if (block === BlockType.LEAVES || block === BlockType.APPLE_LEAVES || block === BlockType.DARK_LEAVES || block === BlockType.WATER || block === BlockType.ROOF_WOOD || block === BlockType.ROOF_STONE || block === BlockType.ROOF_WOOD_LEFT || block === BlockType.ROOF_STONE_LEFT) currentLight = Math.max(0, currentLight - 3); 
-                    if (currentLight > 1) queue.push(idx);
+                    if (currentLight > 1) { queue[tail++] = idx; }
                 } else {
-                    lightMap[idx] = currentLight;
+                    world.light[idx] = currentLight;
                     currentLight = 0; 
                 }
             }
         }
         
-        for(let i=0; i<world.blocks.length; i++) {
-            if (world.blocks[i] === BlockType.TORCH || world.blocks[i] === BlockType.LAMP_ON) { lightMap[i] = 15; queue.push(i); }
-            if (world.blocks[i] === BlockType.URANIUM_ORE) { lightMap[i] = 12; queue.push(i); }
-            if (world.blocks[i] === BlockType.URANIUM_BLOCK) { lightMap[i] = 14; queue.push(i); }
-            if (world.blocks[i] === BlockType.LAVA || world.blocks[i] === BlockType.CAMPFIRE) { lightMap[i] = 13; queue.push(i); }
+        for (let x = startX; x <= endX; x++) {
+            for (let y = 0; y < WORLD_HEIGHT; y++) {
+                const i = y * WORLD_WIDTH + x;
+                const b = world.blocks[i];
+                if (b === BlockType.TORCH || b === BlockType.LAMP_ON) { world.light[i] = 15; queue[tail++] = i; }
+                else if (b === BlockType.URANIUM_ORE) { world.light[i] = 12; queue[tail++] = i; }
+                else if (b === BlockType.URANIUM_BLOCK) { world.light[i] = 14; queue[tail++] = i; }
+                else if (b === BlockType.LAVA || b === BlockType.CAMPFIRE) { world.light[i] = 13; queue[tail++] = i; }
+            }
         }
         
-        let head = 0;
-        while (head < queue.length) {
+        while (head < tail) {
             const idx = queue[head++];
-            const level = lightMap[idx];
+            const level = world.light[idx];
             if (level <= 1) continue;
             const x = idx % WORLD_WIDTH;
             const neighbors = [idx + 1, idx - 1, idx + WORLD_WIDTH, idx - WORLD_WIDTH];
             if (x === WORLD_WIDTH - 1) neighbors[0] = -1; 
             if (x === 0) neighbors[1] = -1;
             for (const nIdx of neighbors) {
-                if (nIdx >= 0 && nIdx < lightMap.length) {
-                    if (lightMap[nIdx] < level - 1) {
-                         lightMap[nIdx] = level - 1;
-                         if (LIGHT_TRANSPARENT_BLOCKS.has(world.blocks[nIdx])) { queue.push(nIdx); }
+                if (nIdx >= 0 && nIdx < world.light.length) {
+                    const nx = nIdx % WORLD_WIDTH;
+                    if (nx < startX || nx > endX) continue; // clamp to computed area
+                    if (world.light[nIdx] < level - 1) {
+                         world.light[nIdx] = level - 1;
+                         if (LIGHT_TRANSPARENT_BLOCKS.has(world.blocks[nIdx])) { queue[tail++] = nIdx; }
                     }
                 }
             }
         }
-        world.light = Array.from(lightMap);
     };
 
     const updateFluids = (world: WorldData) => {
@@ -480,21 +447,34 @@ export const GameCanvas: React.FC = () => {
 
     const updateRedstone = (world: WorldData) => {
         let changed = false;
-        for (let i = 0; i < world.blocks.length; i++) {
-            const b = world.blocks[i];
-            if (b === BlockType.CABLE_ON) { world.blocks[i] = BlockType.CABLE; changed = true; }
-            else if (b === BlockType.LAMP_ON) { world.blocks[i] = BlockType.LAMP; changed = true; }
-            else if (b === BlockType.DOOR_IRON_BOTTOM_OPEN) {
-                world.blocks[i] = BlockType.DOOR_IRON_BOTTOM_CLOSED;
-                if (i >= WORLD_WIDTH && world.blocks[i - WORLD_WIDTH] === BlockType.DOOR_IRON_TOP_OPEN) {
-                    world.blocks[i - WORLD_WIDTH] = BlockType.DOOR_IRON_TOP_CLOSED;
+        
+        const pbx = Math.floor(playerRef.current.x / BLOCK_SIZE);
+        const pby = Math.floor(playerRef.current.y / BLOCK_SIZE);
+        const startX = Math.max(0, pbx - 150);
+        const endX = Math.min(WORLD_WIDTH - 1, pbx + 150);
+
+        for (let x = startX; x <= endX; x++) {
+            for (let y = 0; y < WORLD_HEIGHT; y++) {
+                const i = y * WORLD_WIDTH + x;
+                const b = world.blocks[i];
+                if (b === BlockType.CABLE_ON) { world.blocks[i] = BlockType.CABLE; changed = true; }
+                else if (b === BlockType.LAMP_ON) { world.blocks[i] = BlockType.LAMP; changed = true; }
+                else if (b === BlockType.DOOR_IRON_BOTTOM_OPEN) {
+                    world.blocks[i] = BlockType.DOOR_IRON_BOTTOM_CLOSED;
+                    if (y > 0 && world.blocks[i - WORLD_WIDTH] === BlockType.DOOR_IRON_TOP_OPEN) {
+                        world.blocks[i - WORLD_WIDTH] = BlockType.DOOR_IRON_TOP_CLOSED;
+                    }
+                    changed = true;
                 }
-                changed = true;
             }
         }
+        
         const queue: {idx: number, dist: number}[] = [];
-        for (let i = 0; i < world.blocks.length; i++) {
-            if (world.blocks[i] === BlockType.LEVER_ON || world.blocks[i] === BlockType.BUTTON_ON) queue.push({idx: i, dist: 0});
+        for (let x = startX; x <= endX; x++) {
+            for (let y = 0; y < WORLD_HEIGHT; y++) {
+                const i = y * WORLD_WIDTH + x;
+                if (world.blocks[i] === BlockType.LEVER_ON || world.blocks[i] === BlockType.BUTTON_ON) queue.push({idx: i, dist: 0});
+            }
         }
         let qIdx = 0;
         while(qIdx < queue.length) {
@@ -539,10 +519,6 @@ export const GameCanvas: React.FC = () => {
         if (worldRef.current.blocks[y * WORLD_WIDTH + x] === type) return;
 
         worldRef.current.blocks[y * WORLD_WIDTH + x] = type;
-        
-        if (type === BlockType.URANIUM_BLOCK || type === BlockType.TITANIUM_BLOCK) {
-            checkRitual(x, y);
-        }
         
         updateRedstone(worldRef.current);
         updateLighting(worldRef.current, timeRef.current);
@@ -596,11 +572,14 @@ export const GameCanvas: React.FC = () => {
                 }
 
                 if (!NON_COLLIDABLE_BLOCKS.has(b)) {
-                    if (b === BlockType.SLAB_WOOD || b === BlockType.SLAB_STONE) {
-                        // Top half is empty, bottom half is solid. Y increases downwards.
+                    if (b === BlockType.FENCE) {
+                        const fenceTop = y * BLOCK_SIZE - (BLOCK_SIZE * 0.5); // 1.5 blocks tall
+                        if (ent.y + ent.height > y * BLOCK_SIZE && ent.y < y * BLOCK_SIZE + BLOCK_SIZE && ent.y + ent.height > fenceTop) {
+                            return true;
+                        }
+                    } else if (b === BlockType.SLAB_WOOD || b === BlockType.SLAB_STONE) {
                         const blockTopHalfEnd = y * BLOCK_SIZE + 16;
-                        // Collision only if entity overlaps with the bottom half
-                        if (ent.y + ent.height > blockTopHalfEnd) {
+                        if (ent.y + ent.height > blockTopHalfEnd && ent.y < y * BLOCK_SIZE + 32) {
                             return true;
                         }
                     } else {
@@ -634,9 +613,10 @@ export const GameCanvas: React.FC = () => {
                  spawnX = Math.max(0, Math.min(WORLD_WIDTH - 1, pX + (dist * dir)));
                  
                  // BIOME RESTRICTIONS
-                 const isDesert = spawnX < 150; 
-                 const isSnow = spawnX > 830;
-                 const isForest = spawnX > 520 && spawnX < 800;
+                 const biome = getBiome(spawnX, currentSeed);
+                 const isDesert = biome === 'desert';
+                 const isSnow = biome === 'snow';
+                 const isForest = biome === 'forest';
 
                  if (isDesert) {
                      // Desert: Only Camel, Scorpion, Snake, Rabbit
@@ -762,7 +742,7 @@ export const GameCanvas: React.FC = () => {
     const getBreakSpeed = (block: BlockType, tool: ItemStack | null): number => {
         let speed = 1;
         if (!tool) return 1;
-        const id = tool.id.toString();
+        const id = (tool.id?.toString() || '');
         let multiplier = 1;
         if (id.includes('wood')) multiplier = 2;
         if (id.includes('stone')) multiplier = 4;
@@ -792,12 +772,12 @@ export const GameCanvas: React.FC = () => {
         if (block === BlockType.BEDROCK) return false;
         if (block === BlockType.DIAMOND_ORE || block === BlockType.GOLD_ORE || block === BlockType.TITANIUM_ORE) {
              if (!tool) return false;
-             const id = tool.id.toString();
+             const id = (tool.id?.toString() || '');
              if (id.includes('wood') || id.includes('stone')) return false; 
         }
         if (block === BlockType.URANIUM_BLOCK || block === BlockType.TITANIUM_BLOCK) {
             if (!tool) return false;
-            const id = tool.id.toString();
+            const id = (tool.id?.toString() || '');
             if (!id.includes('pickaxe') || id.includes('wood') || id.includes('stone') || id.includes('iron')) return false;
         }
         return true;
@@ -809,7 +789,7 @@ export const GameCanvas: React.FC = () => {
             if (!item || item.type !== ItemType.TOOL) return prev;
             
             let mat = '';
-            const id = item.id.toString();
+            const id = (item.id?.toString() || '');
             if (id.includes('wood') || id.includes('basic')) mat = 'wood';
             else if (id.includes('stone')) mat = 'stone';
             else if (id.includes('iron')) mat = 'iron';
@@ -839,7 +819,7 @@ export const GameCanvas: React.FC = () => {
          if (equipment.offHand && equipment.offHand.type === ItemType.SHIELD) {
              const item = equipment.offHand;
              let mat = 'wood'; 
-             if (item.id.toString().includes('iron')) mat = 'iron';
+             if ((item.id?.toString() || '').includes('iron')) mat = 'iron';
              const max = MAX_DURABILITY[mat] || 100;
              const newMeta = { ...item.meta, damage: (item.meta?.damage || 0) + 1 };
              if (newMeta.damage >= max) {
@@ -1073,7 +1053,7 @@ export const GameCanvas: React.FC = () => {
         
         const legOffset = Math.sin(ent.x / 10) * 4;
 
-        if (ent.type.toString().includes('ZOMBIE') || ent.type === 'PLAGUE_KING') {
+        if ((ent.type?.toString() || '').includes('ZOMBIE') || ent.type === 'PLAGUE_KING') {
             const isMutant = ent.type === 'MUTANT_ZOMBIE' || ent.type === 'ZOMBIE_TANK' || ent.type === 'ZOMBIE_KING' || ent.type === 'PLAGUE_KING';
             const scale = isMutant ? 1.5 : 1;
             
@@ -1481,7 +1461,7 @@ export const GameCanvas: React.FC = () => {
             npc.npcData.completed = true;
             
             // Give reward
-            const rewardItem: ItemStack = { id: quest.rewardItem, count: quest.rewardCount, type: typeof quest.rewardItem === 'number' ? 'BLOCK' : 'ITEM' };
+            const rewardItem: ItemStack = { id: quest.rewardItem, count: quest.rewardCount, type: typeof quest.rewardItem === 'number' ? ItemType.BLOCK : ItemType.MATERIAL };
             const finalInv = [...newInv];
             let added = false;
             for (let i = 0; i < finalInv.length; i++) {
@@ -1561,7 +1541,7 @@ export const GameCanvas: React.FC = () => {
 
     const handleEquip = (item: ItemStack, slot: keyof Equipment) => {
         if (cursorItem) {
-            const valid = (slot === 'helmet' && cursorItem.id.toString().includes('helmet')) || (slot === 'chestplate' && cursorItem.id.toString().includes('chestplate')) || (slot === 'leggings' && cursorItem.id.toString().includes('leggings')) || (slot === 'boots' && cursorItem.id.toString().includes('boots')) || (slot === 'offHand');
+            const valid = (slot === 'helmet' && (cursorItem.id?.toString() || '').includes('helmet')) || (slot === 'chestplate' && (cursorItem.id?.toString() || '').includes('chestplate')) || (slot === 'leggings' && (cursorItem.id?.toString() || '').includes('leggings')) || (slot === 'boots' && (cursorItem.id?.toString() || '').includes('boots')) || (slot === 'offHand');
             if (valid) { const old = equipment[slot]; setEquipment(prev => ({ ...prev, [slot]: cursorItem })); setCursorItem(old); }
         } else { if (item) { setCursorItem(item); setEquipment(prev => ({ ...prev, [slot]: null })); } }
     };
@@ -1647,8 +1627,24 @@ export const GameCanvas: React.FC = () => {
                 // Initialize NPCs and Chests
                 if (w.npcSpawns) {
                     w.npcSpawns.forEach(spawn => {
-                        const questId = Math.floor(Math.random() * 10) + 1;
-                        const name = NPC_NAMES[Math.floor(Math.random() * NPC_NAMES.length)];
+                        const isQuestGiver = (spawn as any).type === 'QUEST_GIVER';
+                        const isFarm = (spawn as any).type === 'FARM_ANIMAL';
+                        
+                        if (isFarm) {
+                            for(let a=0; a<4; a++) {
+                                entitiesRef.current.push({
+                                    id: Date.now() + Math.random(),
+                                    type: Math.random() > 0.5 ? 'COW' : (Math.random() > 0.5 ? 'PIG' : 'SHEEP'),
+                                    x: spawn.x * BLOCK_SIZE + (Math.random()*40-20),
+                                    y: spawn.y * BLOCK_SIZE,
+                                    width: 32, height: 32, vx: 0, vy: 0, maxHealth: 20, health: 20, grounded: false, facingRight: true
+                                });
+                            }
+                            return;
+                        }
+
+                        const questId = isQuestGiver ? 1 : Math.floor(Math.random() * 5) + 1;
+                        const name = isQuestGiver ? "Prefeito" : NPC_NAMES[Math.floor(Math.random() * NPC_NAMES.length)];
                         entitiesRef.current.push({
                             id: Date.now() + Math.random(),
                             type: 'NPC',
@@ -1735,7 +1731,7 @@ export const GameCanvas: React.FC = () => {
                         roomId,
                         payload: { 
                             seed: currentSeed,
-                            world: worldRef.current 
+                            world: null // Temporarily disabled full world sync due to size 
                         } 
                     });
                 }
@@ -1754,7 +1750,7 @@ export const GameCanvas: React.FC = () => {
                                 roomId,
                                 payload: { 
                                     seed: currentSeed,
-                                    world: worldRef.current // Send the actual modified world object
+                                    world: null // Temporarily disabled full world sync due to size // Send the actual modified world object
                                 } 
                             });
                         }
@@ -1766,7 +1762,7 @@ export const GameCanvas: React.FC = () => {
                             roomId,
                             payload: { 
                                 seed: currentSeed,
-                                world: worldRef.current
+                                world: null // Temporarily disabled full world sync due to size
                             } 
                         });
                     }
@@ -1791,7 +1787,7 @@ export const GameCanvas: React.FC = () => {
                         }
                     }
                 } else if (type === 'SYNC_WORLD') {
-                    if (options.multiplayer?.mode === 'CLIENT' && payload.world) {
+                    if (false && options.multiplayer?.mode === "CLIENT" && payload.world) {
                         // Receiving full world data from host
                         console.log("Received Full World Sync from Host");
                         worldRef.current = payload.world;
@@ -1799,7 +1795,7 @@ export const GameCanvas: React.FC = () => {
                         updateLighting(payload.world, 0);
                         setCurrentSeed(payload.seed);
                         addNotification("Synced with Host World!");
-                    } else if (options.multiplayer?.mode === 'CLIENT' && payload.seed && !payload.world) {
+                    } else if (options.multiplayer?.mode === "CLIENT" && payload.seed) {
                         // Fallback for seed-only (legacy check)
                         console.log("Received Seed from Host:", payload.seed);
                         if (currentSeed !== payload.seed) {
@@ -2018,7 +2014,7 @@ export const GameCanvas: React.FC = () => {
             if (e.code === 'Escape') { if (isInventoryOpen || isFurnaceOpen || isChestOpen || isHammerMenuOpen || isAdminMenuOpen || isSleepUIOpen || isArmorBenchOpen) { setIsInventoryOpen(false); setIsFurnaceOpen(false); setIsChestOpen(false); setIsHammerMenuOpen(false); setIsAdminMenuOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); setActiveBuildBlock(null); setCursorItem(null); } else { setGameState(prev => prev === 'PLAYING' ? 'PAUSED' : 'PLAYING'); } return; }
             if (gameState !== 'PLAYING') return;
             keysRef.current[e.code] = true;
-            if (e.code === 'KeyE') { const heldItem = inventory[selectedSlot]; if (heldItem && heldItem.id.toString().includes('hammer')) { setIsHammerMenuOpen(true); return; } if (isFurnaceOpen || isChestOpen || isSleepUIOpen || isArmorBenchOpen) { setIsFurnaceOpen(false); setIsChestOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); if (cursorItem) setCursorItem(null); } else { if (isInventoryOpen) { setIsInventoryOpen(false); setNearbyStation('NONE'); } else { setIsInventoryOpen(true); setNearbyStation('NONE'); } } }
+            if (e.code === 'KeyE') { const heldItem = inventory[selectedSlot]; if (heldItem && (heldItem.id?.toString() || '').includes('hammer')) { setIsHammerMenuOpen(true); return; } if (isFurnaceOpen || isChestOpen || isSleepUIOpen || isArmorBenchOpen) { setIsFurnaceOpen(false); setIsChestOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); if (cursorItem) setCursorItem(null); } else { if (isInventoryOpen) { setIsInventoryOpen(false); setNearbyStation('NONE'); } else { setIsInventoryOpen(true); setNearbyStation('NONE'); } } }
             if (e.code === 'KeyF') handleInteraction();
             if (e.code === 'KeyL') setShowAchievementsUI(p => !p);
             if (e.code === 'KeyQ') dropItem(selectedSlot, e.ctrlKey ? 64 : 1);
@@ -2121,11 +2117,11 @@ export const GameCanvas: React.FC = () => {
                         if (targetBlock === BlockType.WATER) {
                             worldRef.current.blocks[idx] = BlockType.AIR;
                             setInventory(prev => { const n = [...prev]; n[selectedSlot] = { id: 'water_bucket', count: 1, type: ItemType.TOOL }; return n; });
-                            audio.playPickup(); return;
+                            audio.playPlace(); return;
                         } else if (targetBlock === BlockType.LAVA) {
                             worldRef.current.blocks[idx] = BlockType.AIR;
                             setInventory(prev => { const n = [...prev]; n[selectedSlot] = { id: 'lava_bucket', count: 1, type: ItemType.TOOL }; return n; });
-                            audio.playPickup(); return;
+                            audio.playPlace(); return;
                         }
                     } else {
                         if (targetBlock === BlockType.AIR || !NON_COLLIDABLE_BLOCKS.has(targetBlock)) {
@@ -2151,8 +2147,8 @@ export const GameCanvas: React.FC = () => {
                     return;
                 }
                 
-                if (heldItem && heldItem.id.toString().startsWith('spawn_')) {
-                    const mobType = heldItem.id.toString().replace('spawn_', '').toUpperCase();
+                if (heldItem && (heldItem.id?.toString() || '').startsWith('spawn_')) {
+                    const mobType = (heldItem.id?.toString() || '').replace('spawn_', '').toUpperCase();
                     if (['ZOMBIE', 'PIG', 'COW', 'SHEEP', 'SCORPION', 'CAMEL', 'SNAKE', 'RABBIT', 'MUTANT_ZOMBIE', 'POLAR_BEAR', 'DOG'].includes(mobType)) {
                         const mx = mouseRef.current.x + cameraRef.current.x;
                         const my = mouseRef.current.y + cameraRef.current.y;
@@ -2247,12 +2243,12 @@ export const GameCanvas: React.FC = () => {
                 }
 
                 // Spear Charge
-                if (heldItem && heldItem.id.toString().includes('spear') && !heldItem.id.toString().includes('hunting')) { 
+                if (heldItem && (heldItem.id?.toString() || '').includes('spear') && !(heldItem.id?.toString() || '').includes('hunting')) { 
                     spearChargeStartRef.current = Date.now(); 
                 }
                 
                 // Eating Start
-                if (heldItem && (heldItem.type === ItemType.FOOD || FOOD_VALUES[heldItem.id.toString()])) {
+                if (heldItem && (heldItem.type === ItemType.FOOD || FOOD_VALUES[(heldItem.id?.toString() || '')] || heldItem.id === 'apple' || (heldItem.id?.toString() || '').startsWith('potion_'))) {
                     let preventEating = false;
                     if (heldItem.id === 'wheat_seeds' || heldItem.id === 'carrot' || heldItem.id === 'potato') {
                         const cvs = canvasRef.current;
@@ -2286,12 +2282,12 @@ export const GameCanvas: React.FC = () => {
                 eatingStartRef.current = null; // Stop eating on release
 
                 const heldItem = inventory[selectedSlot];
-                if (heldItem && heldItem.type === ItemType.ARMOR) { const idStr = heldItem.id.toString(); let slot: keyof Equipment | null = null; if (idStr.includes('helmet')) slot = 'helmet'; else if (idStr.includes('chestplate')) slot = 'chestplate'; else if (idStr.includes('leggings')) slot = 'leggings'; else if (idStr.includes('boots')) slot = 'boots'; if (slot) { const currentEquip = equipment[slot]; setEquipment(prev => ({ ...prev, [slot]: heldItem })); setInventory(prev => { const n = [...prev]; n[selectedSlot] = currentEquip; return n; }); return; } }
+                if (heldItem && heldItem.type === ItemType.ARMOR) { const idStr = (heldItem.id?.toString() || ''); let slot: keyof Equipment | null = null; if (idStr.includes('helmet')) slot = 'helmet'; else if (idStr.includes('chestplate')) slot = 'chestplate'; else if (idStr.includes('leggings')) slot = 'leggings'; else if (idStr.includes('boots')) slot = 'boots'; if (slot) { const currentEquip = equipment[slot]; setEquipment(prev => ({ ...prev, [slot]: heldItem })); setInventory(prev => { const n = [...prev]; n[selectedSlot] = currentEquip; return n; }); return; } }
                 const bx = Math.floor((mouseRef.current.x + cameraRef.current.x) / BLOCK_SIZE); const by = Math.floor((mouseRef.current.y + cameraRef.current.y) / BLOCK_SIZE);
                 if (worldRef.current) { const idx = by * WORLD_WIDTH + bx; const b = worldRef.current.blocks[idx]; if (b === BlockType.DOOR_BOTTOM_CLOSED) { setBlockAt(bx, by, BlockType.DOOR_BOTTOM_OPEN); setBlockAt(bx, by - 1, BlockType.DOOR_TOP_OPEN); } else if (b === BlockType.DOOR_BOTTOM_OPEN) { setBlockAt(bx, by, BlockType.DOOR_BOTTOM_CLOSED); setBlockAt(bx, by - 1, BlockType.DOOR_TOP_CLOSED); } else if (b === BlockType.DOOR_TOP_CLOSED) { setBlockAt(bx, by, BlockType.DOOR_TOP_OPEN); setBlockAt(bx, by + 1, BlockType.DOOR_BOTTOM_OPEN); } else if (b === BlockType.DOOR_TOP_OPEN) { setBlockAt(bx, by, BlockType.DOOR_TOP_CLOSED); setBlockAt(bx, by + 1, BlockType.DOOR_BOTTOM_CLOSED); } }
-                const heldId = heldItem ? heldItem.id.toString() : '';
+                const heldId = heldItem ? (heldItem.id?.toString() || '') : '';
                 if (heldId === 'bow' || heldId === 'crossbow') { const arrowIdx = inventory.findIndex(i => i && i.id === 'arrow' && i.count > 0); if (arrowIdx !== -1) { const isCrossbow = heldId === 'crossbow'; const cooldown = isCrossbow ? 3000 : 1000; if ((playerRef.current.attackCooldown || 0) <= 0) { const cvs = canvasRef.current; if (cvs) { const mx = mouseRef.current.x; const my = mouseRef.current.y; const px = playerRef.current.x + playerRef.current.width/2 - cameraRef.current.x; const py = playerRef.current.y + playerRef.current.height/2 - cameraRef.current.y; const angle = Math.atan2(my - py, mx - px); const force = 15; const shotCount = isCrossbow ? 3 : 1; for(let i=0; i<shotCount; i++) { const spread = isCrossbow ? (i - 1) * 0.1 : 0; const vx = Math.cos(angle + spread) * force; const vy = Math.sin(angle + spread) * force; entitiesRef.current.push({ id: generateEntityId(), type: 'PROJECTILE', x: playerRef.current.x + (vx > 0 ? 20 : -10), y: playerRef.current.y + 10, width: 16, height: 4, vx, vy, grounded: false, health: 1, maxHealth: 1, facingRight: vx > 0, rotation: angle + spread, itemId: 'arrow', projectileState: 'FLYING', ownerId: playerRef.current.id, creationTime: Date.now() }); } setInventory(prev => { const newInv = [...prev]; if (newInv[arrowIdx]) { newInv[arrowIdx]!.count--; if (newInv[arrowIdx]!.count <= 0) newInv[arrowIdx] = null; } return newInv; }); playerRef.current.attackCooldown = cooldown / 16; } } } }
-                if (spearChargeStartRef.current) { const chargeTime = Date.now() - spearChargeStartRef.current; const osc = (Math.sin(chargeTime / 300) + 1) / 2; spearChargeStartRef.current = null; if (heldItem && heldItem.id.toString().includes('spear') && !heldItem.id.toString().includes('hunting')) { const force = 10 + (osc * 15); const cvs = canvasRef.current; if(cvs) { const mx = mouseRef.current.x; const my = mouseRef.current.y; const px = playerRef.current.x + playerRef.current.width/2 - cameraRef.current.x; const py = playerRef.current.y + playerRef.current.height/2 - cameraRef.current.y; const angle = Math.atan2(my - py, mx - px); const vx = Math.cos(angle) * force; const vy = Math.sin(angle) * force; 
+                if (spearChargeStartRef.current) { const chargeTime = Date.now() - spearChargeStartRef.current; const osc = (Math.sin(chargeTime / 300) + 1) / 2; spearChargeStartRef.current = null; if (heldItem && (heldItem.id?.toString() || '').includes('spear') && !(heldItem.id?.toString() || '').includes('hunting')) { const force = 10 + (osc * 15); const cvs = canvasRef.current; if(cvs) { const mx = mouseRef.current.x; const my = mouseRef.current.y; const px = playerRef.current.x + playerRef.current.width/2 - cameraRef.current.x; const py = playerRef.current.y + playerRef.current.height/2 - cameraRef.current.y; const angle = Math.atan2(my - py, mx - px); const vx = Math.cos(angle) * force; const vy = Math.sin(angle) * force; 
                 
                 // REMOVED LEVEL LOGIC FOR SPEAR RETURN TIME
                 let returnTime = 0;
@@ -2329,6 +2325,29 @@ export const GameCanvas: React.FC = () => {
             }
         };
     }, [gameState, cursorItem, isFurnaceOpen, isChestOpen, isInventoryOpen, inventory, selectedSlot, playerStats, equipment, isHammerMenuOpen, activeBuildBlock, options.adminMode, isSleepUIOpen, options.isMobile, isArmorBenchOpen, isChatOpen]); 
+
+    useEffect(() => {
+        if (gameState !== 'PLAYING' || options.tutorialEnabled === false || unlockedAchievements.includes(0)) return;
+        
+        if (tutorialStep === 0) {
+            const stickCount = inventory.reduce((acc, item) => acc + (item && item.id === 'stick' ? item.count : 0), 0);
+            if (stickCount >= 3) {
+                setTutorialStep(1);
+            }
+        } else if (tutorialStep === 1) {
+            const hasAxe = inventory.some(i => i && i.id === 'basic_axe') || equipment.offHand?.id === 'basic_axe';
+            if (hasAxe) {
+                setTutorialStep(2);
+            }
+        } else if (tutorialStep === 2) {
+            const hasCraftingTable = inventory.some(i => i && i.id === 13);
+            if (hasCraftingTable) {
+                setTutorialStep(3);
+                checkAchievement(0);
+                addNotification(lang === 'PT' ? 'Tutorial Concluído!' : 'Tutorial Completed!');
+            }
+        }
+    }, [inventory, equipment, tutorialStep, gameState, options.tutorialEnabled, unlockedAchievements, checkAchievement, lang]);
 
     // --- GAME LOOP ---
     const gameLoop = () => {
@@ -2378,6 +2397,26 @@ export const GameCanvas: React.FC = () => {
             // --- WEATHER SYSTEM ---
             if (!world.weather) world.weather = { type: 'CLEAR', intensity: 0, duration: 0 };
             if (world.weather.duration > 0) {
+                // SNOW ACCUMULATION
+                if ((world.weather.type === 'RAIN' || world.weather.type === 'HEAVY_RAIN') && timeRef.current % 30 === 0) {
+                    for(let i=0; i<3; i++) {
+                        const rx = Math.floor(Math.random() * WORLD_WIDTH);
+                        // Biome check
+                        const biomeNoise = Math.abs(rx / 500) % 4; // roughly
+                        if (true) {
+                            // Find ground
+                            for(let y=0; y<WORLD_HEIGHT; y++) {
+                                const b = world.blocks[y * WORLD_WIDTH + rx];
+                                if (b !== BlockType.AIR && b !== BlockType.WATER && b !== BlockType.ICE && b !== BlockType.SNOW_BLOCK) {
+                                    if (b === BlockType.SNOWY_GRASS || b === BlockType.SNOWY_LEAVES || b === BlockType.PINE_LEAVES || b === BlockType.PINE_WOOD) {
+                                       world.blocks[(y - 1) * WORLD_WIDTH + rx] = BlockType.SNOW_BLOCK;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
                 world.weather.duration--;
                 if (world.weather.duration === 0) {
                     world.weather.type = 'CLEAR';
@@ -2455,8 +2494,9 @@ export const GameCanvas: React.FC = () => {
                 const px = Math.floor(player.x / BLOCK_SIZE);
                 const py = Math.floor(player.y / BLOCK_SIZE);
                 let envTemp = 50;
-                if (player.x > 830 * BLOCK_SIZE) envTemp -= 30; // Snow biome
-                if (player.x < 150 * BLOCK_SIZE) envTemp += 20; // Desert biome
+                const curBiome = getBiome(player.x / BLOCK_SIZE, currentSeed);
+                if (curBiome === 'snow') envTemp -= 30;
+                if (curBiome === 'desert') envTemp += 20;
                 
                 // Check nearby heat sources
                 let nearHeat = false;
@@ -2520,7 +2560,7 @@ export const GameCanvas: React.FC = () => {
             if (timeRef.current % 1000 === 0) updateLighting(world, timeRef.current);
             if (timeRef.current < DUSK_START && world.light[0] < 15 && timeRef.current % 60 === 0) updateLighting(world, timeRef.current);
             if (timeRef.current % 10 === 0) updateFluids(world);
-            furnacesRef.current.forEach((furnace) => { let dirty = false; if (furnace.burnTime > 0) { furnace.burnTime--; dirty = true; } else if (furnace.burnTime <= 0 && furnace.input && furnace.fuel && furnace.input.count > 0 && furnace.fuel.count > 0) { const outputId = COOKING_RECIPES[furnace.input.id.toString()]; if (outputId) { if (!furnace.output || (furnace.output.id === outputId && furnace.output.count < 64)) { const fuelVal = FUEL_VALUES[furnace.fuel.id.toString()]; if (fuelVal) { furnace.maxBurnTime = fuelVal; furnace.burnTime = fuelVal; furnace.fuel.count--; if(furnace.fuel.count <= 0) furnace.fuel = null; dirty = true; } } } } if (furnace.burnTime > 0 && furnace.input) { const outputId = COOKING_RECIPES[furnace.input.id.toString()]; if (outputId) { if (!furnace.output || (furnace.output.id === outputId && furnace.output.count < 64)) { furnace.cookTime++; if (furnace.cookTime >= 200) { furnace.cookTime = 0; furnace.input.count--; if (furnace.input.count <= 0) furnace.input = null; 
+            furnacesRef.current.forEach((furnace) => { let dirty = false; if (furnace.burnTime > 0) { furnace.burnTime--; dirty = true; } else if (furnace.burnTime <= 0 && furnace.input && furnace.fuel && furnace.input.count > 0 && furnace.fuel.count > 0) { const outputId = COOKING_RECIPES[(furnace.input.id?.toString() || '')]; if (outputId) { if (!furnace.output || (furnace.output.id === outputId && furnace.output.count < 64)) { const fuelVal = FUEL_VALUES[(furnace.fuel.id?.toString() || '')]; if (fuelVal) { furnace.maxBurnTime = fuelVal; furnace.burnTime = fuelVal; furnace.fuel.count--; if(furnace.fuel.count <= 0) furnace.fuel = null; dirty = true; } } } } if (furnace.burnTime > 0 && furnace.input) { const outputId = COOKING_RECIPES[(furnace.input.id?.toString() || '')]; if (outputId) { if (!furnace.output || (furnace.output.id === outputId && furnace.output.count < 64)) { furnace.cookTime++; if (furnace.cookTime >= 200) { furnace.cookTime = 0; furnace.input.count--; if (furnace.input.count <= 0) furnace.input = null; 
             
             // FIXED: Set Correct Output Type
             const isBlock = !isNaN(Number(outputId)); 
@@ -2529,6 +2569,20 @@ export const GameCanvas: React.FC = () => {
             
             } dirty = true; } else furnace.cookTime = 0; } else furnace.cookTime = 0; } else if (furnace.cookTime > 0) { furnace.cookTime = 0; dirty = true; } });
             if ((isFurnaceOpen || isChestOpen) && timeRef.current % 10 === 0) setUiTick(t => t+1);
+            
+            if (timeRef.current % 60 === 0) {
+                const maxDistSquared = Math.pow((options.renderDistance || 15) * 16 * BLOCK_SIZE, 2);
+                entitiesRef.current = entitiesRef.current.filter(e => {
+                    if (e.type === 'PLAYER' || e.isTamed) return true;
+                    // Keep drops around a bit longer? Actually drops can despawn if too far to save memory
+                    if (e.type === 'DROP' && e.creationTime && Date.now() - e.creationTime < 1000 * 60 * 5) {
+                        return true; // Keep drops up to 5 mins regardless of distance, up to a limit
+                    }
+                    const distSq = Math.pow(e.x - player.x, 2) + Math.pow(e.y - player.y, 2);
+                    return distSq < maxDistSquared;
+                });
+            }
+
             const isDay = timeRef.current >= 0 && timeRef.current < DUSK_START;
             if (Math.random() < 0.02 && entitiesRef.current.length < 50) { 
                 const r = Math.random(); 
@@ -2542,7 +2596,7 @@ export const GameCanvas: React.FC = () => {
                     
                     if (moonPhaseRef.current === 'BLOOD') {
                         zombieTypes = ['ZOMBIE', 'ZOMBIE_RUNNER', 'ZOMBIE_TANK', 'ZOMBIE_EXPLOSIVE', 'ZOMBIE_TOXIC', 'ZOMBIE_SKELETON', 'ZOMBIE_INFECTOR', 'ZOMBIE_DARK', 'ZOMBIE_KING'];
-                        if (Math.random() < 0.5) spawnMob(zombieTypes[Math.floor(Math.random() * zombieTypes.length)]); // Extra spawn
+                        if (Math.random() < 0.5) spawnMob(zombieTypes[Math.floor(Math.random() * zombieTypes.length)] as any); // Extra spawn
                     } else if (moonPhaseRef.current === 'FULL') {
                         zombieTypes = ['ZOMBIE', 'ZOMBIE_TANK', 'ZOMBIE_EXPLOSIVE', 'ZOMBIE_TOXIC', 'ZOMBIE_KING'];
                     } else {
@@ -2682,7 +2736,75 @@ export const GameCanvas: React.FC = () => {
             player.facingRight = worldMouseX > (player.x + player.width/2);
             
             if (!isClimbingRef.current) {
-                if (adminFlags.noClip) { const flySpeed = speed * 1.5; player.vx = 0; player.vy = 0; if (keysRef.current['KeyW']) player.vy = -flySpeed; if (keysRef.current['KeyS']) player.vy = flySpeed; if (keysRef.current['KeyA']) { player.vx = -flySpeed; player.facingRight = false; } if (keysRef.current['KeyD']) { player.vx = flySpeed; player.facingRight = true; } player.x += player.vx; player.y += player.vy; player.grounded = false; player.highestY = player.y; } else { const inWaterIdx = pCenterY * WORLD_WIDTH + pCenterX; const inWater = world.blocks[inWaterIdx] === BlockType.WATER; if (inWater) { player.vy += 0.1; if (player.vy > 2) player.vy = 2; player.vx *= 0.8; player.vy *= 0.9; if (keysRef.current['Space']) player.vy = -3; if (sprintRef.current) { const swimSpeed = 4; if (keysRef.current['KeyA']) player.vx = -swimSpeed; else if (keysRef.current['KeyD']) player.vx = swimSpeed; else { if (player.facingRight) player.vx = swimSpeed; else player.vx = -swimSpeed; } } } else { if ((keysRef.current['Space'] || keysRef.current['KeyW']) && player.grounded && player.posture !== 'PRONE') { player.vy = player.posture === 'CROUCH' ? -JUMP_FORCE * 0.6 : -JUMP_FORCE; player.grounded = false; } player.vy += GRAVITY; if (player.vy > TERMINAL_VELOCITY) player.vy = TERMINAL_VELOCITY; } player.x += player.vx; if (checkCollision(player, world)) { player.x -= player.vx; player.vx = 0; } player.y += player.vy; player.grounded = false; if (inWater) player.highestY = player.y; 
+                if (adminFlags.noClip) { const flySpeed = speed * 1.5; player.vx = 0; player.vy = 0; if (keysRef.current['KeyW']) player.vy = -flySpeed; if (keysRef.current['KeyS']) player.vy = flySpeed; if (keysRef.current['KeyA']) { player.vx = -flySpeed; player.facingRight = false; } if (keysRef.current['KeyD']) { player.vx = flySpeed; player.facingRight = true; } player.x += player.vx; player.y += player.vy; player.grounded = false; player.highestY = player.y; } else { 
+                    const pCenterYWater = Math.floor((player.y + player.height/2) / BLOCK_SIZE);
+                    const feetYWater = Math.floor((player.y + player.height - 4) / BLOCK_SIZE);
+                    const headYWater = Math.floor((player.y + 4) / BLOCK_SIZE);
+                    const inWaterCenter = world.blocks[pCenterYWater * WORLD_WIDTH + pCenterX] === BlockType.WATER || world.blocks[pCenterYWater * WORLD_WIDTH + pCenterX] === BlockType.LAVA;
+                    const inWaterFeet = world.blocks[feetYWater * WORLD_WIDTH + pCenterX] === BlockType.WATER || world.blocks[feetYWater * WORLD_WIDTH + pCenterX] === BlockType.LAVA;
+                    const inWaterHead = world.blocks[headYWater * WORLD_WIDTH + pCenterX] === BlockType.WATER || world.blocks[headYWater * WORLD_WIDTH + pCenterX] === BlockType.LAVA;
+                    const inWater = inWaterCenter || inWaterFeet || inWaterHead;
+                    
+                    if (inWater && sprintRef.current && (keysRef.current['KeyA'] || keysRef.current['KeyD'] || keysRef.current['KeyW'] || keysRef.current['KeyS'])) {
+                        if (player.posture !== 'PRONE') {
+                            player.posture = 'PRONE';
+                            player.height = 24;
+                            player.y += (56 - 24);
+                        }
+                        (player as any).wasSwimming = true;
+                    } else if (player.posture === 'PRONE' && (player as any).wasSwimming && (!inWater || !sprintRef.current)) {
+                        // Attempt to stand up
+                        const oldHeight = player.height;
+                        const oldY = player.y;
+                        player.height = 56;
+                        player.y -= (56 - 24);
+                        if (checkCollision(player, world)) {
+                            player.height = oldHeight;
+                            player.y = oldY;
+                        } else {
+                            player.posture = 'STAND';
+                            (player as any).wasSwimming = false;
+                        }
+                    }
+
+                    if (inWater) { 
+                        player.vy += 0.1; 
+                        if (player.vy > 2) player.vy = 2; 
+                        player.vx *= 0.8; 
+                        player.vy *= 0.9; 
+                        if (keysRef.current['Space']) {
+                            // Give a jump boost when at the surface to pop out of water
+                            if (!inWaterHead && !inWaterCenter) {
+                                player.vy = -JUMP_FORCE * 0.95;
+                                player.y -= 2; // small nudge out
+                            } else {
+                                player.vy = -3.5;
+                            }
+                        } 
+                        if (sprintRef.current && player.posture === 'PRONE') { 
+                            const swimSpeed = 4.5; 
+                            if (keysRef.current['KeyA']) player.vx = -swimSpeed; 
+                            else if (keysRef.current['KeyD']) player.vx = swimSpeed; 
+                        } 
+                    } else { 
+                        if ((keysRef.current['Space'] || keysRef.current['KeyW']) && player.grounded && player.posture !== 'PRONE') { player.vy = player.posture === 'CROUCH' ? -JUMP_FORCE * 0.6 : -JUMP_FORCE; player.grounded = false; } 
+                        player.vy += GRAVITY; if (player.vy > TERMINAL_VELOCITY) player.vy = TERMINAL_VELOCITY; 
+                    } 
+                
+                player.x += player.vx; 
+                if (checkCollision(player, world)) {
+                    // Try auto step for slab
+                    player.y -= 16;
+                    if (checkCollision(player, world)) {
+                        player.y += 16;
+                        player.x -= player.vx; 
+                        player.vx = 0;
+                    } 
+                } 
+                
+                player.y += player.vy; 
+                player.grounded = false; 
+                if (inWater) player.highestY = player.y; 
                 if (checkCollision(player, world)) { 
                     player.y -= player.vy; 
                     if (player.vy > 0) {
@@ -2746,14 +2868,29 @@ export const GameCanvas: React.FC = () => {
                     stepTimerRef.current = 0;
                     const ftB = world.blocks[Math.floor((player.y + player.height + 2) / BLOCK_SIZE) * WORLD_WIDTH + Math.floor((player.x + player.width/2)/BLOCK_SIZE)];
                     let mat = 'grass';
-                    if (ftB === BlockType.STONE || ftB === BlockType.COAL || ftB === BlockType.IRON || ftB === BlockType.GOLD || ftB === BlockType.DIAMOND || ftB === BlockType.TITANIUM || ftB === BlockType.URANIUM || ftB === BlockType.BEDROCK) mat = 'stone';
-                    else if (ftB === BlockType.PLANKS || ftB === BlockType.WOOD || ftB === BlockType.WORKBENCH || ftB === BlockType.DOOR_BOTTOM_CLOSED || ftB === BlockType.DOOR_BOTTOM_OPEN || ftB === BlockType.CHEST) mat = 'wood';
-                    else if (ftB === BlockType.SNOW || ftB === BlockType.ICE) mat = 'snow';
+                    if (ftB === BlockType.STONE || ftB === BlockType.COAL_ORE || ftB === BlockType.IRON_ORE || ftB === BlockType.GOLD_ORE || ftB === BlockType.DIAMOND_ORE || ftB === BlockType.TITANIUM_ORE || ftB === BlockType.URANIUM_ORE || ftB === BlockType.BEDROCK) mat = 'stone';
+                    else if (ftB === BlockType.PLANKS || ftB === BlockType.WOOD || ftB === BlockType.CRAFTING_TABLE || ftB === BlockType.DOOR_BOTTOM_CLOSED || ftB === BlockType.DOOR_BOTTOM_OPEN || ftB === BlockType.CHEST) mat = 'wood';
+                    else if (ftB === BlockType.SNOW_BLOCK || ftB === BlockType.ICE) mat = 'snow';
                     audio.playStep(mat);
                 }
             } else { stepTimerRef.current = 0; }
             if (player.x < 0) player.x = 0; if (player.x > WORLD_WIDTH * BLOCK_SIZE - player.width) player.x = WORLD_WIDTH * BLOCK_SIZE - player.width; 
             
+            // Ocean Shark Boundary
+            if (player.x < 200 * BLOCK_SIZE || player.x > (WORLD_WIDTH - 200) * BLOCK_SIZE) {
+                const playerBlockY = Math.floor(player.y / BLOCK_SIZE);
+                const playerBlockX = Math.floor(player.x / BLOCK_SIZE);
+                if (worldRef.current && worldRef.current.blocks[playerBlockY * WORLD_WIDTH + playerBlockX] === BlockType.WATER) {
+                    if (['SURVIVAL'].includes(options.gameMode || 'SURVIVAL')) {
+                        if (player.health > 0) {
+                            addNotification('Um tubarão te devorou!');
+                            player.health = 0;
+                            audio.playHit();
+                        }
+                    }
+                }
+            }
+
             if (player.y > WORLD_HEIGHT * BLOCK_SIZE || player.health <= 0) {
                 if (['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) {
                     player.health = player.maxHealth;
@@ -2871,7 +3008,7 @@ export const GameCanvas: React.FC = () => {
             // --- EATING MECHANIC ---
             if (mouseRef.current.right) {
                 const heldItem = inventory[selectedSlot];
-                if (heldItem && (heldItem.type === ItemType.FOOD || FOOD_VALUES[heldItem.id.toString()])) {
+                if (heldItem && (heldItem.type === ItemType.FOOD || FOOD_VALUES[(heldItem.id?.toString() || '')] || heldItem.id === 'apple' || (heldItem.id?.toString() || '').startsWith('potion_'))) {
                     // Prevent eating seeds/crops if looking at farmland
                     let preventEating = false;
                     if (heldItem.id === 'wheat_seeds' || heldItem.id === 'carrot' || heldItem.id === 'potato') {
@@ -2897,7 +3034,7 @@ export const GameCanvas: React.FC = () => {
                         
                         if (Date.now() - eatingStartRef.current > 1500) { // 1.5 seconds to eat
                             // Consume
-                            const idStr = heldItem.id.toString();
+                            const idStr = (heldItem.id?.toString() || '');
                             
                             // Apply Potion / Medical Effects
                             if (idStr === 'medicine') {
@@ -2911,7 +3048,7 @@ export const GameCanvas: React.FC = () => {
                                 hungerRef.current = 10;
                             }
 
-                            const foodVal = FOOD_VALUES[idStr] || 0;
+                            const foodVal = FOOD_VALUES[idStr] || (idStr === 'apple' ? 1 : 0);
                             if (foodVal > 0) {
                                 if (hungerRef.current < 10) {
                                     hungerRef.current = Math.min(10, hungerRef.current + foodVal);
@@ -2977,7 +3114,7 @@ export const GameCanvas: React.FC = () => {
                             setInventory(prev => { 
                                 const newInv = [...prev]; let added = false; 
                                 // FIX: Updated Stackability Logic
-                                const strId = ent.itemId ? ent.itemId.toString() : '';
+                                const strId = (ent.itemId?.toString() || '');
                                 // Determine if unstackable based on ID pattern as we don't have ItemType on Entity easily
                                 // Using broad match for Tools/Weapons/Armor
                                 const isUnstackable = strId.includes('pickaxe') || strId.includes('sword') || strId.includes('axe') || strId.includes('shovel') || strId.includes('hoe') || strId.includes('hammer') || strId.includes('spear') || strId.includes('dagger') || strId.includes('club') || strId.includes('scythe') || strId.includes('knife') || strId.includes('katana') || strId.includes('bow') || strId.includes('crossbow') || strId.includes('helmet') || strId.includes('chestplate') || strId.includes('leggings') || strId.includes('boots') || strId.includes('shield') || strId.includes('totem');
@@ -3021,7 +3158,7 @@ export const GameCanvas: React.FC = () => {
                         setInventory(prev => { 
                             const newInv = [...prev]; let added = false; 
                             // FIX: Updated Stackability Logic (HOST/SP)
-                            const strId = ent.itemId ? ent.itemId.toString() : '';
+                            const strId = (ent.itemId?.toString() || '');
                             const isUnstackable = strId.includes('pickaxe') || strId.includes('sword') || strId.includes('axe') || strId.includes('shovel') || strId.includes('hoe') || strId.includes('hammer') || strId.includes('spear') || strId.includes('dagger') || strId.includes('club') || strId.includes('scythe') || strId.includes('knife') || strId.includes('katana') || strId.includes('bow') || strId.includes('crossbow') || strId.includes('helmet') || strId.includes('chestplate') || strId.includes('leggings') || strId.includes('boots') || strId.includes('shield') || strId.includes('totem');
 
                             if (!isUnstackable) { 
@@ -3058,7 +3195,7 @@ export const GameCanvas: React.FC = () => {
                     if (ent.projectileState === 'FLYING') { 
                         ent.vy += 0.2; ent.x += ent.vx; ent.y += ent.vy; ent.rotation = Math.atan2(ent.vy, ent.vx); 
                         if (ent.returnTime && ent.creationTime) { if (Date.now() - ent.creationTime > ent.returnTime) { ent.projectileState = 'RETURNING'; } }
-                        let projectileDestroyed = false; for (let j = entitiesRef.current.length - 1; j >= 0; j--) { const mob = entitiesRef.current[j]; if (mob.type === 'PLAYER' || mob.type === 'DROP' || mob.type === 'PROJECTILE') continue; if (ent.x < mob.x + mob.width && ent.x + ent.width > mob.x && ent.y < mob.y + mob.height && ent.y + ent.height > mob.y) { const heldItemId = ent.itemId ? ent.itemId.toString() : 'wood_spear'; const isArrow = heldItemId === 'arrow'; const isRadioactive = heldItemId === 'uranium'; const damage = isRadioactive ? 5 : (isArrow ? 4 : (DAMAGE_VALUES[heldItemId] || 1)); mob.health -= damage; mob.lastDamageTime = Date.now(); if (mob.health <= 0) { gainXP(XP_PER_MOB); entitiesRef.current.splice(j, 1); if (mob.type === 'COW') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 1); } if (mob.type === 'PIG') spawnDrop(mob.x, mob.y, 'raw_porkchop', 2); if (mob.type === 'SHEEP') spawnDrop(mob.x, mob.y, BlockType.WOOL, 1); if (mob.type === 'ZOMBIE') spawnDrop(mob.x, mob.y, 'raw_beef', 1); if (mob.type === 'MUTANT_ZOMBIE') { spawnDrop(mob.x, mob.y, 'uranium_totem', 1); spawnDrop(mob.x, mob.y, 'uranium', 5); } } if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(!isArrow && !isRadioactive) spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); } projectileDestroyed = true; break; } } 
+                        let projectileDestroyed = false; for (let j = entitiesRef.current.length - 1; j >= 0; j--) { const mob = entitiesRef.current[j]; if (mob.type === 'PLAYER' || mob.type === 'DROP' || mob.type === 'PROJECTILE') continue; if (ent.x < mob.x + mob.width && ent.x + ent.width > mob.x && ent.y < mob.y + mob.height && ent.y + ent.height > mob.y) { const heldItemId = ent.itemId ? (ent.itemId?.toString() || '') : 'wood_spear'; const isArrow = heldItemId === 'arrow'; const isRadioactive = heldItemId === 'uranium'; const damage = isRadioactive ? 5 : (isArrow ? 4 : (DAMAGE_VALUES[heldItemId] || 1)); mob.health -= damage; mob.lastDamageTime = Date.now(); if (mob.health <= 0) { gainXP(XP_PER_MOB); entitiesRef.current.splice(j, 1); if (mob.type === 'COW') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 1); } if (mob.type === 'PIG') spawnDrop(mob.x, mob.y, 'raw_porkchop', 2); if (mob.type === 'SHEEP') spawnDrop(mob.x, mob.y, BlockType.WOOL, 1); if (mob.type === 'ZOMBIE') spawnDrop(mob.x, mob.y, 'raw_beef', 1); if (mob.type === 'MUTANT_ZOMBIE') { spawnDrop(mob.x, mob.y, 'uranium_totem', 1); spawnDrop(mob.x, mob.y, 'uranium', 5); } } if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(!isArrow && !isRadioactive) spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); } projectileDestroyed = true; break; } } 
                         if (!projectileDestroyed && (ent.itemId === 'uranium' || ent.itemId === 'spike' || ent.itemId === 'arrow')) { const p = playerRef.current; if (ent.x < p.x + p.width && ent.x + ent.width > p.x && ent.y < p.y + p.height && ent.y + ent.height > p.y) { p.health -= (ent.itemId === 'spike' ? 8 : ent.itemId === 'arrow' ? 5 : 5); audio.playHit(); entitiesRef.current.splice(i, 1); projectileDestroyed = true; } }
                         if (projectileDestroyed) continue; 
                         if (checkCollision(ent, world)) { if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(ent.itemId !== 'arrow' && ent.itemId !== 'uranium' && ent.itemId !== 'spike') spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); continue; } } 
@@ -3076,7 +3213,7 @@ export const GameCanvas: React.FC = () => {
                 otherPlayersRef.current.forEach(op => { const d = Math.abs(op.x - ent.x); if (d < minDist) { minDist = d; targetX = op.x; targetY = op.y; closestPlayer = op; } });
                 const distToPlayer = targetX - ent.x; const distY = Math.abs(targetY - ent.y);
 
-                if (ent.type.toString().includes('ZOMBIE') || ent.type === 'PLAGUE_KING' || ent.type === 'MUTANT_ZOMBIE' || (ent.type === 'SCORPION' && isPanic) || ent.type === 'SNAKE' || (ent.type === 'SPIDER' && (player as any).spiderAggro) || (ent.type === 'BUSH_MOB' && !ent.isSleeping)) { 
+                if ((ent.type?.toString() || '').includes('ZOMBIE') || ent.type === 'PLAGUE_KING' || ent.type === 'MUTANT_ZOMBIE' || (ent.type === 'SCORPION' && isPanic) || ent.type === 'SNAKE' || (ent.type === 'SPIDER' && (player as any).spiderAggro) || (ent.type === 'BUSH_MOB' && !ent.isSleeping)) { 
                     if (ent.type === 'ZOMBIE' && isDay) { entitiesRef.current.splice(i, 1); continue; } 
                     
                     // SNAKE LOGIC
@@ -3154,7 +3291,7 @@ export const GameCanvas: React.FC = () => {
                                         }
                                     }
                                 }
-                                audio.playExplosion();
+                                
                             }
 
                             if (Math.random() < 0.01) { 
@@ -3240,10 +3377,10 @@ export const GameCanvas: React.FC = () => {
                                 else if (ent.type === 'ZOMBIE_RUNNER') rawDamage = 3;
                                 
                                 let reduction = 0; 
-                                if(equipment.helmet) reduction += ARMOR_PROTECTION[equipment.helmet.id.toString()] || 0; 
-                                if(equipment.chestplate) reduction += ARMOR_PROTECTION[equipment.chestplate.id.toString()] || 0; 
-                                if(equipment.leggings) reduction += ARMOR_PROTECTION[equipment.leggings.id.toString()] || 0; 
-                                if(equipment.boots) reduction += ARMOR_PROTECTION[equipment.boots.id.toString()] || 0; 
+                                if(equipment.helmet) reduction += ARMOR_PROTECTION[(equipment.helmet?.id?.toString() || '')] || 0; 
+                                if(equipment.chestplate) reduction += ARMOR_PROTECTION[(equipment.chestplate?.id?.toString() || '')] || 0; 
+                                if(equipment.leggings) reduction += ARMOR_PROTECTION[(equipment.leggings?.id?.toString() || '')] || 0; 
+                                if(equipment.boots) reduction += ARMOR_PROTECTION[(equipment.boots?.id?.toString() || '')] || 0; 
                                 
                                 let finalDamage = Math.max(0.5, rawDamage * (1 - reduction));
                                 if (options.difficulty === 'EASY') finalDamage *= 0.5;
@@ -3331,7 +3468,7 @@ export const GameCanvas: React.FC = () => {
                 } else if (ent.type === 'POLAR_BEAR') {
                     // Polar Bear Logic
                     if (isDay && !isPanic && !ent.targetId) {
-                        const inSnowBiome = ent.x > 830 * BLOCK_SIZE;
+                        const inSnowBiome = getBiome(ent.x / BLOCK_SIZE, currentSeed) === 'snow';
                         if (!inSnowBiome) {
                             // Walk towards snow biome
                             ent.isSleeping = false;
@@ -3444,7 +3581,16 @@ export const GameCanvas: React.FC = () => {
                     if (heldItem) { if (ent.type === 'PIG' && heldItem.id === 'carrot') attracted = true; if ((ent.type === 'COW' || ent.type === 'SHEEP') && heldItem.id === 'wheat') attracted = true; } 
                     if (attracted) { if (Math.abs(distToPlayer) < 200) { ent.facingRight = distToPlayer > 0; ent.vx = ent.facingRight ? 3 : -3; if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; } else { ent.vx = 0; } } else if (isPanic) { ent.facingRight = targetX < ent.x; ent.vx = ent.facingRight ? 3 : -3; } else if (Math.random() < 0.02) { ent.vx = (Math.random() - 0.5) * 2; if (ent.vx > 0) ent.facingRight = true; if (ent.vx < 0) ent.facingRight = false; } 
                 }
-                ent.x += ent.vx; if (checkCollision(ent, world)) { ent.x -= ent.vx; ent.vx *= -1; ent.facingRight = !ent.facingRight; }
+                ent.x += ent.vx; 
+                if (checkCollision(ent, world)) { 
+                    ent.y -= 16;
+                    if (checkCollision(ent, world)) {
+                        ent.y += 16;
+                        ent.x -= ent.vx; 
+                        ent.vx *= -1; 
+                        ent.facingRight = !ent.facingRight; 
+                    }
+                }
             }
         }
 
@@ -3463,10 +3609,10 @@ export const GameCanvas: React.FC = () => {
                 const heldItem = inventory[selectedSlot];
                 let hitEntity = false;
                 if ((player.attackCooldown || 0) <= 0) {
-                     const isKatana = heldItem && heldItem.id.toString().includes('katana'); const isScythe = heldItem && heldItem.id.toString().includes('scythe');
+                     const isKatana = heldItem && (heldItem.id?.toString() || '').includes('katana'); const isScythe = heldItem && (heldItem.id?.toString() || '').includes('scythe');
                      const targets = entitiesRef.current.filter(ent => { if (ent.type === 'DROP' || ent.type === 'PROJECTILE') return false; return (worldMouseX >= ent.x && worldMouseX <= ent.x + ent.width && worldMouseY >= ent.y && worldMouseY <= ent.y + ent.height) || ((isKatana || isScythe) && Math.abs(ent.x - worldMouseX) < 60 && Math.abs(ent.y - worldMouseY) < 60); });
                      let hitTargets = targets.slice(0, 1); if (isKatana) hitTargets = targets.slice(0, 3);
-                     if (hitTargets.length > 0) { hitEntity = true; const heldItemId = heldItem ? heldItem.id.toString() : 'hand'; let cooldown = 20; if (isKatana) cooldown = 100; else if (heldItemId.includes('sword')) cooldown = 60; else if (heldItemId.includes('knife')) cooldown = 10; else if (heldItemId.includes('spear')) cooldown = 45; else if (heldItemId.includes('axe')) cooldown = 75;
+                     if (hitTargets.length > 0) { hitEntity = true; const heldItemId = heldItem ? (heldItem.id?.toString() || '') : 'hand'; let cooldown = 20; if (isKatana) cooldown = 100; else if (heldItemId.includes('sword')) cooldown = 60; else if (heldItemId.includes('knife')) cooldown = 10; else if (heldItemId.includes('spear')) cooldown = 45; else if (heldItemId.includes('axe')) cooldown = 75;
                      
                      // REMOVED LEVEL LOGIC FOR COOLDOWN
                      
@@ -3503,7 +3649,7 @@ export const GameCanvas: React.FC = () => {
                                 const speed = getBreakSpeed(bType, heldItem); 
                                 breakingRef.current.progress += adminFlags.oneHitBreak ? 1000000 : Math.max(1, speed); 
                                 if ((player.attackCooldown || 0) <= 0) {
-                                    const heldItemId = heldItem ? heldItem.id.toString() : '';
+                                    const heldItemId = heldItem ? (heldItem.id?.toString() || '') : '';
                                     let cooldown = 15;
                                     if (heldItemId.includes('pickaxe') || heldItemId.includes('axe') || heldItemId.includes('hammer') || heldItemId.includes('shovel') || heldItemId.includes('hoe')) cooldown = 20;
                                     player.attackCooldown = cooldown;
@@ -3518,15 +3664,56 @@ export const GameCanvas: React.FC = () => {
                                     if (bType === BlockType.DOOR_BOTTOM_CLOSED || bType === BlockType.DOOR_BOTTOM_OPEN) { setBlockAt(bx, by - 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_BOTTOM_CLOSED, 1); } else if (bType === BlockType.DOOR_TOP_CLOSED || bType === BlockType.DOOR_TOP_OPEN) { setBlockAt(bx, by + 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_BOTTOM_CLOSED, 1); } 
                                     if (bType === BlockType.DOOR_STONE_BOTTOM_CLOSED || bType === BlockType.DOOR_STONE_BOTTOM_OPEN) { setBlockAt(bx, by - 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_STONE_BOTTOM_CLOSED, 1); } else if (bType === BlockType.DOOR_STONE_TOP_CLOSED || bType === BlockType.DOOR_STONE_TOP_OPEN) { setBlockAt(bx, by + 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_STONE_BOTTOM_CLOSED, 1); } 
                                     if (bType === BlockType.DOOR_IRON_BOTTOM_CLOSED || bType === BlockType.DOOR_IRON_BOTTOM_OPEN) { setBlockAt(bx, by - 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_IRON_BOTTOM_CLOSED, 1); } else if (bType === BlockType.DOOR_IRON_TOP_CLOSED || bType === BlockType.DOOR_IRON_TOP_OPEN) { setBlockAt(bx, by + 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_IRON_BOTTOM_CLOSED, 1); } 
-                                    setBlockAt(bx, by, BlockType.AIR); 
-                                    audio.playBreak();
+                                    if ((bType === BlockType.WOOD || bType === BlockType.DARK_WOOD || bType === BlockType.PINE_WOOD) && heldItem && (heldItem.id?.toString() || '').includes('axe')) {
+                                        // Recursively break tree
+                                        const queue = [{x: bx, y: by}];
+                                        const visited = new Set<string>();
+                                        visited.add(`${bx},${by}`);
+                                        let h = 0;
+                                        while(h < queue.length) {
+                                            const p = queue[h++];
+                                            // SPAWN DROPS
+                                            const b = worldRef.current.blocks[p.y * WORLD_WIDTH + p.x];
+                                            setBlockAt(p.x, p.y, BlockType.AIR);
+                                            if (p.x !== bx || p.y !== by) { // Not the base block which drops normally later
+                                                 if (b === BlockType.WOOD || b === BlockType.DARK_WOOD || b === BlockType.PINE_WOOD) {
+                                                     spawnDrop(p.x * BLOCK_SIZE, p.y * BLOCK_SIZE, bType, 1);
+                                                 } else if (b === BlockType.LEAVES || b === BlockType.DARK_LEAVES || b === BlockType.PINE_LEAVES || b === BlockType.APPLE_LEAVES || b === BlockType.SNOWY_LEAVES) {
+                                                     if (Math.random() < 0.3) {
+                                                         spawnDrop(p.x * BLOCK_SIZE, p.y * BLOCK_SIZE, 'tree_seed', 1);
+                                                     }
+                                                 }
+                                            }
+                                            
+                                            // Neighbors
+                                            for(let dx=-1; dx<=1; dx++) {
+                                                for(let dy=-1; dy<=1; dy++) {
+                                                    const nx = p.x + dx; const ny = p.y + dy;
+                                                    if (nx >= 0 && nx < WORLD_WIDTH && ny >= 0 && ny < WORLD_HEIGHT) {
+                                                        const key = `${nx},${ny}`;
+                                                        if (!visited.has(key)) {
+                                                            const nb = worldRef.current.blocks[ny * WORLD_WIDTH + nx];
+                                                            if (nb === BlockType.WOOD || nb === BlockType.DARK_WOOD || nb === BlockType.PINE_WOOD || nb === BlockType.LEAVES || nb === BlockType.DARK_LEAVES || nb === BlockType.PINE_LEAVES || nb === BlockType.APPLE_LEAVES || nb === BlockType.SNOWY_LEAVES) {
+                                                                visited.add(key);
+                                                                queue.push({x: nx, y: ny});
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        audio.playBreak();
+                                    } else {
+                                        setBlockAt(bx, by, BlockType.AIR); 
+                                        audio.playBreak();
+                                    }
                                     if (canHarvest(bType, heldItem)) { 
                                         let dropId: number | string = bType;
                                         if (bType === BlockType.CABLE_ON) dropId = BlockType.CABLE;
                                         if (bType === BlockType.LAMP_ON) dropId = BlockType.LAMP;
                                         if (bType === BlockType.LEVER_ON) dropId = BlockType.LEVER;
                                         if (bType === BlockType.BUTTON_ON) dropId = BlockType.BUTTON;
-                                        if (bType === BlockType.SNOWY_GRASS && heldItem && heldItem.id.toString().includes('shovel')) {
+                                        if (bType === BlockType.SNOWY_GRASS && heldItem && (heldItem.id?.toString() || '').includes('shovel')) {
                                             setBlockAt(bx, by, BlockType.DIRT);
                                             spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.SNOW_BLOCK, 1);
                                         }
@@ -3545,7 +3732,7 @@ export const GameCanvas: React.FC = () => {
                                         else if (bType === BlockType.FLOWER_RED || bType === BlockType.FLOWER_GREEN || bType === BlockType.FLOWER_BLUE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, bType, 1); } 
                                         else if (bType === BlockType.CACTUS) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'dark_green_resin', 1); }
                                         else if (bType === BlockType.DRY_LEAVES) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'stick', 1 + Math.floor(Math.random() * 2)); }
-                                        else if (!bType.toString().includes('DOOR') && !bType.toString().includes('CROP')) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, dropId, 1); } 
+                                        else if (!(bType?.toString() || '').includes('DOOR') && !(bType?.toString() || '').includes('CROP')) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, dropId, 1); } 
             
             // REMOVED LEVEL LOGIC FOR PICKAXE DROP CHANCE
 
@@ -3553,7 +3740,7 @@ export const GameCanvas: React.FC = () => {
             } else breakingRef.current = { x: -1, y: -1, progress: 0 };
             
             // ... (rest of mouse handlers) ...
-            if (mouseRef.current.left && activeBuildBlock && inventory[selectedSlot] && inventory[selectedSlot]!.id.toString().includes('hammer')) {
+            if (mouseRef.current.left && activeBuildBlock && inventory[selectedSlot] && (inventory[selectedSlot]?.id?.toString() || '').includes('hammer')) {
                  if (bx >= 0 && bx < WORLD_WIDTH && by >= 0 && by < WORLD_HEIGHT) {
                      const now = Date.now();
                      if (now - lastPlacementTime.current > 200) {
@@ -3576,7 +3763,7 @@ export const GameCanvas: React.FC = () => {
                  const now = Date.now();
                  if (now - lastPlacementTime.current > 200) {
                      const heldItem = inventory[selectedSlot];
-                     if (heldItem && heldItem.id.toString().includes('hoe')) {
+                     if (heldItem && (heldItem.id?.toString() || '').includes('hoe')) {
                          if (bx >= 0 && bx < WORLD_WIDTH && by >= 0 && by < WORLD_HEIGHT) {
                              const idx = by * WORLD_WIDTH + bx;
                              const targetBlock = world.blocks[idx];
@@ -3848,6 +4035,30 @@ export const GameCanvas: React.FC = () => {
         const startCol = Math.floor(cameraRef.current.x / BLOCK_SIZE) - 1; const endCol = startCol + (cvs.width / BLOCK_SIZE) + 3;
         const startRow = Math.floor(cameraRef.current.y / BLOCK_SIZE) - 1; const endRow = startRow + (cvs.height / BLOCK_SIZE) + 3;
         const hasTorch = (inventory[selectedSlot]?.id === BlockType.TORCH) || (equipment.offHand?.id === BlockType.TORCH);
+
+        if (options.shaderLevel === 2) {
+            const shadowPath = new Path2D();
+            for (let y = startRow; y <= endRow; y++) {
+                for (let x = startCol; x <= endCol; x++) {
+                    if (y < 0 || y >= WORLD_HEIGHT || x < 0 || x >= WORLD_WIDTH) continue;
+                    const block = world.blocks[y * WORLD_WIDTH + x];
+                    if (block !== BlockType.AIR && block !== BlockType.WATER && block !== BlockType.LAVA && block !== BlockType.GLASS && block !== BlockType.TORCH && block !== BlockType.COBWEB && block !== BlockType.WALL_WOOD && block !== BlockType.DOOR_BOTTOM_OPEN && block !== BlockType.DOOR_TOP_OPEN && block !== BlockType.DOOR_IRON_BOTTOM_OPEN && block !== BlockType.DOOR_IRON_TOP_OPEN && block !== BlockType.DOOR_STONE_BOTTOM_OPEN && block !== BlockType.DOOR_STONE_TOP_OPEN) {
+                        shadowPath.rect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                    }
+                }
+            }
+            ctx.save();
+            const isDayLight = time < 14000 || time > 22000;
+            const sunAngle = (time / 24000) * Math.PI * 2;
+            const shadowX = -Math.sin(sunAngle) * 30; // wider shadow angle
+            const shadowY = Math.max(3, Math.abs(Math.cos(sunAngle) * 15)); 
+            
+            ctx.translate(shadowX, shadowY);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fill(shadowPath);
+            ctx.restore();
+        }
 
         for (let y = startRow; y <= endRow; y++) {
             for (let x = startCol; x <= endCol; x++) {
@@ -4156,6 +4367,20 @@ export const GameCanvas: React.FC = () => {
                         ctx.fillStyle = '#ffeb3b'; // Center
                         ctx.beginPath(); ctx.arc(x * BLOCK_SIZE + 16, y * BLOCK_SIZE + 9, 3, 0, Math.PI * 2); ctx.fill();
                     }
+                    else if (options.textureQuality === 'medium' && [
+                        BlockType.URANIUM_BLOCK, BlockType.TITANIUM_BLOCK,
+                        BlockType.GRASS, BlockType.DARK_GRASS, BlockType.SNOWY_GRASS,
+                        BlockType.DIRT, BlockType.FARMLAND,
+                        BlockType.WOOD, BlockType.DARK_WOOD,
+                        BlockType.LEAVES, BlockType.APPLE_LEAVES, BlockType.DARK_LEAVES, BlockType.SNOWY_LEAVES,
+                        BlockType.PLANKS,
+                        BlockType.STONE, BlockType.DEEP_STONE,
+                        BlockType.SAND,
+                        BlockType.COAL_ORE, BlockType.IRON_ORE, BlockType.GOLD_ORE, BlockType.DIAMOND_ORE, BlockType.URANIUM_ORE, BlockType.TITANIUM_ORE
+                    ].includes(block)) {
+                        ctx.fillStyle = BLOCK_COLORS[block] || '#ff00ff';
+                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                    }
                     else if (block === BlockType.URANIUM_BLOCK) { 
                         ctx.fillStyle = BLOCK_COLORS[block]; 
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE); 
@@ -4242,6 +4467,29 @@ export const GameCanvas: React.FC = () => {
                             ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 22, BLOCK_SIZE, 2);
                         }
                     }
+                    else if (block === BlockType.LAMP || block === BlockType.LAMP_ON) {
+                        ctx.fillStyle = '#4e342e'; // dark frame
+                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                        ctx.fillStyle = block === BlockType.LAMP_ON ? '#fff59d' : '#9e9e9e';
+                        ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 4, 24, 24);
+                        if (block === BlockType.LAMP_ON) {
+                            ctx.fillStyle = '#fff9c4';
+                            ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 8, 16, 16);
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(x * BLOCK_SIZE + 12, y * BLOCK_SIZE + 12, 8, 8);
+                            // cross lines
+                            ctx.fillStyle = '#4e342e';
+                            ctx.fillRect(x * BLOCK_SIZE + 14, y * BLOCK_SIZE, 4, BLOCK_SIZE);
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 14, BLOCK_SIZE, 4);
+                        } else {
+                            ctx.fillStyle = '#757575';
+                            ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 8, 16, 16);
+                            // cross lines
+                            ctx.fillStyle = '#4e342e';
+                            ctx.fillRect(x * BLOCK_SIZE + 14, y * BLOCK_SIZE, 4, BLOCK_SIZE);
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 14, BLOCK_SIZE, 4);
+                        }
+                    }
                     else if (block === BlockType.WOOD || block === BlockType.DARK_WOOD) {
                         ctx.fillStyle = BLOCK_COLORS[block];
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
@@ -4277,7 +4525,7 @@ export const GameCanvas: React.FC = () => {
                             }
                         } else if (block === BlockType.DARK_LEAVES) {
                             drawLeafDetails('#162604', '#2d5209');
-                            if (x > 830 && snowCoverRef.current > 0) {
+                            if (getBiome(x, currentSeed) === 'snow' && snowCoverRef.current > 0) {
                                 ctx.globalAlpha = snowCoverRef.current;
                                 ctx.fillStyle = '#ffffff';
                                 ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
@@ -4357,6 +4605,90 @@ export const GameCanvas: React.FC = () => {
                         ctx.beginPath(); ctx.arc(x*BLOCK_SIZE+12, y*BLOCK_SIZE+16, 3, 0, Math.PI*2); ctx.fill();
                         ctx.beginPath(); ctx.arc(x*BLOCK_SIZE+22, y*BLOCK_SIZE+20, 3, 0, Math.PI*2); ctx.fill();
                         ctx.beginPath(); ctx.arc(x*BLOCK_SIZE+16, y*BLOCK_SIZE+24, 3, 0, Math.PI*2); ctx.fill();
+                    }
+                    else if (block === BlockType.FENCE) {
+                        // A more beautiful, detailed fence
+                        ctx.fillStyle = '#5d4037'; // shadow outline
+                        ctx.fillRect(x * BLOCK_SIZE + 10, y * BLOCK_SIZE + 2, 12, 30);
+                        
+                        ctx.fillStyle = '#8d6e63'; // main post
+                        ctx.fillRect(x * BLOCK_SIZE + 12, y * BLOCK_SIZE + 4, 8, 28); // Post highlight
+                        
+                        // Wood grain for post
+                        ctx.fillStyle = '#795548';
+                        ctx.fillRect(x * BLOCK_SIZE + 13, y * BLOCK_SIZE + 6, 2, 10);
+                        ctx.fillRect(x * BLOCK_SIZE + 17, y * BLOCK_SIZE + 18, 2, 10);
+                        
+                        // Main horizontal bars 
+                        // Top bar
+                        ctx.fillStyle = '#4e342e'; // Drop shadow of top bar
+                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 13, 32, 2);
+                        ctx.fillStyle = '#6d4c41'; 
+                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 8, 32, 5);
+                        ctx.fillStyle = '#8d6e63';
+                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 8, 32, 2); // highlight
+                        // Wood grain bar 1
+                        ctx.fillStyle = '#5d4037';
+                        ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 10, 4, 1);
+                        ctx.fillRect(x * BLOCK_SIZE + 20, y * BLOCK_SIZE + 11, 6, 1);
+
+                        // Bottom bar
+                        ctx.fillStyle = '#4e342e'; // Drop shadow of bottom bar
+                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 25, 32, 2);
+                        ctx.fillStyle = '#6d4c41';
+                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 20, 32, 5);
+                        ctx.fillStyle = '#8d6e63';
+                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 20, 32, 2); // highlight
+                        // Wood grain bar 2
+                        ctx.fillStyle = '#5d4037';
+                        ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE + 22, 5, 1);
+                        ctx.fillRect(x * BLOCK_SIZE + 22, y * BLOCK_SIZE + 23, 7, 1);
+                        
+                        // Post Top cap
+                        ctx.fillStyle = '#4e342e';
+                        ctx.fillRect(x * BLOCK_SIZE + 10, y * BLOCK_SIZE + 2, 12, 2);
+                    }
+                    else if (block === BlockType.COBWEB) {
+                        ctx.strokeStyle = 'rgba(238, 238, 238, 0.6)';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(x * BLOCK_SIZE, y * BLOCK_SIZE); ctx.lineTo(x * BLOCK_SIZE + 32, y * BLOCK_SIZE + 32);
+                        ctx.moveTo(x * BLOCK_SIZE + 32, y * BLOCK_SIZE); ctx.lineTo(x * BLOCK_SIZE, y * BLOCK_SIZE + 32);
+                        ctx.moveTo(x * BLOCK_SIZE + 16, y * BLOCK_SIZE); ctx.lineTo(x * BLOCK_SIZE + 16, y * BLOCK_SIZE + 32);
+                        ctx.moveTo(x * BLOCK_SIZE, y * BLOCK_SIZE + 16); ctx.lineTo(x * BLOCK_SIZE + 32, y * BLOCK_SIZE + 16);
+                        // web rings
+                        ctx.strokeRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 8, 16, 16);
+                        ctx.stroke();
+                    }
+                    else if (block === BlockType.BUTTON || block === BlockType.BUTTON_ON) {
+                        ctx.fillStyle = block === BlockType.BUTTON_ON ? '#3e2723' : '#5d4037';
+                        ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 28, 16, 4); // base
+                        if (block === BlockType.BUTTON_ON) {
+                            ctx.fillStyle = '#8d6e63';
+                            ctx.fillRect(x * BLOCK_SIZE + 12, y * BLOCK_SIZE + 26, 8, 2);
+                        } else {
+                            ctx.fillStyle = '#8d6e63';
+                            ctx.fillRect(x * BLOCK_SIZE + 12, y * BLOCK_SIZE + 24, 8, 4);
+                        }
+                    }
+                    else if (block === BlockType.LEVER || block === BlockType.LEVER_ON) {
+                        ctx.fillStyle = '#424242';
+                        ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 28, 16, 4); // base
+                        ctx.fillStyle = '#8d6e63';
+                        if (block === BlockType.LEVER_ON) {
+                            ctx.fillRect(x * BLOCK_SIZE + 20, y * BLOCK_SIZE + 20, 4, 8); // handle right
+                        } else {
+                            ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 20, 4, 8); // handle left
+                        }
+                    }
+                    else if (block >= BlockType.FLOWER_RED && block <= BlockType.FLOWER_BLUE || block === BlockType.FLOWER_YELLOW || block === BlockType.FLOWER_PURPLE) {
+                        // Drawing flowers!
+                        ctx.fillStyle = '#4caf50'; // stem
+                        ctx.fillRect(x*BLOCK_SIZE + 14, y*BLOCK_SIZE + 16, 4, 16);
+                        ctx.fillStyle = BLOCK_COLORS[block] || '#ff00ff'; // petals
+                        ctx.fillRect(x*BLOCK_SIZE + 8, y*BLOCK_SIZE + 4, 16, 16);
+                        ctx.fillStyle = '#fff9c4'; // center
+                        ctx.fillRect(x*BLOCK_SIZE + 12, y*BLOCK_SIZE + 8, 8, 8);
                     }
                     else {
                         ctx.fillStyle = BLOCK_COLORS[block] || '#f0f';
@@ -4519,9 +4851,22 @@ export const GameCanvas: React.FC = () => {
                             ctx.restore();
                         }
                         else if (block === BlockType.SLAB_WOOD || block === BlockType.SLAB_STONE) {
-                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 16);
                             if (block === BlockType.SLAB_WOOD) {
-                                ctx.fillStyle = 'rgba(0,0,0,0.1)'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 2);
+                                ctx.fillStyle = '#8d6e63';
+                                ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 16);
+                                ctx.strokeStyle = '#5d4037';
+                                ctx.lineWidth = 2;
+                                ctx.strokeRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 16);
+                                ctx.fillStyle = '#a1887f'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 2);
+                            } else if (block === BlockType.SLAB_STONE) {
+                                ctx.fillStyle = '#9e9e9e';
+                                ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 16);
+                                ctx.strokeStyle = '#616161';
+                                ctx.lineWidth = 1.5;
+                                ctx.strokeRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 16);
+                            } else {
+                                ctx.fillStyle = '#bdc3c7'; // Concrete default
+                                ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 16);
                             }
                         }
                         else {
@@ -4535,13 +4880,23 @@ export const GameCanvas: React.FC = () => {
             }
         }
 
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+
         // --- REALISTIC SHADOWS FOR ENTITIES ---
-        if (options.graphicsQuality !== 'UGLY') {
+        if (options.shaderLevel === 2) {
+            ctx.shadowColor = 'rgba(0,0,0,0.4)';
+            ctx.shadowBlur = 8;
+            ctx.shadowOffsetX = 8; // Generic offset
+            ctx.shadowOffsetY = 8;
+            
             [player, ...otherPlayersRef.current, ...entitiesRef.current].forEach(ent => {
                 if (ent.type !== 'PROJECTILE' && ent.type !== 'DROP' && !ent.isParticle) {
                     ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
                     ctx.beginPath();
-                    ctx.ellipse(ent.x + ent.width/2, ent.y + ent.height, ent.width/2 + 2, 3, 0, 0, Math.PI * 2);
+                    ctx.ellipse(ent.x - cameraRef.current.x + ent.width / 2 + 6, ent.y - cameraRef.current.y + ent.height, ent.width / 1.5, ent.width / 4, 0, 0, Math.PI * 2);
                     ctx.fill();
                 }
             });
@@ -4557,7 +4912,12 @@ export const GameCanvas: React.FC = () => {
         if (player.posture === 'CROUCH') {
             ctx.scale(1, 40/56);
         } else if (player.posture === 'PRONE') {
-            ctx.scale(1, 24/56);
+            if (!player.facingRight) {
+                ctx.rotate(-Math.PI / 2);
+            } else {
+                ctx.rotate(Math.PI / 2);
+            }
+            ctx.translate(10, 0); // shift drawing so it aligns better inside the 1 block
         }
 
         const isMoving = Math.abs(player.vx) > 0.1;
@@ -4644,7 +5004,7 @@ export const GameCanvas: React.FC = () => {
 
         // Armor: Leggings
         if (equipment.leggings) {
-            let col = '#cfd8dc'; const id = equipment.leggings.id.toString(); 
+            let col = '#cfd8dc'; const id = (equipment.leggings?.id?.toString() || ''); 
             if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
             ctx.fillStyle = col;
             ctx.fillRect(-7 + walkCycle, 12, 8, 12); // Back Leg
@@ -4662,7 +5022,7 @@ export const GameCanvas: React.FC = () => {
 
         // Armor: Boots
         if (equipment.boots) {
-            let col = '#cfd8dc'; const id = equipment.boots.id.toString(); 
+            let col = '#cfd8dc'; const id = (equipment.boots?.id?.toString() || ''); 
             if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
             ctx.fillStyle = col;
             ctx.fillRect(-8 + walkCycle, 20, 10, 8); // Back Leg Boot
@@ -4742,7 +5102,7 @@ export const GameCanvas: React.FC = () => {
 
         // Armor: Chestplate
         if (equipment.chestplate) { 
-            let col = '#cfd8dc'; const id = equipment.chestplate.id.toString(); 
+            let col = '#cfd8dc'; const id = (equipment.chestplate?.id?.toString() || ''); 
             if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
             ctx.fillStyle = col; 
             ctx.fillRect(-12, -18, 24, 26); // Main body
@@ -4760,7 +5120,7 @@ export const GameCanvas: React.FC = () => {
 
         // Armor: Helmet
         if (equipment.helmet) { 
-            let col = '#cfd8dc'; const id = equipment.helmet.id.toString(); 
+            let col = '#cfd8dc'; const id = (equipment.helmet?.id?.toString() || ''); 
             if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
             ctx.fillStyle = col; 
             ctx.fillRect(-10, -32, 20, 14); // Hat top
@@ -4780,7 +5140,7 @@ export const GameCanvas: React.FC = () => {
 
         // Held Item (Main Hand)
         const heldItem = inventory[selectedSlot];
-        const heldItemId = heldItem ? heldItem.id.toString() : '';
+        const heldItemId = heldItem ? (heldItem.id?.toString() || '') : '';
         
         ctx.save();
         ctx.translate(6, 0); // Shoulder/Hand pivot
@@ -4842,7 +5202,7 @@ export const GameCanvas: React.FC = () => {
         }
         
         if (equipment.chestplate) {
-            let col = '#cfd8dc'; const id = equipment.chestplate.id.toString(); 
+            let col = '#cfd8dc'; const id = (equipment.chestplate?.id?.toString() || ''); 
             if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
             ctx.fillStyle = col; 
             ctx.fillRect(-2 + stabOffset, -3, 10, 6); // Shoulder pad / sleeve
@@ -4984,7 +5344,7 @@ export const GameCanvas: React.FC = () => {
                  ctx.save();
                  ctx.translate(-4, 4);
                  if (blockingRef.current) ctx.translate(4, -2);
-                 const col = ITEM_COLORS[equipment.offHand.id.toString()] || '#888';
+                 const col = ITEM_COLORS[(equipment.offHand?.id?.toString() || '')] || '#888';
                  ctx.fillStyle = col;
                  ctx.fillRect(-6, -6, 12, 12);
                  ctx.restore();
@@ -5043,7 +5403,7 @@ export const GameCanvas: React.FC = () => {
         
         // --- RENDER WEATHER ---
         if (world.weather && world.weather.duration > 0) {
-            const isSnowBiome = player.x > 830 * BLOCK_SIZE;
+            const isSnowBiome = getBiome(Math.floor(playerRef.current.x / BLOCK_SIZE), currentSeed) === 'snow';
             const wType = isSnowBiome ? 'SNOW' : world.weather.type;
             const intensity = world.weather.intensity || 1;
             const count = wType === 'HEAVY_RAIN' ? 300 : (wType === 'SNOW' ? 200 : 150) * intensity;
@@ -5213,7 +5573,8 @@ export const GameCanvas: React.FC = () => {
             const mmPadding = 16;
             const mmX = cvs.width - mmWidth - mmPadding;
             // Shift down slightly to avoid overlapping activeBuildBlock UI
-            const mmY = activeBuildBlock && !isHammerMenuOpen ? mmPadding + 50 : mmPadding;
+            const isTutorialActive = options.tutorialEnabled !== false && !unlockedAchievements.includes(0) && tutorialStep < 3;
+            const mmY = (activeBuildBlock && !isHammerMenuOpen ? mmPadding + 50 : mmPadding) + (isTutorialActive ? 140 : 0);
             
             ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
             ctx.fillRect(mmX - 4, mmY - 4, mmWidth + 8, mmHeight + 8);
@@ -5240,7 +5601,11 @@ export const GameCanvas: React.FC = () => {
                     if (mx < renderSize && wx >= 0 && wx < WORLD_WIDTH) {
                         const block = world.blocks[wy * WORLD_WIDTH + wx];
                         if (block !== BlockType.AIR) {
-                            color = BLOCK_COLORS[block];
+                            if (block === BlockType.SNOW_BLOCK) {
+                                color = null;
+                            } else {
+                                color = BLOCK_COLORS[block];
+                            }
                         }
                     }
                     
@@ -5300,10 +5665,37 @@ export const GameCanvas: React.FC = () => {
             ctx.strokeRect(mmX + Math.floor(renderSize/2) * mmScale - 2, mmY + Math.floor(renderSize/2) * mmScale - 2, 4, 4);
         }
 
+        // Draw Custom Cursor & Cooldown
+        if (options.customCursor !== false && !options.isMobile) {
+            const cx = mouseRef.current.x;
+            const cy = mouseRef.current.y;
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            if (player.attackCooldown > 0) {
+                const maxCd = 60; // rough standard sword cooldown frames
+                const pct = Math.max(0, Math.min(1, player.attackCooldown / maxCd));
+                ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(cx, cy, 6 + (pct * 4), -Math.PI/2, -Math.PI/2 + ((1-pct) * Math.PI * 2));
+                ctx.stroke();
+            } else {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
         requestRef.current = requestAnimationFrame(gameLoop);
     };
 
-    const currentItemName = inventory[selectedSlot] ? (ITEM_NAMES[lang][inventory[selectedSlot]!.id.toString()] || inventory[selectedSlot]!.id.toString()) : '';
+    const currentItemName = inventory[selectedSlot] ? (ITEM_NAMES[lang][(inventory[selectedSlot]?.id?.toString() || '')] || (inventory[selectedSlot]?.id?.toString() || '')) : '';
     const xpForNextLevel = playerLevel * 100;
     const xpProgress = Math.min(1, playerXP / xpForNextLevel);
     const maxStaminaCalc = MAX_STAMINA + (playerStats.endurance * 20);
@@ -5311,7 +5703,7 @@ export const GameCanvas: React.FC = () => {
 
     return (
         <div className="relative w-full h-full">
-            <canvas ref={canvasRef} width={window.innerWidth} height={window.innerHeight} className="block" />
+            <canvas ref={canvasRef} width={window.innerWidth} height={window.innerHeight} className={` ${options.customCursor !== false && !options.isMobile ? 'cursor-none' : ''} touch-none`} />
             {(gameState === 'PLAYING' || gameState === 'PAUSED') && (
                 <>
                     {/* MOBILE CONTROLS OVERLAY */}
@@ -5398,6 +5790,18 @@ export const GameCanvas: React.FC = () => {
                     {/* Chat Input UI */}
                     {isChatOpen && (
                         <div className="absolute inset-0 flex flex-col justify-end pb-[10vh] px-[2vw] z-50 pointer-events-auto bg-black/20">
+                            {chatInput.startsWith('/chet') && (
+                                <div className="max-w-lg mx-auto w-full mb-1 bg-black/80 border border-gray-600 rounded p-2 text-sm text-gray-300 font-mono">
+                                    <div className="font-bold text-white mb-1">Comandos Disponíveis:</div>
+                                    <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet modo s')}>/chet modo s - Sobrevivência</div>
+                                    <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet modo c')}>/chet modo c - Criativo</div>
+                                    <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet modo f')}>/chet modo f - Espectador</div>
+                                    <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet matar jogador')}>/chet matar jogador</div>
+                                    <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet hora 10')}>/chet hora &lt;1-100&gt;</div>
+                                    <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet tp bioma ')}>/chet tp bioma &lt;planicie|deserto|neve|floresta&gt;</div>
+                                    <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet tp estrutura ')}>/chet tp estrutura &lt;cidade grande|fazenda&gt;</div>
+                                </div>
+                            )}
                             <form onSubmit={(e) => {
                                 e.preventDefault();
                                 const text = chatInput.trim();
@@ -5430,6 +5834,65 @@ export const GameCanvas: React.FC = () => {
                                          setChatMessages(p => [...p, {msg: `Multiplicador de tempo: ${val}`, color: '#00ff00'}]);
                                     }
                                     isCommand = true;
+                                } else if(text.startsWith('/chet tp bioma') || text.startsWith('/chet tp biome')) {
+                                    const rawName = text.substring(14).trim().toLowerCase();
+                                    let biomeName = 'desconhecido';
+                                    if (rawName.includes('planicie') || rawName.includes('plains')) biomeName = 'plains';
+                                    if (rawName.includes('neve') || rawName.includes('snow')) biomeName = 'snow';
+                                    if (rawName.includes('deserto') || rawName.includes('desert')) biomeName = 'desert';
+                                    if (rawName.includes('floresta') || rawName.includes('forest')) biomeName = 'forest';
+                                    
+                                    if (biomeName !== 'desconhecido') {
+                                         let found = false;
+                                         const pX = Math.floor(playerRef.current.x / BLOCK_SIZE);
+                                         let chunkStart = Math.floor(pX / 500);
+                                         
+                                         // Search for biome in both directions
+                                         for(let i=1; i<40; i++) {
+                                             if (getBiome((chunkStart + i)*500, currentSeed) === biomeName) {
+                                                playerRef.current.x = (chunkStart + i)*500 * BLOCK_SIZE;
+                                                playerRef.current.y = 0; // fallback safe
+                                                found = true; break;
+                                             }
+                                             if (chunkStart - i > 0 && getBiome((chunkStart - i)*500, currentSeed) === biomeName) {
+                                                playerRef.current.x = (chunkStart - i)*500 * BLOCK_SIZE;
+                                                playerRef.current.y = 0; // fallback safe
+                                                found = true; break;
+                                             }
+                                         }
+                                         if(found) setChatMessages(p => [...p, {msg: `Teleportado para bioma: ${rawName}.`, color: '#00ff00'}]);
+                                         else setChatMessages(p => [...p, {msg: `Bioma ${rawName} não encontrado por perto.`, color: '#ff0000'}]);
+                                    } else {
+                                        setChatMessages(p => [...p, {msg: `Bioma ${rawName} inválido. Tente: planicie, neve, deserto, floresta`, color: '#ff0000'}]);
+                                    }
+                                    isCommand = true;
+                                } else if(text.startsWith('/chet tp estrutura')) {
+                                    const rawName = text.substring(18).trim().toLowerCase();
+                                    let found = false;
+                                    
+                                    if (worldRef.current && worldRef.current.structures) {
+                                        const pX = Math.floor(playerRef.current.x / BLOCK_SIZE);
+                                        let closest = null;
+                                        let minD = Infinity;
+                                        worldRef.current.structures.forEach((st: any) => {
+                                            if (st.name === rawName || (rawName === 'cidade' && st.name === 'cidade grande')) {
+                                                const d = Math.abs(st.x - pX);
+                                                if (d < minD) {
+                                                    minD = d;
+                                                    closest = st;
+                                                }
+                                            }
+                                        });
+                                        if (closest) {
+                                            playerRef.current.x = (closest as any).x * BLOCK_SIZE;
+                                            playerRef.current.y = 0;
+                                            found = true;
+                                            setChatMessages(p => [...p, {msg: `Teleportado para estrutura: ${(closest as any).name}.`, color: '#00ff00'}]);
+                                        }
+                                    }
+                                    
+                                    if(!found) setChatMessages(p => [...p, {msg: `Estrutura ${rawName} não encontrada no mundo!`, color: '#ff0000'}]);
+                                    isCommand = true;
                                 }
                                 
                                 if (!isCommand) setChatMessages(p => [...p, {msg: `Você: ${text}`}]);
@@ -5457,6 +5920,26 @@ export const GameCanvas: React.FC = () => {
                             }}
                         >
                             {interactionPrompt.msg}
+                        </div>
+                    )}
+                    {gameState === 'PLAYING' && options.tutorialEnabled !== false && !unlockedAchievements.includes(0) && tutorialStep < 3 && (
+                        <div className="absolute top-4 right-4 bg-black/70 border-2 border-yellow-500 rounded p-4 pointer-events-none z-10 w-64 shadow-[0_0_15px_rgba(250,204,21,0.3)] animate-pulse-slow">
+                            <h3 className="text-yellow-400 font-bold mb-2 uppercase text-sm flex items-center gap-2"><span>🎓</span> {lang === 'PT' ? 'Tutorial' : 'Tutorial'}</h3>
+                            <div className="text-white text-sm">
+                                {tutorialStep === 0 && (
+                                    <>
+                                        <p className="mb-2">{lang === 'PT' ? 'Quebre 3 moitas para conseguir gravetos.' : 'Break 3 bushes for sticks.'}</p>
+                                        <div className="w-full bg-gray-800 h-2 rounded"><div className="bg-yellow-400 h-full rounded transition-all" style={{width: `${Math.min(100, (inventory.reduce((a,i) => a+(i&&i.id==='stick'?i.count:0),0) / 3)*100)}%`}}></div></div>
+                                        <p className="text-xs text-gray-400 mt-1 text-right">{Math.min(3, inventory.reduce((a,i) => a+(i&&i.id==='stick'?i.count:0),0))}/3</p>
+                                    </>
+                                )}
+                                {tutorialStep === 1 && (
+                                    <p className="text-green-300 font-bold">{lang === 'PT' ? 'Abra o inventário (E) e faça um Machado Básico.' : 'Open inventory (E) and craft a Basic Axe.'}</p>
+                                )}
+                                {tutorialStep === 2 && (
+                                    <p className="text-green-300 font-bold">{lang === 'PT' ? 'Quebre uma árvore, faça Tábua de Madeira e depois crie a Bancada de Trabalho.' : 'Break a tree, craft Planks, then craft a Crafting Table.'}</p>
+                                )}
+                            </div>
                         </div>
                     )}
                     {activeBuildBlock && !isHammerMenuOpen && (<div className="absolute top-4 right-4 bg-black/60 p-2 text-white rounded pointer-events-none">{t.HAMMER_MODE}: {ITEM_NAMES[lang][activeBuildBlock]}</div>)}

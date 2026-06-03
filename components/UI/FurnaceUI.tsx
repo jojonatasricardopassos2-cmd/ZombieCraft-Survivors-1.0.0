@@ -25,7 +25,7 @@ const ItemIcon: React.FC<{ item: ItemStack | null }> = ({ item }) => {
   } else {
      bg = ITEM_COLORS[item.id as string] || '#aaa';
      // Simple chars
-     const idStr = item.id.toString();
+     const idStr = (item.id?.toString() || '');
      if(idStr.includes('beef') || idStr.includes('steak')) char = '🥩';
      else if(idStr.includes('pork')) char = '🥓';
      else if(idStr.includes('mutton')) char = '🍖';

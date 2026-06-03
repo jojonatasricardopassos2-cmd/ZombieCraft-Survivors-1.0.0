@@ -33,13 +33,19 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
   // Options
   const [optionsTab, setOptionsTab] = useState<'GAME' | 'VIDEO' | 'AUDIO' | 'LANGUAGE' | 'TOUCH' | 'ACCOUNTS'>('GAME');
   const [showCoordinates, setShowCoordinates] = useState(false);
+  const [tutorialEnabled, setTutorialEnabled] = useState(true);
   const [showMinimap, setShowMinimap] = useState(true);
   const [adminMode, setAdminMode] = useState(false);
   const [isMobile, setIsMobile] = useState(false); // Mobile Toggle
   const [graphicsQuality, setGraphicsQuality] = useState<'UGLY' | 'NORMAL' | 'ULTRA'>('ULTRA');
+  const [renderDistance, setRenderDistance] = useState(15);
   const [volume, setVolume] = useState(0.3);
   const [showAdminConfirm, setShowAdminConfirm] = useState(false);
   const [autoUpdateMaps, setAutoUpdateMaps] = useState(true);
+  const [customCursor, setCustomCursor] = useState(true);
+  const [shaderLevel, setShaderLevel] = useState(1);
+  const [textureQuality, setTextureQuality] = useState<'ultra' | 'medium'>('ultra');
+
 
   // Edit/Export
   const [editWorldData, setEditWorldData] = useState<SavedWorld | null>(null);
@@ -47,7 +53,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
   // Create World Inputs
   const [newWorldName, setNewWorldName] = useState('New World');
   const [newWorldSeed, setNewWorldSeed] = useState('');
-  const [newWorldGameMode, setNewWorldGameMode] = useState<'SURVIVAL' | 'GOD'>('SURVIVAL');
+  const [newWorldGameMode, setNewWorldGameMode] = useState<'SURVIVAL' | 'GOD' | 'CREATIVE'>('SURVIVAL');
   const [newWorldDifficulty, setNewWorldDifficulty] = useState<'EASY' | 'NORMAL' | 'HARD'>('NORMAL');
 
   // Multiplayer Inputs
@@ -122,12 +128,17 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
           seed, 
           options: { 
               showCoordinates,
+              tutorialEnabled,
               showMinimap,
               adminMode: adminMode || newWorldGameMode === 'GOD', // God mode implies admin
               isMobile,
+              customCursor,
+              shaderLevel,
+              textureQuality,
               gameMode: newWorldGameMode,
               difficulty: newWorldDifficulty,
               graphicsQuality,
+              renderDistance,
               volume
           } 
       });
@@ -142,10 +153,15 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
               if (!world.options) world.options = { showCoordinates, showMinimap, adminMode, isMobile, graphicsQuality, volume };
               else {
                   world.options.showCoordinates = showCoordinates;
+                  world.options.tutorialEnabled = tutorialEnabled;
                   world.options.showMinimap = showMinimap;
                   world.options.adminMode = adminMode; // Inject current global preference
                   world.options.isMobile = isMobile;
+                  world.options.customCursor = customCursor;
+                  world.options.shaderLevel = shaderLevel;
+                  world.options.textureQuality = textureQuality;
                   world.options.graphicsQuality = graphicsQuality;
+                  world.options.renderDistance = renderDistance;
                   world.options.volume = volume;
               }
               onStartGame(world);
@@ -194,7 +210,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
           // Load existing world and add MP config
           const world = await loadWorldFromDB(hostWorldId);
           if (world) {
-              if (!world.options) world.options = { showCoordinates, adminMode, isMobile };
+              if (!world.options) world.options = { showCoordinates, adminMode, isMobile, customCursor, shaderLevel, textureQuality };
               world.options.multiplayer = multiplayerConfig;
               world.options.isMobile = isMobile; // Ensure mobile setting persists
               onStartGame(world);
@@ -206,9 +222,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
               name: roomName, 
               seed, 
               options: { 
-                  showCoordinates, 
+                  showCoordinates,
+              tutorialEnabled, 
                   adminMode,
                   isMobile,
+                  customCursor,
+                  shaderLevel,
+                  textureQuality,
                   multiplayer: multiplayerConfig
               } 
           });
@@ -225,10 +245,14 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
           name: `Joined Room ${joinCode}`, 
           seed, 
           options: { 
-              showCoordinates, 
-              adminMode,
-              isMobile,
-              multiplayer: {
+              showCoordinates,
+              tutorialEnabled, 
+                  adminMode,
+                  isMobile,
+                  customCursor,
+                  shaderLevel,
+                  textureQuality,
+                  multiplayer: {
                   mode: 'CLIENT',
                   roomId: joinCode,
                   playerName: 'Guest'
@@ -702,6 +726,12 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
                   >
                       {t.GOD_MODE}
                   </button>
+                  <button 
+                      onClick={() => setNewWorldGameMode('CREATIVE')}
+                      className={`flex-1 p-3 rounded font-bold transition-all duration-300 ${newWorldGameMode === 'CREATIVE' ? 'bg-blue-600 border-2 border-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.5)] scale-105' : 'bg-gray-800 border-2 border-gray-600 hover:bg-gray-700'}`}
+                  >
+                      Criativo
+                  </button>
               </div>
           </div>
 
@@ -797,6 +827,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
              )}
              {optionsTab === 'GAME' && (
                  <>
+                     <button onClick={() => setTutorialEnabled(!tutorialEnabled)} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                         <span>{lang === 'PT' ? 'Tutorial' : 'Tutorial'}</span>
+                         <span className={tutorialEnabled ? "text-green-400" : "text-red-400"}>{tutorialEnabled ? t.ON : t.OFF}</span>
+                     </button>
                      <button onClick={() => setShowCoordinates(!showCoordinates)} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
                          <span>{t.COORDS}</span>
                          <span className={showCoordinates ? "text-green-400" : "text-red-400"}>{showCoordinates ? t.ON : t.OFF}</span>
@@ -809,6 +843,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
                          <span>{t.MOBILE_MODE}</span>
                          <span className={isMobile ? "text-green-400" : "text-red-400"}>{isMobile ? t.ON : t.OFF}</span>
                      </button>
+                <button onClick={() => setCustomCursor(!customCursor)} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                    <span>Cursor Customizado (Bolinha)</span>
+                    <span className={customCursor ? "text-green-400" : "text-red-400"}>{customCursor ? 'ON' : 'OFF'}</span>
+                </button>
                      <button onClick={() => { if (adminMode) setAdminMode(false); else setShowAdminConfirm(true); }} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
                          <span>{t.ADMIN_TEST}</span>
                          <span className={adminMode ? "text-green-400" : "text-red-400"}>{adminMode ? t.ON : t.OFF}</span>
@@ -836,6 +874,25 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
                          <span>{t.FULLSCREEN}</span>
                          <span className="text-blue-400">Toggle</span>
                      </button>
+                     <button onClick={() => {
+                         setShaderLevel(shaderLevel === 1 ? 2 : 1);
+                     }} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                         <span>Shaders</span>
+                         <span className="text-blue-400">Shaders {shaderLevel}</span>
+                     </button>
+                     <button onClick={() => {
+                         setTextureQuality(textureQuality === 'ultra' ? 'medium' : 'ultra');
+                     }} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                         <span>Mudar a textura dos blocos</span>
+                         <span className="text-blue-400">{textureQuality === 'ultra' ? 'Ultra' : 'Médio'}</span>
+                     </button>
+                     <div className="bg-gray-700 text-white p-3 border-2 border-gray-400 font-mono text-lg flex flex-col px-6 gap-2">
+                         <div className="flex justify-between">
+                             <span>Render Distance (Chunks)</span>
+                             <span className="text-yellow-400">{renderDistance}</span>
+                         </div>
+                         <input type="range" min="8" max="64" value={renderDistance} onChange={(e) => setRenderDistance(Number(e.target.value))} className="w-full" />
+                     </div>
                  </>
              )}
 

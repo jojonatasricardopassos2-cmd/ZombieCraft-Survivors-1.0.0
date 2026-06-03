@@ -1,4 +1,5 @@
 export const ACHIEVEMENTS_LIST = [
+    { id: 0, icon: '🎓', title: 'Primeiros Passos', desc: 'Termine o tutorial.' },
     { id: 1, icon: '🌲', title: 'Primeira Madeira', desc: 'Você coletou madeira e iniciou a jornada.' },
     { id: 2, icon: '⛏️', title: 'Idade da Pedra', desc: 'Você conseguiu sua primeira pedra.' },
     { id: 3, icon: '🧟', title: 'Primeiro Sangue', desc: 'Derrote o primeiro zumbi.' },

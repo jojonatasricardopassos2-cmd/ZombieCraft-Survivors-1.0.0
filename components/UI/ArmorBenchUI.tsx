@@ -31,7 +31,7 @@ export const ArmorBenchUI: React.FC<ArmorBenchUIProps> = ({
   };
 
   const getItemName = (id: string | number) => {
-      return ITEM_NAMES[lang][id] || id.toString().replace(/_/g, ' ');
+      return ITEM_NAMES[lang][id] || (id?.toString() || '').replace(/_/g, ' ');
   };
 
   // --- CRAFTING TAB LOGIC ---
@@ -65,7 +65,7 @@ export const ArmorBenchUI: React.FC<ArmorBenchUIProps> = ({
 
       if (s1.type !== ItemType.ARMOR) return null;
       
-      const id = s1.id.toString();
+      const id = (s1.id?.toString() || '');
       // Logic: Titanium Armor + Uranium Ore
       if (id.includes('titanium') && s2.id === 'uranium') { // 'uranium' is the item drop from ore
           const newItemId = id.replace('titanium', 'uranium');

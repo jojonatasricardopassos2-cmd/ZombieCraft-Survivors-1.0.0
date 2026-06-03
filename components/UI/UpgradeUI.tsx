@@ -72,12 +72,12 @@ export const UpgradeUI: React.FC<UpgradeUIProps> = ({
       const currentLevel = s1.meta?.level || 0;
 
       // 1. Block Shovels (if intended by game design)
-      if (s1.id.toString().includes('shovel')) return null;
+      if ((s1.id?.toString() || '').includes('shovel')) return null;
 
       // 2. Titanium -> Uranium Upgrade
       // Logic: Titanium Item + Uranium Ore
-      if (s1.id.toString().includes('titanium') && s2.id === BlockType.URANIUM_ORE) {
-          const newItemId = s1.id.toString().replace('titanium', 'uranium');
+      if ((s1.id?.toString() || '').includes('titanium') && s2.id === BlockType.URANIUM_ORE) {
+          const newItemId = (s1.id?.toString() || '').replace('titanium', 'uranium');
           return {
               ...s1,
               id: newItemId,

@@ -117,13 +117,13 @@ export class AudioEngine {
         this.resume();
         const t = this.ctx.currentTime;
         if (material === 'grass' || material === 'snow') {
-            this.playNoise(0.05, 0.05, true, 'bandpass', 1200);
+            this.playNoise(0.05, 0.05, true);
         } else if (material === 'stone' || material === 'coal') {
             this.playTone(80, 'square', 0.05, 0.05, true);
         } else if (material === 'wood') {
             this.playTone(120, 'triangle', 0.06, 0.05, true);
         } else {
-            this.playNoise(0.04, 0.05, true, 'lowpass', 1000);
+            this.playNoise(0.04, 0.05, true);
         }
     }
 

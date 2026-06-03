@@ -107,7 +107,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ onInput, onToggl
             {/* Joystick Area */}
             <div 
                 className="absolute w-32 h-32 bg-black/30 rounded-full border-2 border-white/50 pointer-events-auto"
-                style={positions['joystick'] ? { left: positions['joystick'].x, top: positions['joystick'].y } : { bottom: 40, left: 40 }}
+                style={positions['joystick'] ? { left: positions['joystick'].x, top: positions['joystick'].y } : { bottom: 80, left: 80 }}
                 ref={joystickRef}
                 onTouchStart={(e) => handleJoystickMove(e.touches[0])}
                 onTouchMove={(e) => handleJoystickMove(e.touches[0])}
@@ -125,7 +125,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ onInput, onToggl
             {/* Attack Button */}
             <div 
                 className={`absolute w-16 h-16 rounded-full border-2 border-red-400 flex items-center justify-center text-2xl font-bold pointer-events-auto ${activeButtons['attack'] ? 'bg-red-500 text-white' : 'bg-black/40 text-red-200'}`}
-                style={positions['attack'] ? { left: positions['attack'].x, top: positions['attack'].y } : { bottom: 40, right: 120 }}
+                style={positions['attack'] ? { left: positions['attack'].x, top: positions['attack'].y } : { bottom: 80, right: 180 }}
                 onTouchStart={(e) => handleTouchStart(e, 'attack')}
                 onTouchEnd={(e) => handleTouchEnd(e, 'attack')}
             >
@@ -135,7 +135,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ onInput, onToggl
             {/* Jump Button */}
             <div 
                 className={`absolute w-16 h-16 rounded-full border-2 border-blue-400 flex items-center justify-center text-xl font-bold pointer-events-auto ${activeButtons['jump'] ? 'bg-blue-500 text-white' : 'bg-black/40 text-blue-200'}`}
-                style={positions['jump'] ? { left: positions['jump'].x, top: positions['jump'].y } : { bottom: 120, right: 40 }}
+                style={positions['jump'] ? { left: positions['jump'].x, top: positions['jump'].y } : { bottom: 180, right: 80 }}
                 onTouchStart={(e) => handleTouchStart(e, 'jump')}
                 onTouchEnd={(e) => handleTouchEnd(e, 'jump')}
             >
@@ -145,7 +145,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ onInput, onToggl
             {/* Place Button */}
             <div 
                 className={`absolute w-16 h-16 rounded-full border-2 border-green-400 flex items-center justify-center text-2xl font-bold pointer-events-auto ${activeButtons['place'] ? 'bg-green-500 text-white' : 'bg-black/40 text-green-200'}`}
-                style={positions['place'] ? { left: positions['place'].x, top: positions['place'].y } : { bottom: 40, right: 40 }}
+                style={positions['place'] ? { left: positions['place'].x, top: positions['place'].y } : { bottom: 80, right: 80 }}
                 onTouchStart={(e) => handleTouchStart(e, 'place')}
                 onTouchEnd={(e) => handleTouchEnd(e, 'place')}
             >
@@ -153,7 +153,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({ onInput, onToggl
             </div>
 
             {/* Utility Buttons */}
-            <div className="absolute flex gap-2 pointer-events-auto" style={positions['tools'] ? { left: positions['tools'].x, top: positions['tools'].y } : { top: 16, right: 16 }}>
+            <div className="absolute flex gap-2 pointer-events-auto" style={positions['tools'] ? { left: positions['tools'].x, top: positions['tools'].y } : { top: 24, left: 24 }}>
                 <button onClick={onToggleTreePass} className="w-12 h-12 bg-green-900/80 border border-green-500 rounded flex items-center justify-center text-xl" title="Toggle Tree Pass">🌲</button>
                 <button onClick={onEquip} className="w-12 h-12 bg-gray-800/80 border border-gray-500 rounded flex items-center justify-center text-xl">🛡️</button>
                 <button onClick={onDrop} className="w-12 h-12 bg-gray-800/80 border border-gray-500 rounded flex items-center justify-center text-xl">🚮</button>

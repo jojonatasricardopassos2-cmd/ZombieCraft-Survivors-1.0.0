@@ -42,12 +42,12 @@ export const IntroSequence: React.FC<IntroProps> = ({ onComplete }) => {
       `}</style>
       
       {phase === 'BAL_STUDIOS' && (
-        <div className="animate-fade-in-out text-center">
-          <h1 className="text-white text-3xl font-mono tracking-widest uppercase mb-4 opacity-80">
-            Bal Studios
+        <div className="animate-fade-in-out text-center flex flex-col items-center justify-center">
+          <h1 className="text-red-600 text-6xl md:text-8xl font-black font-sans tracking-tight mb-4 drop-shadow-md">
+            BAL GAMES
           </h1>
-          <p className="text-gray-400 text-sm tracking-widest uppercase">
-            Apresenta
+          <p className="text-gray-300 text-xl font-bold tracking-widest uppercase">
+            APRESENTA
           </p>
         </div>
       )}

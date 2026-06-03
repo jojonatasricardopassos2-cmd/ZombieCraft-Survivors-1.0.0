@@ -97,7 +97,18 @@ export enum BlockType {
   LAMP_ON = 94,
   APPLE_LEAVES = 95,
   SLAB_WOOD = 96,
-  SLAB_STONE = 97
+  SLAB_STONE = 97,
+  PINE_WOOD = 98,
+  PINE_LEAVES = 99,
+  FENCE = 100,
+  CONCRETE = 101,
+  CONCRETE_BLUE = 102,
+  CONCRETE_GREEN = 103,
+  CONCRETE_YELLOW = 104,
+  FLOWER_YELLOW = 105,
+  FLOWER_PURPLE = 106,
+  GLASS_RED = 107,
+  GLASS_YELLOW = 108
 }
 
 export enum ItemType {
@@ -203,6 +214,7 @@ export interface WorldData {
   };
   npcSpawns?: {x: number, y: number}[];
   initialChests?: {x: number, y: number, items: {id: number | string, count: number, type: 'BLOCK' | 'ITEM'}[]}[];
+  structures?: {name: string, x: number}[];
 }
 
 export interface FurnaceData {
@@ -252,9 +264,13 @@ export interface GameOptions {
     showMinimap?: boolean;
     adminMode?: boolean;
     isMobile?: boolean; // Mobile controls toggle
+    tutorialEnabled?: boolean;
     gameMode?: 'SURVIVAL' | 'GOD' | 'CREATIVE' | 'SPECTATOR';
     difficulty?: 'EASY' | 'NORMAL' | 'HARD';
     graphicsQuality?: 'UGLY' | 'NORMAL' | 'ULTRA';
+    shaderLevel?: 1 | 2;
+    textureQuality?: 'medium' | 'ultra';
+    renderDistance?: number;
     volume?: number;
     multiplayer?: {
         mode: 'HOST' | 'CLIENT';

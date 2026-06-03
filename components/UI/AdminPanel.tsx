@@ -21,7 +21,7 @@ const AdminItemIcon: React.FC<{ id: string | BlockType, type: ItemType }> = ({ i
        bg = BLOCK_COLORS[id as number] || '#ccc';
     } else {
        bg = ITEM_COLORS[id as string] || '#aaa';
-       const idStr = id.toString();
+       const idStr = (id?.toString() || '');
        for (const key in ITEM_ICONS) {
            if (idStr.includes(key)) {
                char = ITEM_ICONS[key];
@@ -60,7 +60,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, adminState, set
         // Add all blocks
         Object.values(BlockType).forEach(val => {
             if (typeof val === 'number' && val !== 0 && !HIDDEN_CREATIVE_BLOCKS.includes(val) && !TECHNICAL_BLOCKS.includes(val)) {
-                const id = val.toString();
+                const id = (val?.toString() || '');
                 if (!seenItems.has(id)) {
                     items.push({ id: val, count: 64, type: ItemType.BLOCK });
                     seenItems.add(id);
@@ -70,7 +70,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, adminState, set
 
         // Add items from recipes (Tools, Food, Materials)
         RECIPES.forEach(r => {
-            const id = r.result.id.toString();
+            const id = (r.result.id?.toString() || '');
             if (!seenItems.has(id)) {
                 // LOGIC FIX: Tools, Armor, Shields should account 1. Others 64.
                 const isUnstackable = r.result.type === ItemType.TOOL || r.result.type === ItemType.ARMOR || r.result.type === ItemType.SHIELD;
@@ -110,7 +110,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, adminState, set
 
     const filteredItems = useMemo(() => {
         return allItems.filter(item => {
-            const name = ITEM_NAMES[lang][item.id.toString()] || item.id.toString();
+            const name = ITEM_NAMES[lang][(item.id?.toString() || '')] || (item.id?.toString() || '');
             return name.toLowerCase().includes(searchTerm.toLowerCase());
         });
     }, [allItems, searchTerm, lang]);
@@ -200,7 +200,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, adminState, set
                 />
                 <div className="flex-1 overflow-y-auto bg-black/30 p-2 border border-gray-800 grid grid-cols-6 gap-1 content-start">
                     {filteredItems.map((item, idx) => (
-                        <div key={idx} onClick={() => onGiveItem(item)} title={ITEM_NAMES[lang][item.id.toString()]}>
+                        <div key={idx} onClick={() => onGiveItem(item)} title={ITEM_NAMES[lang][(item.id?.toString() || '')]}>
                             <AdminItemIcon id={item.id} type={item.type} />
                         </div>
                     ))}

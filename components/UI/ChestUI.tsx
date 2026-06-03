@@ -22,7 +22,7 @@ const ItemIcon: React.FC<{ item: ItemStack | null }> = ({ item }) => {
      bg = BLOCK_COLORS[item.id as number] || '#ccc';
   } else {
      bg = ITEM_COLORS[item.id as string] || '#aaa';
-     const idStr = item.id.toString();
+     const idStr = (item.id?.toString() || '');
      for (const key in ITEM_ICONS) {
          if (idStr.includes(key)) {
              char = ITEM_ICONS[key];

@@ -44,7 +44,7 @@ export const ItemIcon: React.FC<{ item: ItemStack | null }> = ({ item }) => {
   } else if (item.type === ItemType.TOOL || item.type === ItemType.ARMOR || item.type === ItemType.MATERIAL || item.type === ItemType.FOOD) {
      bg = ITEM_COLORS[item.id as string] || '#888';
      
-     const idStr = item.id.toString();
+     const idStr = (item.id?.toString() || '');
      // Match icons
      for (const key in ITEM_ICONS) {
          if (idStr.includes(key)) {
@@ -62,14 +62,14 @@ export const ItemIcon: React.FC<{ item: ItemStack | null }> = ({ item }) => {
   let showDurability = false;
   if ((item.type === ItemType.TOOL || item.type === ItemType.ARMOR)) {
        let mat = '';
-       if (item.id.toString().includes('wood') || item.id.toString().includes('basic')) mat = 'wood';
-       else if (item.id.toString().includes('copper')) mat = 'copper';
-       else if (item.id.toString().includes('stone')) mat = 'stone';
-       else if (item.id.toString().includes('iron')) mat = 'iron';
-       else if (item.id.toString().includes('gold')) mat = 'gold';
-       else if (item.id.toString().includes('diamond')) mat = 'diamond';
-       else if (item.id.toString().includes('titanium')) mat = 'titanium';
-       else if (item.id.toString().includes('uranium')) mat = 'uranium';
+       if ((item.id?.toString() || '').includes('wood') || (item.id?.toString() || '').includes('basic')) mat = 'wood';
+       else if ((item.id?.toString() || '').includes('copper')) mat = 'copper';
+       else if ((item.id?.toString() || '').includes('stone')) mat = 'stone';
+       else if ((item.id?.toString() || '').includes('iron')) mat = 'iron';
+       else if ((item.id?.toString() || '').includes('gold')) mat = 'gold';
+       else if ((item.id?.toString() || '').includes('diamond')) mat = 'diamond';
+       else if ((item.id?.toString() || '').includes('titanium')) mat = 'titanium';
+       else if ((item.id?.toString() || '').includes('uranium')) mat = 'uranium';
        
        const max = MAX_DURABILITY[mat];
        if (max) {
@@ -151,7 +151,7 @@ export const Inventory: React.FC<InventoryProps> = ({
   }, [nearbyStation, isOpen]);
 
   const getItemName = (id: string | number) => {
-      const name = ITEM_NAMES[lang][id] || id.toString().replace(/_/g, ' ');
+      const name = ITEM_NAMES[lang][id] || (id?.toString() || '').replace(/_/g, ' ');
       return name;
   };
 
@@ -165,16 +165,16 @@ export const Inventory: React.FC<InventoryProps> = ({
       // Add all Blocks
       Object.values(BlockType).forEach(val => {
           if (typeof val === 'number' && val !== BlockType.AIR && !HIDDEN_CREATIVE_BLOCKS.includes(val)) {
-              if (!seen.has(val.toString())) {
+              if (!seen.has((val?.toString() || ''))) {
                   allItems.push({ id: val, count: 1, type: ItemType.BLOCK });
-                  seen.add(val.toString());
+                  seen.add((val?.toString() || ''));
               }
           }
       });
 
       // Add all Craftable Items
       RECIPES.forEach(r => {
-          const id = r.result.id.toString();
+          const id = (r.result.id?.toString() || "");
           if (!seen.has(id)) {
               allItems.push({ ...r.result, count: 1 });
               seen.add(id);
@@ -268,7 +268,7 @@ export const Inventory: React.FC<InventoryProps> = ({
                  <div className="text-sm text-gray-300">
                      {(() => {
                          let mat = '';
-                         const id = hoveredItem.id.toString();
+                         const id = (hoveredItem.id?.toString() || '');
                          if (id.includes('wood') || id.includes('basic')) mat = 'wood';
                          else if (id.includes('stone')) mat = 'stone';
                          else if (id.includes('iron')) mat = 'iron';
@@ -612,7 +612,7 @@ export const Inventory: React.FC<InventoryProps> = ({
                      <div className="text-sm text-gray-300">
                          {(() => {
                              let mat = '';
-                             const id = hoveredItem.id.toString();
+                             const id = (hoveredItem.id?.toString() || '');
                              if (id.includes('wood') || id.includes('basic')) mat = 'wood';
                              else if (id.includes('stone')) mat = 'stone';
                              else if (id.includes('iron')) mat = 'iron';
