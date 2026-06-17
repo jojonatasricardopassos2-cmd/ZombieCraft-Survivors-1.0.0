@@ -1,3 +1,4 @@
+import { ModCreator } from './ModCreator.tsx';
 
 import React, { useState, useEffect } from 'react';
 import { TRANSLATIONS } from '../constants.ts';
@@ -13,7 +14,7 @@ interface MainMenuProps {
   setLang: (l: 'EN' | 'PT' | 'ES' | 'JA') => void;
 }
 
-type MenuState = 'MAIN' | 'SELECT_WORLD' | 'CREATE_WORLD' | 'EDIT_WORLD' | 'OPTIONS' | 'ACHIEVEMENTS' | 'ONLINE_LOBBY' | 'CREATE_ROOM' | 'JOIN_ROOM' | 'LOGIN' | 'FRIENDS' | 'EDIT_SKIN';
+type MenuState = 'MAIN' | 'SELECT_WORLD' | 'CREATE_WORLD' | 'EDIT_WORLD' | 'OPTIONS' | 'ACHIEVEMENTS' | 'ONLINE_LOBBY' | 'CREATE_ROOM' | 'JOIN_ROOM' | 'LOGIN' | 'FRIENDS' | 'EDIT_SKIN' | 'MODS';
 
 export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }) => {
   const [menuState, setMenuState] = useState<MenuState>('LOGIN');
@@ -330,10 +331,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
           {t.ONLINE_MODE}
         </button>
         <button 
-          className="text-black font-bold text-4xl hover-bounce text-left cursor-not-allowed opacity-50"
-          title="Inaccessible"
+          onClick={() => setMenuState('MODS')}
+          className="text-black font-bold text-4xl hover-bounce text-left"
         >
-          {t.MODS}
+          {t.MODS || 'MODS'}
         </button>
         <button 
           onClick={() => setMenuState('OPTIONS')}
@@ -875,10 +876,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
                          <span className="text-blue-400">Toggle</span>
                      </button>
                      <button onClick={() => {
-                         setShaderLevel(shaderLevel === 1 ? 2 : 1);
+                         setShaderLevel(shaderLevel === 1 ? 2 : (shaderLevel === 2 ? 3 : 1));
                      }} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
                          <span>Shaders</span>
-                         <span className="text-blue-400">Shaders {shaderLevel}</span>
+                         <span className="text-blue-400">{shaderLevel === 3 ? 'Ultra Realista (Litxuma)' : `Nível ${shaderLevel}`}</span>
                      </button>
                      <button onClick={() => {
                          setTextureQuality(textureQuality === 'ultra' ? 'medium' : 'ultra');
@@ -1137,6 +1138,28 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
            <button onClick={() => setMenuState('MAIN')} className="w-full mt-4 bg-red-700 hover:bg-red-600 font-bold p-3 border border-red-500">Voltar</button>
       </div>
   );
+
+  if (menuState === 'MODS') {
+      const startTestMod = () => {
+          const defaultOptions: GameOptions = {
+              graphicsQuality: 'NORMAL',
+              renderDistance: 15,
+              volume: 0.3,
+              showCoordinates: true,
+              showMinimap: true,
+              tutorialEnabled: false,
+              adminMode: true,
+              isMobile: false,
+              showTouchConfig: false,
+              autoUpdateMaps: true,
+              customCursor: true,
+              shaderLevel: 1,
+              textureQuality: 'medium'
+          };
+          onStartGame(null, { name: 'Teste de Mod', seed: Date.now(), options: defaultOptions });
+      };
+      return <ModCreator onClose={() => setMenuState('MAIN')} onTestMod={startTestMod} currentUser={currentUser?.name} />;
+  }
 
   return (
     <div className="absolute inset-0 flex flex-col z-50 overflow-hidden" style={{ backgroundColor: '#2b3a32' }}>

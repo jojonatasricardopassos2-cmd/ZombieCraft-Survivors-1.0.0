@@ -645,8 +645,7 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         titanium_knife: "Faca de Titânio",
         uranium_knife: "Faca de Urânio",
         copper_knife: "Faca de Cobre",
-        knife: "Faca",
-        apple: "Maçã"
+        knife: "Faca"
     },
     ES: {
         [BlockType.DIRT]: 'Tierra', [BlockType.GRASS]: 'Césped', [BlockType.DARK_GRASS]: 'Césped Oscuro', [BlockType.STONE]: 'Piedra', [BlockType.DEEP_STONE]: 'Pizarra Profunda',

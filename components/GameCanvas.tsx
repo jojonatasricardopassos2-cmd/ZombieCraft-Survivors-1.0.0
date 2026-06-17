@@ -4036,7 +4036,7 @@ export const GameCanvas: React.FC = () => {
         const startRow = Math.floor(cameraRef.current.y / BLOCK_SIZE) - 1; const endRow = startRow + (cvs.height / BLOCK_SIZE) + 3;
         const hasTorch = (inventory[selectedSlot]?.id === BlockType.TORCH) || (equipment.offHand?.id === BlockType.TORCH);
 
-        if (options.shaderLevel === 2) {
+        if (options.shaderLevel >= 2) {
             const shadowPath = new Path2D();
             for (let y = startRow; y <= endRow; y++) {
                 for (let x = startCol; x <= endCol; x++) {
@@ -4886,7 +4886,7 @@ export const GameCanvas: React.FC = () => {
         ctx.shadowOffsetY = 0;
 
         // --- REALISTIC SHADOWS FOR ENTITIES ---
-        if (options.shaderLevel === 2) {
+        if (options.shaderLevel >= 2) {
             ctx.shadowColor = 'rgba(0,0,0,0.4)';
             ctx.shadowBlur = 8;
             ctx.shadowOffsetX = 8; // Generic offset
@@ -5558,6 +5558,43 @@ export const GameCanvas: React.FC = () => {
             vig.addColorStop(1, 'rgba(80,80,100,1)');
             ctx.fillStyle = vig;
             ctx.fillRect(0, 0, cvs.width, cvs.height);
+
+            // 4. LITXUMA SHADER ULTRA REALISTA (Níveis >= 3)
+            if (options.shaderLevel >= 3) {
+                // God Rays / Volumetric Light
+                ctx.globalCompositeOperation = 'screen';
+                const sunIntensity = (t3 > DUSK_START || t3 < DAWN_START) ? 0 : Math.sin((t3 / 24000) * Math.PI);
+                if (sunIntensity > 0 && !isPrecip) {
+                    const godRayGrad = ctx.createLinearGradient(0, 0, 0, cvs.height);
+                    godRayGrad.addColorStop(0, `rgba(255, 230, 180, ${sunIntensity * 0.4})`);
+                    godRayGrad.addColorStop(1, 'rgba(0,0,0,0)');
+                    ctx.fillStyle = godRayGrad;
+                    ctx.fillRect(0, 0, cvs.width, cvs.height);
+                    
+                    // Sun flare
+                    const flare = ctx.createRadialGradient(cvs.width/2, -50, 100, cvs.width/2, -50, cvs.height * 0.8);
+                    flare.addColorStop(0, `rgba(255, 255, 200, ${sunIntensity * 0.6})`);
+                    flare.addColorStop(1, 'rgba(0,0,0,0)');
+                    ctx.fillStyle = flare;
+                    ctx.fillRect(0, 0, cvs.width, cvs.height);
+                } else if (t3 > DUSK_START || t3 < DAWN_START) {
+                    // Moon volumetric glow
+                    const moonGrad = ctx.createLinearGradient(0, 0, 0, cvs.height);
+                    moonGrad.addColorStop(0, 'rgba(100, 150, 255, 0.25)');
+                    moonGrad.addColorStop(1, 'rgba(0,0,0,0)');
+                    ctx.fillStyle = moonGrad;
+                    ctx.fillRect(0, 0, cvs.width, cvs.height);
+                }
+
+                // Cinematic Tonemapping (Color Burn & Overlay Mix)
+                ctx.globalCompositeOperation = 'color-burn';
+                ctx.fillStyle = 'rgba(20, 10, 0, 0.1)';
+                ctx.fillRect(0, 0, cvs.width, cvs.height);
+                
+                ctx.globalCompositeOperation = 'overlay';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+                ctx.fillRect(0, 0, cvs.width, cvs.height);
+            }
 
             ctx.restore();
         }
