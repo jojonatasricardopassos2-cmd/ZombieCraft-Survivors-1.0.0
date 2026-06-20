@@ -108,7 +108,21 @@ export enum BlockType {
   FLOWER_YELLOW = 105,
   FLOWER_PURPLE = 106,
   GLASS_RED = 107,
-  GLASS_YELLOW = 108
+  GLASS_YELLOW = 108,
+  TALL_GRASS = 109,
+  CONCRETE_RED = 200,
+  CONCRETE_PURPLE = 201,
+  WET_SAND = 202,
+  COBBLESTONE = 203,
+  FALLEN_LOG = 110,
+  GOLDEN_WOOD = 111,
+  GOLDEN_LEAVES = 112,
+  GOLDEN_GRASS = 113,
+  DARK_PLANKS = 114,
+  GOLDEN_PLANKS = 115,
+  FROZEN_WOOD = 116,
+  GOLDEN_FLOWER = 117,
+  GOLDEN_BUSH = 118
 }
 
 export enum ItemType {
@@ -141,7 +155,7 @@ export interface Equipment {
 
 export interface Entity {
   id: number;
-  type: 'PLAYER' | 'ZOMBIE' | 'PIG' | 'COW' | 'SHEEP' | 'DROP' | 'PROJECTILE' | 'MUTANT_ZOMBIE' | 'SCORPION' | 'CAMEL' | 'SNAKE' | 'RABBIT' | 'POLAR_BEAR' | 'DOG' | 'NPC' | 'ZOMBIE_RUNNER' | 'ZOMBIE_TANK' | 'ZOMBIE_EXPLOSIVE' | 'ZOMBIE_TOXIC' | 'ZOMBIE_SKELETON' | 'ZOMBIE_INFECTOR' | 'ZOMBIE_DARK' | 'ZOMBIE_FROZEN' | 'ZOMBIE_KING' | 'PLAGUE_KING' | 'BUSH_MOB' | 'SPIDER' | 'BLOOD_ZOMBIE';
+  type: 'PLAYER' | 'ZOMBIE' | 'PIG' | 'COW' | 'SHEEP' | 'DROP' | 'PROJECTILE' | 'MUTANT_ZOMBIE' | 'SCORPION' | 'CAMEL' | 'SNAKE' | 'RABBIT' | 'POLAR_BEAR' | 'DOG' | 'NPC' | 'ZOMBIE_RUNNER' | 'ZOMBIE_TANK' | 'ZOMBIE_EXPLOSIVE' | 'ZOMBIE_TOXIC' | 'ZOMBIE_SKELETON' | 'ZOMBIE_INFECTOR' | 'ZOMBIE_DARK' | 'ZOMBIE_FROZEN' | 'ZOMBIE_KING' | 'PLAGUE_KING' | 'BUSH_MOB' | 'SPIDER' | 'BLOOD_ZOMBIE' | 'BIRD' | 'CHICKEN' | 'GOLDEN_DEER' | 'LUNAR_FOX' | 'SHARK';
   x: number;
   y: number;
   width: number;
@@ -157,6 +171,7 @@ export interface Entity {
   itemCount?: number;
   itemMeta?: { damage?: number, loyalty?: boolean, level?: number }; 
   creationTime?: number; 
+  pickupDelay?: number;
   // For mobs
   attackCooldown?: number;
   lastDamageTime?: number; 
@@ -263,12 +278,16 @@ export interface GameOptions {
     showCoordinates: boolean;
     showMinimap?: boolean;
     adminMode?: boolean;
+    seasonsEnabled?: boolean;
     isMobile?: boolean; // Mobile controls toggle
+    customCursor?: boolean;
+    showTouchConfig?: boolean;
+    autoUpdateMaps?: boolean;
     tutorialEnabled?: boolean;
     gameMode?: 'SURVIVAL' | 'GOD' | 'CREATIVE' | 'SPECTATOR';
     difficulty?: 'EASY' | 'NORMAL' | 'HARD';
     graphicsQuality?: 'UGLY' | 'NORMAL' | 'ULTRA';
-    shaderLevel?: 1 | 2;
+    shaderLevel?: 1 | 2 | 3;
     textureQuality?: 'medium' | 'ultra';
     renderDistance?: number;
     volume?: number;
@@ -293,6 +312,7 @@ export interface SavedWorld {
     crops?: [string, CropData][]; // New crop storage
     lastPlayed: number;
     time: number;
+    totalDays?: number;
     // RPG Data
     xp: number;
     level: number;

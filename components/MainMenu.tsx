@@ -37,6 +37,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
   const [tutorialEnabled, setTutorialEnabled] = useState(true);
   const [showMinimap, setShowMinimap] = useState(true);
   const [adminMode, setAdminMode] = useState(false);
+  const [seasonsEnabled, setSeasonsEnabled] = useState(false);
   const [isMobile, setIsMobile] = useState(false); // Mobile Toggle
   const [graphicsQuality, setGraphicsQuality] = useState<'UGLY' | 'NORMAL' | 'ULTRA'>('ULTRA');
   const [renderDistance, setRenderDistance] = useState(15);
@@ -90,6 +91,26 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
       if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
           setIsMobile(true);
       }
+      
+      const savedOpts = localStorage.getItem('zombiecraft_global_options');
+      if (savedOpts) {
+          try {
+              const parsed = JSON.parse(savedOpts);
+              if (parsed.showCoordinates !== undefined) setShowCoordinates(parsed.showCoordinates);
+              if (parsed.tutorialEnabled !== undefined) setTutorialEnabled(parsed.tutorialEnabled);
+              if (parsed.showMinimap !== undefined) setShowMinimap(parsed.showMinimap);
+              if (parsed.adminMode !== undefined) setAdminMode(parsed.adminMode);
+              if (parsed.seasonsEnabled !== undefined) setSeasonsEnabled(parsed.seasonsEnabled);
+              if (parsed.isMobile !== undefined) setIsMobile(parsed.isMobile);
+              if (parsed.graphicsQuality !== undefined) setGraphicsQuality(parsed.graphicsQuality);
+              if (parsed.renderDistance !== undefined) setRenderDistance(parsed.renderDistance);
+              if (parsed.volume !== undefined) setVolume(parsed.volume);
+              if (parsed.customCursor !== undefined) setCustomCursor(parsed.customCursor);
+              if (parsed.shaderLevel !== undefined) setShaderLevel(parsed.shaderLevel);
+              if (parsed.textureQuality !== undefined) setTextureQuality(parsed.textureQuality);
+              // don't setlang here since it might be done by app
+          } catch(e) {}
+      }
 
       const migrate = async () => {
           const lsSaves = localStorage.getItem('mr2d_saves');
@@ -121,6 +142,23 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
 
       migrate();
   }, []);
+
+  useEffect(() => {
+      localStorage.setItem('zombiecraft_global_options', JSON.stringify({
+          showCoordinates,
+          tutorialEnabled,
+          showMinimap,
+          adminMode,
+          seasonsEnabled,
+          isMobile,
+          graphicsQuality,
+          renderDistance,
+          volume,
+          customCursor,
+          shaderLevel,
+          textureQuality
+      }));
+  }, [showCoordinates, tutorialEnabled, showMinimap, adminMode, seasonsEnabled, isMobile, graphicsQuality, renderDistance, volume, customCursor, shaderLevel, textureQuality]);
 
   const handleCreateWorld = () => {
       const seed = newWorldSeed.trim() === '' ? Math.floor(Math.random() * 999999) : parseInt(newWorldSeed) || 0;
@@ -847,6 +885,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
                 <button onClick={() => setCustomCursor(!customCursor)} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
                     <span>Cursor Customizado (Bolinha)</span>
                     <span className={customCursor ? "text-green-400" : "text-red-400"}>{customCursor ? 'ON' : 'OFF'}</span>
+                </button>
+                <button onClick={() => setSeasonsEnabled(!seasonsEnabled)} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                    <span>Estações do Ano (Seasons)</span>
+                    <span className={seasonsEnabled ? "text-green-400" : "text-red-400"}>{seasonsEnabled ? 'ON' : 'OFF'}</span>
                 </button>
                      <button onClick={() => { if (adminMode) setAdminMode(false); else setShowAdminConfirm(true); }} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
                          <span>{t.ADMIN_TEST}</span>

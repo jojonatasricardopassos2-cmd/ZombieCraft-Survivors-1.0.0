@@ -18,6 +18,7 @@ import { ChestUI } from './UI/ChestUI.tsx';
 import { HammerBuildUI } from './UI/HammerBuildUI.tsx';
 import { ArmorBenchUI } from './UI/ArmorBenchUI.tsx';
 import { MainMenu } from './MainMenu.tsx';
+import { IntroScreen } from './UI/IntroScreen.tsx';
 import { AdminPanel } from './UI/AdminPanel.tsx';
 import { SleepUI } from './UI/SleepUI.tsx';
 import { NpcUI } from './UI/NpcUI.tsx';
@@ -25,6 +26,47 @@ import { MobileControls } from './UI/MobileControls.tsx';
 import { ACHIEVEMENTS_LIST } from '../utils/achievementsList.ts';
 import { AchievementsOverlay } from './UI/AchievementsOverlay.tsx';
 import { FishingMinigame } from './UI/FishingMinigame.tsx';
+
+function lerpColorHex(a: string, b: string, amount: number) { 
+    const ah = parseInt(a.replace(/#/g, ''), 16),
+          ar = ah >> 16, ag = ah >> 8 & 0xff, ab = ah & 0xff,
+          bh = parseInt(b.replace(/#/g, ''), 16),
+          br = bh >> 16, bg = bh >> 8 & 0xff, bb = bh & 0xff,
+          rr = ar + amount * (br - ar),
+          rg = ag + amount * (bg - ag),
+          rb = ab + amount * (bb - ab);
+    return '#' + ((1 << 24) + (rr << 16) + (rg << 8) + rb | 0).toString(16).slice(1);
+}
+
+function getSeasonTargetColor(type: string, season: number): string {
+    // 0=SPRING, 1=SUMMER, 2=AUTUMN, 3=WINTER
+    if (type === 'GRASS') {
+        if (season === 0) return '#4caf50'; // Vibrant green
+        if (season === 1) return '#8bc34a'; // Yellowish green
+        if (season === 2) return '#bcaaa4'; // Brown/yellow
+        if (season === 3) return '#e0e0e0'; // Frost-covered green/grey
+    }
+    if (type === 'DARK_GRASS') {
+        if (season === 0) return '#388e3c';
+        if (season === 1) return '#689f38';
+        if (season === 2) return '#8d6e63';
+        if (season === 3) return '#bdbdbd';
+    }
+    if (type === 'LEAF') {
+        if (season === 0) return '#4caf50';
+        if (season === 1) return '#8bc34a'; // slightly lighter
+        if (season === 2) return '#e67e22'; // Orange autumn
+        if (season === 3) return '#cfd8dc'; // Greyish white
+    }
+    if (type === 'DARK_LEAF') {
+        if (season === 0) return '#162604';
+        if (season === 1) return '#223c07';
+        if (season === 2) return '#c26200'; // Dark orange
+        if (season === 3) return '#90a4ae'; // Frosty dark
+    }
+    if (type === 'DIRT') return '#795548';
+    return '#ffffff';
+}
 
 function getMousePos(canvas: HTMLCanvasElement, evt: MouseEvent) {
     const rect = canvas.getBoundingClientRect();
@@ -40,7 +82,7 @@ const generateEntityId = () => Math.floor(Math.random() * 1000000000);
 // 1. Blocks that light passes through (Visual Transparency)
 const LIGHT_TRANSPARENT_BLOCKS = new Set([
     BlockType.AIR, BlockType.GLASS, BlockType.WATER, BlockType.TORCH, BlockType.LAVA,
-    BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH, BlockType.COBWEB, BlockType.PINE_LEAVES, BlockType.FLOWER_YELLOW, BlockType.FLOWER_PURPLE,
+    BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH, BlockType.COBWEB, BlockType.PINE_LEAVES, BlockType.FLOWER_YELLOW, BlockType.FLOWER_PURPLE, BlockType.TALL_GRASS, BlockType.GOLDEN_LEAVES, BlockType.SNOWY_LEAVES, BlockType.GOLDEN_BUSH, BlockType.GOLDEN_FLOWER,
     BlockType.ROOF_WOOD, BlockType.ROOF_STONE, BlockType.ROOF_WOOD_LEFT, BlockType.ROOF_STONE_LEFT,
     BlockType.WALL_WOOD, BlockType.DOOR_BOTTOM_OPEN, BlockType.DOOR_TOP_OPEN,
     BlockType.DOOR_IRON_BOTTOM_OPEN, BlockType.DOOR_IRON_TOP_OPEN, BlockType.DOOR_STONE_BOTTOM_OPEN, BlockType.DOOR_STONE_TOP_OPEN,
@@ -55,9 +97,9 @@ const LIGHT_TRANSPARENT_BLOCKS = new Set([
 
 // 2. Blocks that entities can walk through (No Collision)
 // NOTE: Glass is NOT here, so it has physics (solid). Chests ARE here, so they have no physics (intangible).
-const NON_COLLIDABLE_BLOCKS = new Set([BlockType.FLOWER_RED, BlockType.FLOWER_BLUE, BlockType.FLOWER_GREEN, BlockType.FLOWER_YELLOW, BlockType.FLOWER_PURPLE, 
+const NON_COLLIDABLE_BLOCKS = new Set([BlockType.FLOWER_RED, BlockType.FLOWER_BLUE, BlockType.FLOWER_GREEN, BlockType.FLOWER_YELLOW, BlockType.FLOWER_PURPLE, BlockType.TALL_GRASS, 
     BlockType.AIR, BlockType.WATER, BlockType.TORCH, BlockType.LAVA,
-    BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH,
+    BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES, BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH, BlockType.GOLDEN_LEAVES, BlockType.GOLDEN_WOOD, BlockType.WOOD, BlockType.DARK_WOOD, BlockType.PINE_WOOD, BlockType.FROZEN_WOOD, BlockType.GOLDEN_BUSH, BlockType.GOLDEN_FLOWER,
     BlockType.ROOF_WOOD, BlockType.ROOF_STONE, BlockType.ROOF_WOOD_LEFT, BlockType.ROOF_STONE_LEFT,
     BlockType.WALL_WOOD, BlockType.PINE_WOOD, BlockType.DOOR_BOTTOM_OPEN, BlockType.DOOR_TOP_OPEN,
     BlockType.DOOR_IRON_BOTTOM_OPEN, BlockType.DOOR_IRON_TOP_OPEN, BlockType.DOOR_STONE_BOTTOM_OPEN, BlockType.DOOR_STONE_TOP_OPEN,
@@ -88,8 +130,16 @@ export const GameCanvas: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const requestRef = useRef<number | null>(null);
     
-    const [gameState, setGameState] = useState<'MENU' | 'PLAYING' | 'PAUSED'>('MENU');
-    const [lang, setLang] = useState<'EN' | 'PT' | 'ES' | 'JA'>('EN');
+    const [gameState, setGameState] = useState<'INTRO' | 'MENU' | 'PLAYING' | 'PAUSED'>('INTRO');
+    const [connectionPhase, setConnectionPhase] = useState<'NONE'|'CONNECTING'|'SYNCING'|'LOADED'>('NONE');
+    const [pauseMenuState, setPauseMenuState] = useState<'MAIN' | 'OPTIONS'>('MAIN');
+    const [optionsTab, setOptionsTab] = useState<'GAME' | 'VIDEO' | 'AUDIO'>('GAME');
+    const [lang, setLang] = useState<'EN' | 'PT' | 'ES' | 'JA'>(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('zombiecraft_lang') as ('EN' | 'PT' | 'ES' | 'JA') || 'EN';
+        }
+        return 'EN';
+    });
     const t = TRANSLATIONS[lang];
 
     const worldRef = useRef<WorldData | null>(null);
@@ -165,7 +215,29 @@ export const GameCanvas: React.FC = () => {
     const [playerXP, setPlayerXP] = useState(0);
     const [skillPoints, setSkillPoints] = useState(0);
     const [playerStats, setPlayerStats] = useState<PlayerStats>(DEFAULT_STATS);
-    const [options, setOptions] = useState<GameOptions>({ showCoordinates: false, adminMode: false, isMobile: false });
+    const [options, setOptions] = useState<GameOptions>(() => {
+        const savedOptsStr = localStorage.getItem('zombiecraft_global_options');
+        if (savedOptsStr) {
+            try { return JSON.parse(savedOptsStr); } catch(e){}
+        }
+        return { showCoordinates: false, adminMode: false, isMobile: false, graphicsQuality: 'ULTRA', shaderLevel: 1, textureQuality: 'medium', volume: 1 };
+    });
+    
+    useEffect(() => {
+        localStorage.setItem('zombiecraft_global_options', JSON.stringify({
+            showCoordinates: options.showCoordinates,
+            tutorialEnabled: options.tutorialEnabled,
+            showMinimap: options.showMinimap,
+            adminMode: options.adminMode,
+            isMobile: options.isMobile,
+            graphicsQuality: options.graphicsQuality,
+            renderDistance: options.renderDistance,
+            volume: options.volume,
+            shaderLevel: options.shaderLevel,
+            textureQuality: options.textureQuality
+        }));
+        localStorage.setItem('zombiecraft_lang', lang);
+    }, [options, lang]);
     const [temperatureState, setTemperatureState] = useState<'NORMAL' | 'HOT' | 'COLD'>('NORMAL');
     const temperatureRef = useRef<number>(50);
 
@@ -177,14 +249,16 @@ export const GameCanvas: React.FC = () => {
     const cameraRef = useRef({ x: 0, y: 0 });
     const entitiesRef = useRef<Entity[]>([]);
     const timeRef = useRef<number>(0); 
+    const totalDaysRef = useRef<number>(0);
     const stepTimerRef = useRef<number>(0);
     const moonPhaseRef = useRef<'NORMAL' | 'FULL' | 'BLOOD'>('NORMAL');
     const cloudsRef = useRef<{x: number, y: number, speed: number, size: number, layer: number}[]>([]);
     const furnacesRef = useRef<Map<string, FurnaceData>>(new Map());
     const chestsRef = useRef<Map<string, ItemStack[]>>(new Map());
     const cropsRef = useRef<Map<string, CropData>>(new Map());
-    const weatherParticlesRef = useRef<{x:number, y:number, vx:number, vy:number, type: 'RAIN' | 'SNOW'}[]>([]);
+    const weatherParticlesRef = useRef<{x:number, y:number, vx:number, vy:number, type: 'RAIN' | 'SNOW' | 'LEAF' | 'FIREFLY' | 'BUTTERFLY' | 'GOLDEN_LEAF' | 'SAND', life?: number}[]>([]);
     const snowCoverRef = useRef<number>(0);
+    const footprintsRef = useRef<{x: number, y: number, time: number, isSnow: boolean}[]>([]); 
 
     const breakingRef = useRef<{ x: number, y: number, progress: number }>({ x: -1, y: -1, progress: 0 });
     const lastHungerDamageRef = useRef<number>(0);
@@ -265,8 +339,8 @@ export const GameCanvas: React.FC = () => {
     const canDamageBlock = (block: BlockType, tool: ItemStack | null): boolean => {
         const handBreakable = new Set([
             BlockType.AIR, BlockType.WATER,
-            BlockType.DIRT, BlockType.GRASS, BlockType.DARK_GRASS, BlockType.SAND,
-            BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES,
+            BlockType.DIRT, BlockType.GRASS, BlockType.DARK_GRASS, BlockType.SAND, BlockType.GOLDEN_GRASS,
+            BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES, BlockType.SNOWY_LEAVES, BlockType.GOLDEN_LEAVES,
             BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH,
             BlockType.FLOWER_RED, BlockType.FLOWER_GREEN, BlockType.FLOWER_BLUE,
             BlockType.CROP_WHEAT, BlockType.CROP_CARROT, BlockType.CROP_POTATO,
@@ -278,7 +352,7 @@ export const GameCanvas: React.FC = () => {
 
         const id = (tool.id?.toString() || '');
         const woodTypes = new Set([
-            BlockType.WOOD, BlockType.DARK_WOOD, BlockType.PLANKS,
+            BlockType.WOOD, BlockType.DARK_WOOD, BlockType.GOLDEN_WOOD, BlockType.PLANKS, BlockType.DARK_PLANKS, BlockType.GOLDEN_PLANKS,
             BlockType.DOOR_BOTTOM_CLOSED, BlockType.DOOR_TOP_CLOSED,
             BlockType.DOOR_BOTTOM_OPEN, BlockType.DOOR_TOP_OPEN,
             BlockType.CRAFTING_TABLE, BlockType.CHEST, BlockType.CHEST_MEDIUM, 
@@ -323,7 +397,7 @@ export const GameCanvas: React.FC = () => {
                 
                 if (isTransparent) {
                     world.light[idx] = currentLight;
-                    if (block === BlockType.LEAVES || block === BlockType.APPLE_LEAVES || block === BlockType.DARK_LEAVES || block === BlockType.WATER || block === BlockType.ROOF_WOOD || block === BlockType.ROOF_STONE || block === BlockType.ROOF_WOOD_LEFT || block === BlockType.ROOF_STONE_LEFT) currentLight = Math.max(0, currentLight - 3); 
+                    if (block === BlockType.LEAVES || block === BlockType.APPLE_LEAVES || block === BlockType.DARK_LEAVES || block === BlockType.PINE_LEAVES || block === BlockType.SNOWY_LEAVES || block === BlockType.GOLDEN_LEAVES || block === BlockType.WATER || block === BlockType.ROOF_WOOD || block === BlockType.ROOF_STONE || block === BlockType.ROOF_WOOD_LEFT || block === BlockType.ROOF_STONE_LEFT) currentLight = Math.max(0, currentLight - 3); 
                     if (currentLight > 1) { queue[tail++] = idx; }
                 } else {
                     world.light[idx] = currentLight;
@@ -339,7 +413,7 @@ export const GameCanvas: React.FC = () => {
                 if (b === BlockType.TORCH || b === BlockType.LAMP_ON) { world.light[i] = 15; queue[tail++] = i; }
                 else if (b === BlockType.URANIUM_ORE) { world.light[i] = 12; queue[tail++] = i; }
                 else if (b === BlockType.URANIUM_BLOCK) { world.light[i] = 14; queue[tail++] = i; }
-                else if (b === BlockType.LAVA || b === BlockType.CAMPFIRE) { world.light[i] = 13; queue[tail++] = i; }
+                else if (b === BlockType.LAVA || b === BlockType.CAMPFIRE || b === BlockType.GOLDEN_FLOWER) { world.light[i] = 13; queue[tail++] = i; }
             }
         }
         
@@ -432,7 +506,7 @@ export const GameCanvas: React.FC = () => {
                         for (let n of neighbors) {
                             if (n >= 0) {
                                 const nb = world.blocks[n];
-                                if (nb === BlockType.PLANKS || nb === BlockType.WOOD || nb === BlockType.DARK_WOOD || nb === BlockType.LEAVES || nb === BlockType.APPLE_LEAVES || nb === BlockType.CABINET || nb === BlockType.TABLE || nb === BlockType.WALL_WOOD || nb === BlockType.ROOF_WOOD) {
+                                if (nb === BlockType.PLANKS || nb === BlockType.WOOD || nb === BlockType.DARK_WOOD || nb === BlockType.PINE_WOOD || nb === BlockType.GOLDEN_WOOD || nb === BlockType.FROZEN_WOOD || nb === BlockType.LEAVES || nb === BlockType.APPLE_LEAVES || nb === BlockType.CABINET || nb === BlockType.TABLE || nb === BlockType.WALL_WOOD || nb === BlockType.ROOF_WOOD) {
                                     world.blocks[n] = BlockType.AIR;
                                     dirty = true;
                                 }
@@ -541,11 +615,16 @@ export const GameCanvas: React.FC = () => {
                 
                 // --- TREE/CACTUS PASS-THROUGH LOGIC ---
                 if (ent.type === 'PLAYER') {
-                    if (treePassRef.current && (b === BlockType.WOOD || b === BlockType.DARK_WOOD)) {
+                    if (treePassRef.current && (b === BlockType.WOOD || b === BlockType.DARK_WOOD || b === BlockType.PINE_WOOD || b === BlockType.GOLDEN_WOOD || b === BlockType.FROZEN_WOOD)) {
                         continue; // Treat as non-collidable (Air)
                     }
                     if (keysRef.current['KeyS'] && b === BlockType.CACTUS) {
                         continue; // Pass through cactus with 'S'
+                    }
+                } else if (ent.type !== 'PROJECTILE' && ent.type !== 'DROP') {
+                    // Allow animals/mobs to pass through raw tree trunks to avoid getting stuck
+                    if (b === BlockType.WOOD || b === BlockType.DARK_WOOD || b === BlockType.PINE_WOOD || b === BlockType.GOLDEN_WOOD || b === BlockType.FROZEN_WOOD) {
+                        continue;
                     }
                 }
 
@@ -617,20 +696,38 @@ export const GameCanvas: React.FC = () => {
                  const isDesert = biome === 'desert';
                  const isSnow = biome === 'snow';
                  const isForest = biome === 'forest';
+                 const isGolden = biome === 'golden_forest';
 
                  if (isDesert) {
                      // Desert: Only Camel, Scorpion, Snake, Rabbit
-                     if (type === 'COW' || type === 'PIG' || type === 'SHEEP' || type.toString().includes('ZOMBIE') || type === 'POLAR_BEAR' || type === 'DOG') {
+                     if (type === 'COW' || type === 'PIG' || type === 'SHEEP' || type.toString().includes('ZOMBIE') || type === 'POLAR_BEAR' || type === 'DOG' || type === 'GOLDEN_DEER' || type === 'LUNAR_FOX' || type === 'SHARK') {
                          attempts++; continue;
                      }
                  } else if (isSnow) {
                      // Snow: Polar Bear, Rabbit, Zombie, Zombie Frozen
-                     if (type === 'CAMEL' || type === 'SCORPION' || type === 'SNAKE' || type === 'COW' || type === 'PIG' || type === 'SHEEP' || type === 'DOG') {
+                     if (type === 'CAMEL' || type === 'SCORPION' || type === 'SNAKE' || type === 'COW' || type === 'PIG' || type === 'SHEEP' || type === 'DOG' || type === 'GOLDEN_DEER' || type === 'LUNAR_FOX' || type === 'SHARK') {
+                         attempts++; continue;
+                     }
+                 } else if (isGolden) {
+                     // Golden Forest (Legendary - no monsters!)
+                     if (type.toString().includes('ZOMBIE')) {
+                         attempts++; continue;
+                     }
+                     if (type !== 'GOLDEN_DEER' && type !== 'LUNAR_FOX' && type !== 'BIRD' && type !== 'RABBIT' && type !== 'DOG' && type !== 'PIG' && type !== 'SHEEP') {
+                         attempts++; continue;
+                     }
+                 } else if (biome === 'beach') {
+                     // Beach
+                     if (type === 'SHARK') {
+                         // Shark is valid here
+                     } else if (type === 'COW' || type === 'PIG' || type === 'SHEEP' || type === 'BIRD') {
+                         // these are valid near the sand
+                     } else if (!type.toString().includes('ZOMBIE')) {
                          attempts++; continue;
                      }
                  } else {
-                     // Non-Desert, Non-Snow (Plains/Forest)
-                     if (type === 'CAMEL' || type === 'SCORPION' || type === 'SNAKE' || type === 'POLAR_BEAR' || type === 'ZOMBIE_FROZEN') {
+                     // Non-Desert, Non-Snow (Plains/Forest/River)
+                     if (type === 'CAMEL' || type === 'SCORPION' || type === 'SNAKE' || type === 'POLAR_BEAR' || type === 'ZOMBIE_FROZEN' || type === 'GOLDEN_DEER' || type === 'LUNAR_FOX' || type === 'SHARK') {
                          attempts++; continue;
                      }
                      // Dog mostly in forest
@@ -642,7 +739,14 @@ export const GameCanvas: React.FC = () => {
                  let foundValidY = false;
                  for(let y=0; y<WORLD_HEIGHT; y++) {
                      const b = worldRef.current.blocks[y * WORLD_WIDTH + spawnX];
-                     if (b !== BlockType.AIR) {
+                     if (type === 'SHARK') {
+                          // look for water
+                          if (b === BlockType.WATER) {
+                              spawnY = y * BLOCK_SIZE;
+                              foundValidY = true;
+                              break;
+                          }
+                     } else if (b !== BlockType.AIR && b !== BlockType.WATER) {
                          // found the surface block
                          const blockAbove = y > 0 ? worldRef.current.blocks[(y - 1) * WORLD_WIDTH + spawnX] : BlockType.AIR;
                          
@@ -653,8 +757,10 @@ export const GameCanvas: React.FC = () => {
                          let validBlock = false;
                          if (type === 'DOG') {
                              if (b === BlockType.DARK_GRASS) validBlock = true;
-                         } else if (type === 'COW' || type === 'PIG' || type === 'SHEEP') {
-                             if (b === BlockType.GRASS || b === BlockType.DARK_GRASS) validBlock = true;
+                         } else if (type === 'GOLDEN_DEER' || type === 'LUNAR_FOX') {
+                             if (b === BlockType.GOLDEN_GRASS || b === BlockType.GRASS || b === BlockType.DARK_GRASS) validBlock = true;
+                         } else if (type === 'COW' || type === 'PIG' || type === 'SHEEP' || type === 'BIRD') {
+                             if (b === BlockType.GRASS || b === BlockType.DARK_GRASS || b === BlockType.SAND) validBlock = true;
                          } else if (type === 'RABBIT' || type === 'CAMEL' || type === 'SCORPION' || type === 'SNAKE') {
                              if (b === BlockType.SAND) validBlock = true;
                          } else {
@@ -674,9 +780,9 @@ export const GameCanvas: React.FC = () => {
         }
         
         if (spawnY > 0 || (x !== undefined && y !== undefined)) {
-             const getWidth = (t: string) => t === 'PIG' ? 28 : t === 'COW' ? 32 : t === 'SHEEP' ? 30 : t === 'SCORPION' ? 24 : t === 'CAMEL' ? 50 : t === 'SNAKE' ? 20 : t === 'RABBIT' ? 16 : t === 'POLAR_BEAR' ? 40 : t === 'DOG' ? 20 : t === 'ZOMBIE_TANK' ? 30 : t === 'ZOMBIE_KING' ? 28 : 20;
-             const getHeight = (t: string) => t.includes('ZOMBIE') ? (t === 'ZOMBIE_TANK' ? 64 : t === 'ZOMBIE_KING' ? 64 : 56) : t === 'COW' ? 24 : t === 'SCORPION' ? 16 : t === 'CAMEL' ? 45 : t === 'SNAKE' ? 10 : t === 'RABBIT' ? 16 : t === 'POLAR_BEAR' ? 30 : t === 'DOG' ? 16 : 20;
-             const getHealth = (t: string) => t === 'ZOMBIE' ? 20 : t === 'ZOMBIE_RUNNER' ? 10 : t === 'ZOMBIE_TANK' ? 100 : t === 'ZOMBIE_EXPLOSIVE' ? 10 : t === 'ZOMBIE_TOXIC' ? 20 : t === 'ZOMBIE_SKELETON' ? 10 : t === 'ZOMBIE_INFECTOR' ? 20 : t === 'ZOMBIE_DARK' ? 25 : t === 'ZOMBIE_FROZEN' ? 20 : t === 'ZOMBIE_KING' ? 150 : t === 'SCORPION' ? 15 : t === 'CAMEL' ? 40 : t === 'SNAKE' ? 10 : t === 'RABBIT' ? 6 : t === 'POLAR_BEAR' ? 30 : t === 'DOG' ? 15 : 10;
+             const getWidth = (t: string) => t === 'SHARK' ? 120 : t === 'BIRD' ? 12 : t === 'PIG' ? 28 : t === 'COW' ? 32 : t === 'SHEEP' ? 30 : t === 'SCORPION' ? 24 : t === 'CAMEL' ? 50 : t === 'SNAKE' ? 20 : t === 'RABBIT' ? 16 : t === 'POLAR_BEAR' ? 40 : t === 'DOG' ? 20 : t === 'ZOMBIE_TANK' ? 30 : t === 'ZOMBIE_KING' ? 28 : t === 'GOLDEN_DEER' ? 32 : t === 'LUNAR_FOX' ? 22 : 20;
+             const getHeight = (t: string) => t === 'SHARK' ? 60 : t === 'BIRD' ? 12 : t.includes('ZOMBIE') ? (t === 'ZOMBIE_TANK' ? 64 : t === 'ZOMBIE_KING' ? 64 : 56) : t === 'COW' ? 24 : t === 'SCORPION' ? 16 : t === 'CAMEL' ? 45 : t === 'SNAKE' ? 10 : t === 'RABBIT' ? 16 : t === 'POLAR_BEAR' ? 30 : t === 'DOG' ? 16 : t === 'GOLDEN_DEER' ? 32 : t === 'LUNAR_FOX' ? 18 : 20;
+             const getHealth = (t: string) => t === 'SHARK' ? 40 : t === 'BIRD' ? 5 : t === 'ZOMBIE' ? 20 : t === 'ZOMBIE_RUNNER' ? 10 : t === 'ZOMBIE_TANK' ? 100 : t === 'ZOMBIE_EXPLOSIVE' ? 10 : t === 'ZOMBIE_TOXIC' ? 20 : t === 'ZOMBIE_SKELETON' ? 10 : t === 'ZOMBIE_INFECTOR' ? 20 : t === 'ZOMBIE_DARK' ? 25 : t === 'ZOMBIE_FROZEN' ? 20 : t === 'ZOMBIE_KING' ? 150 : t === 'SCORPION' ? 15 : t === 'CAMEL' ? 40 : t === 'SNAKE' ? 10 : t === 'RABBIT' ? 6 : t === 'POLAR_BEAR' ? 30 : t === 'DOG' ? 15 : t === 'GOLDEN_DEER' ? 20 : t === 'LUNAR_FOX' ? 15 : 10;
 
              const mob: Entity = {
                  id: generateEntityId(),
@@ -726,7 +832,8 @@ export const GameCanvas: React.FC = () => {
             type: 'DROP',
             x, y, width: 12, height: 12, vx: (Math.random() - 0.5) * 4, vy: -3,
             grounded: false, health: 1, maxHealth: 1, facingRight: true,
-            itemId, itemCount: count, itemMeta: meta, creationTime: Date.now()
+            itemId, itemCount: count, itemMeta: meta, creationTime: Date.now(),
+            pickupDelay: Date.now() + 1500
         };
         
         // Add to local list immediately for visual feedback
@@ -757,7 +864,7 @@ export const GameCanvas: React.FC = () => {
         const isShovel = id.includes('shovel');
         
         const isStone = block === BlockType.STONE || block === BlockType.DEEP_STONE || block === BlockType.COAL_ORE || block === BlockType.IRON_ORE || block === BlockType.COPPER_ORE || block === BlockType.GOLD_ORE || block === BlockType.DIAMOND_ORE || block === BlockType.TITANIUM_ORE || block === BlockType.URANIUM_ORE || block === BlockType.FURNACE || block === BlockType.STONE_CHEST || block === BlockType.ROOF_STONE || block === BlockType.ROOF_STONE_LEFT; 
-        const isWood = block === BlockType.WOOD || block === BlockType.DARK_WOOD || block === BlockType.PLANKS || block === BlockType.DOOR_BOTTOM_CLOSED || block === BlockType.DOOR_TOP_CLOSED || block === BlockType.DOOR_BOTTOM_OPEN || block === BlockType.DOOR_TOP_OPEN || block === BlockType.CRAFTING_TABLE || block === BlockType.CHEST || block === BlockType.CHEST_MEDIUM || block === BlockType.CHEST_LARGE || block === BlockType.ROOF_WOOD || block === BlockType.ROOF_WOOD_LEFT || block === BlockType.WALL_WOOD;
+        const isWood = block === BlockType.WOOD || block === BlockType.DARK_WOOD || block === BlockType.PLANKS || block === BlockType.DARK_PLANKS || block === BlockType.GOLDEN_PLANKS || block === BlockType.DOOR_BOTTOM_CLOSED || block === BlockType.DOOR_TOP_CLOSED || block === BlockType.DOOR_BOTTOM_OPEN || block === BlockType.DOOR_TOP_OPEN || block === BlockType.CRAFTING_TABLE || block === BlockType.CHEST || block === BlockType.CHEST_MEDIUM || block === BlockType.CHEST_LARGE || block === BlockType.ROOF_WOOD || block === BlockType.ROOF_WOOD_LEFT || block === BlockType.WALL_WOOD;
         const isDirt = block === BlockType.DIRT || block === BlockType.GRASS || block === BlockType.DARK_GRASS || block === BlockType.FARMLAND || block === BlockType.SAND;
         
         if (isPickaxe && isStone) speed *= multiplier;
@@ -1038,8 +1145,21 @@ export const GameCanvas: React.FC = () => {
             const item = n[slotIndex];
             if (item) {
                  const dropCount = Math.min(amount, item.count);
-                 spawnDrop(playerRef.current.x, playerRef.current.y, item.id, dropCount, item.meta);
-                 n[slotIndex]!.count -= dropCount;
+                 const p = playerRef.current;
+                 const dir = p.facingRight ? 1 : -1;
+                 const spawnX = p.x + (p.width / 2) + (dir * 20); // spawn a bit in front
+                 const spawnY = p.y;
+                 const id = generateEntityId();
+                 const drop: Entity = {
+                     id, type: 'DROP', x: spawnX, y: spawnY, width: 12, height: 12, 
+                     vx: dir * 4, vy: -4, grounded: false, health: 1, maxHealth: 1, facingRight: p.facingRight,
+                     itemId: item.id, itemCount: dropCount, itemMeta: item.meta, creationTime: Date.now(),
+                     pickupDelay: Date.now() + 1500
+                 };
+                 if(!entitiesRef.current.find(e => e.id === id)) entitiesRef.current.push(drop);
+                 broadcast('SPAWN_DROP', { ...drop });
+                 
+                 n[slotIndex] = { ...item, count: item.count - dropCount };
                  if (n[slotIndex]!.count <= 0) n[slotIndex] = null;
             }
             return n;
@@ -1078,41 +1198,45 @@ export const GameCanvas: React.FC = () => {
             ctx.fillStyle = legColor; 
             ctx.fillRect(-6 * scale, 12 * scale, 4 * scale, (16 + legOffset) * scale);
             ctx.fillRect(2 * scale, 12 * scale, 4 * scale, (16 - legOffset) * scale);
-            // Leg damage
-            ctx.fillStyle = detailColor;
-            ctx.fillRect(-4 * scale, 20 * scale, 2 * scale, 4 * scale);
+            
+            // Back Arm
+            ctx.fillStyle = '#1b5e20';
+            ctx.fillRect(4 * scale, -12 * scale, 12 * scale, 6 * scale); 
 
             // Body
             ctx.fillStyle = bodyColor; 
             ctx.fillRect(-10 * scale, -16 * scale, 20 * scale, 28 * scale);
-            // Ragged shirt bottom
+            
+            // Ragged shirt bottom/details
             ctx.fillStyle = legColor;
-            ctx.fillRect(-10 * scale, 8 * scale, 4 * scale, 4 * scale);
-            ctx.fillRect(-2 * scale, 10 * scale, 4 * scale, 2 * scale);
+            ctx.fillRect(-10 * scale, 8 * scale, 6 * scale, 4 * scale);
             ctx.fillRect(4 * scale, 6 * scale, 6 * scale, 6 * scale);
 
             // Chest wound / exposed ribs
             ctx.fillStyle = '#111';
-            ctx.fillRect(-4 * scale, -8 * scale, 6 * scale, 6 * scale);
+            ctx.fillRect(-4 * scale, -6 * scale, 6 * scale, 6 * scale);
             ctx.fillStyle = detailColor; // Blood or glow inside wound
-            ctx.fillRect(-2 * scale, -6 * scale, 2 * scale, 4 * scale);
+            ctx.fillRect(-2 * scale, -4 * scale, 2 * scale, 4 * scale);
 
             if (isMutant) {
                 ctx.fillStyle = '#1565c0'; 
                 ctx.fillRect(-4 * scale, -8 * scale, 8 * scale, 4 * scale);
-                ctx.fillRect(-4 * scale, 0 * scale, 8 * scale, 4 * scale);
             }
+            
+            // Head
+            ctx.fillStyle = headColor; 
+            ctx.fillRect(-10 * scale, -30 * scale, 20 * scale, 20 * scale); 
             
             if (ent.type === 'ZOMBIE_KING' || ent.type === 'PLAGUE_KING') {
                 // Crown
                 ctx.fillStyle = '#ffeb3b';
-                ctx.fillRect(-10 * scale, -36 * scale, 20 * scale, 6 * scale);
-                ctx.fillRect(-10 * scale, -40 * scale, 4 * scale, 4 * scale);
-                ctx.fillRect(-2 * scale, -40 * scale, 4 * scale, 4 * scale);
-                ctx.fillRect(6 * scale, -40 * scale, 4 * scale, 4 * scale);
+                ctx.fillRect(-12 * scale, -38 * scale, 24 * scale, 8 * scale);
+                ctx.fillRect(-12 * scale, -42 * scale, 4 * scale, 4 * scale);
+                ctx.fillRect(-2 * scale, -44 * scale, 4 * scale, 6 * scale);
+                ctx.fillRect(8 * scale, -42 * scale, 4 * scale, 4 * scale);
             }
             
-            // Arm (outstretched)
+            // Front Arm (outstretched)
             ctx.fillStyle = headColor; 
             ctx.fillRect(0, -14 * scale, 22 * scale, 6 * scale); 
             // Blood on hands
@@ -1123,19 +1247,16 @@ export const GameCanvas: React.FC = () => {
             ctx.fillStyle = '#1b5e20';
             ctx.fillRect(-10 * scale, -14 * scale, 10 * scale, 6 * scale); 
             
-            // Head
-            ctx.fillStyle = headColor; 
-            ctx.fillRect(-10 * scale, -28 * scale, 20 * scale, 20 * scale); 
             // Brain exposed / head wound
             ctx.fillStyle = detailColor;
-            ctx.fillRect(4 * scale, -28 * scale, 6 * scale, 4 * scale);
+            ctx.fillRect(4 * scale, -30 * scale, 6 * scale, 4 * scale);
 
             // Eyes (Glowing)
             ctx.fillStyle = eyeColor;
             ctx.shadowColor = eyeColor;
-            ctx.shadowBlur = 10 * scale;
-            ctx.fillRect(2 * scale, -22 * scale, 4 * scale, 4 * scale); 
-            ctx.fillRect(6 * scale, -22 * scale, 4 * scale, 4 * scale); 
+            ctx.shadowBlur = 12 * scale;
+            ctx.fillRect(2 * scale, -24 * scale, 4 * scale, 4 * scale); 
+            ctx.fillRect(8 * scale, -24 * scale, 4 * scale, 4 * scale); 
             ctx.shadowBlur = 0; // reset shadow
         } 
         else if (ent.type === 'COW') {
@@ -1164,6 +1285,20 @@ export const GameCanvas: React.FC = () => {
             ctx.fillRect(12, -8, 10, 10);
             ctx.fillStyle = '#e91e63';
             ctx.fillRect(20, -4, 4, 4);
+        }
+        else if (ent.type === 'CHICKEN') {
+            ctx.fillStyle = '#ffb300';
+            ctx.fillRect(-2, 8, 2, 6 + legOffset);
+            ctx.fillRect(2, 8, 2, 6 - legOffset);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(-6, -2, 14, 10);
+            ctx.fillRect(6, -8, 6, 8);
+            ctx.fillStyle = '#d32f2f';
+            ctx.fillRect(8, -10, 2, 4);
+            ctx.fillStyle = '#ffb300';
+            ctx.fillRect(12, -4, 4, 2);
+            ctx.fillStyle = '#212121';
+            ctx.fillRect(8, -6, 2, 2);
         } 
         else if (ent.type === 'SHEEP') {
             ctx.fillStyle = '#d7ccc8'; 
@@ -1176,60 +1311,292 @@ export const GameCanvas: React.FC = () => {
             ctx.fillStyle = '#d7ccc8'; 
             ctx.fillRect(14, -8, 8, 8);
         }
+        else if (ent.type === 'GOLDEN_DEER') {
+            // Legs
+            ctx.fillStyle = '#a1887f';
+            ctx.fillRect(-10, 6, 4, 12 + legOffset);
+            ctx.fillRect(8, 6, 4, 12 - legOffset);
+            ctx.fillRect(-4, 6, 4, 12 + legOffset); // Back right leg
+            ctx.fillRect(14, 6, 4, 12 - legOffset); // Front right leg
+            
+            // Body
+            ctx.fillStyle = '#fbc02d'; // Golden fur
+            ctx.fillRect(-14, -10, 32, 18);
+            ctx.fillStyle = '#fff9c4'; // Belly
+            ctx.fillRect(-10, 4, 24, 4);
+            
+            // Head and Neck
+            ctx.fillStyle = '#fbc02d';
+            ctx.fillRect(14, -16, 10, 14);
+            ctx.fillStyle = '#fff9c4'; // Snout
+            ctx.fillRect(24, -12, 6, 6);
+            ctx.fillStyle = '#3e2723'; // Nose
+            ctx.fillRect(28, -12, 2, 2);
+            
+            // Antlers
+            ctx.fillStyle = '#ffca28';
+            ctx.fillRect(16, -26, 2, 10);
+            ctx.fillRect(18, -22, 4, 2);
+            ctx.fillRect(14, -20, -2, 2);
+            
+            ctx.fillStyle = '#000'; // Eyes
+            ctx.fillRect(20, -14, 2, 2);
+        }
+        else if (ent.type === 'LUNAR_FOX') {
+            // Legs
+            ctx.fillStyle = '#455a64';
+            ctx.fillRect(-8, 6, 3, 6 + legOffset);
+            ctx.fillRect(6, 6, 3, 6 - legOffset);
+            
+            // Body
+            ctx.fillStyle = '#cfd8dc'; // Lunar gray-white fur
+            ctx.fillRect(-10, -6, 20, 12);
+            
+            // Tail
+            ctx.fillStyle = '#eceff1'; // Bushy tail
+            ctx.fillRect(-18, -4, 10, 6);
+            ctx.fillStyle = '#ffffff'; // White tip
+            ctx.fillRect(-20, -4, 4, 4);
+
+            // Head
+            ctx.fillStyle = '#cfd8dc';
+            ctx.fillRect(8, -10, 10, 10);
+            ctx.fillStyle = '#ffffff'; // Snout
+            ctx.fillRect(18, -4, 6, 4);
+            ctx.fillStyle = '#263238'; // Nose
+            ctx.fillRect(22, -4, 2, 2);
+            
+            // Ears
+            ctx.fillStyle = '#90a4ae';
+            ctx.fillRect(10, -14, 2, 4);
+            ctx.fillRect(14, -14, 2, 4);
+            
+            // Glowing Blue Eyes
+            ctx.fillStyle = '#80d8ff';
+            ctx.shadowColor = '#80d8ff';
+            ctx.shadowBlur = 8;
+            ctx.fillRect(14, -8, 2, 2);
+            ctx.shadowBlur = 0;
+        }
         else if (ent.type === 'POLAR_BEAR') {
             const breathe = ent.isSleeping ? Math.sin(timeRef.current / 15) * 2 : 0;
-            ctx.fillStyle = '#e0e0e0';
+            ctx.fillStyle = '#f5f5f5'; // slightly whiter main body
+            const shadow = '#e0e0e0';
+            const darkAccent = '#424242';
+            
             if (ent.isSleeping) {
                 // Sleeping polar bear
-                ctx.fillRect(-20, 2 - breathe, 40, 13 + breathe); // Body
-                ctx.fillRect(10, 6 - breathe/2, 12, 9 + breathe/2); // Head resting
+                // Back leg
+                ctx.fillStyle = shadow;
+                ctx.fillRect(-15, 10, 10, 6);
                 
-                ctx.fillStyle = '#d6d6d6';
-                ctx.fillRect(-15, 10, 8, 5); // Back paw
-                ctx.fillRect(5, 10, 8, 5); // Front paw
+                // Body
+                ctx.fillStyle = '#f5f5f5';
+                ctx.fillRect(-22, 2 - breathe, 44, 14 + breathe); 
                 
-                ctx.fillStyle = '#000';
-                ctx.fillRect(18, 10 - breathe/2, 4, 2); // Closed Eye
+                // Fur details
+                ctx.fillStyle = shadow;
+                ctx.fillRect(-10, 5 - breathe, 6, 2);
+                ctx.fillRect(0, 8 - breathe, 8, 2);
+                
+                // Front paw resting
+                ctx.fillStyle = shadow;
+                ctx.fillRect(5, 12, 10, 6); 
+                
+                // Head resting
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(10, 6 - breathe/2, 14, 10 + breathe/2); 
+                
+                // Ear
+                ctx.fillStyle = shadow;
+                ctx.fillRect(12, 4 - breathe/2, 4, 3);
+
+                // Closed Eye & Nose
+                ctx.fillStyle = darkAccent;
+                ctx.fillRect(18, 11 - breathe/2, 4, 2); // Eye
+                ctx.fillRect(22, 13 - breathe/2, 3, 3); // Nose
                 
                 if (timeRef.current % 60 < 30) {
                     ctx.fillStyle = '#fff';
-                    ctx.font = '10px monospace';
+                    ctx.font = 'bold 10px monospace';
                     ctx.fillText('Z', 25, -5 - breathe);
-                    ctx.font = '8px monospace';
-                    ctx.fillText('z', 32, -10 - breathe);
+                    ctx.font = 'bold 8px monospace';
+                    ctx.fillText('z', 34, -12 - breathe);
                 }
             } else {
                 // Standing/walking polar bear
-                ctx.fillRect(-14, 6, 6, 10 + legOffset);
-                ctx.fillRect(8, 6, 6, 10 - legOffset);
+                // Legs (back)
+                ctx.fillStyle = shadow;
+                ctx.fillRect(-14, 8, 8, 10 + legOffset);
+                ctx.fillRect(8, 8, 8, 10 - legOffset);
+                
+                // Legs (front)
+                ctx.fillStyle = '#f5f5f5';
+                ctx.fillRect(-18, 10, 8, 10 + legOffset);
+                ctx.fillRect(12, 10, 8, 10 - legOffset);
+
+                // Body
+                ctx.fillStyle = '#f5f5f5';
+                ctx.fillRect(-22, -12, 44, 24); 
+                
+                // Belly shadow
+                ctx.fillStyle = shadow;
+                ctx.fillRect(-20, 8, 40, 4);
+                
+                // Neck bump
                 ctx.fillStyle = '#ffffff';
-                ctx.fillRect(-20, -10, 40, 20); // Body
-                ctx.fillRect(14, -14, 14, 14); // Head
-                ctx.fillStyle = '#000';
-                ctx.fillRect(24, -10, 2, 2); // Eye
-                ctx.fillRect(26, -4, 4, 4); // Nose
+                ctx.fillRect(14, -16, 12, 8);
+
+                // Head
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(18, -14, 16, 16);
+                
+                // Snout
+                ctx.fillStyle = '#f5f5f5';
+                ctx.fillRect(30, -6, 8, 8);
+
+                // Ear
+                ctx.fillStyle = shadow;
+                ctx.fillRect(20, -18, 4, 4);
+
+                // Eye & Nose
+                ctx.fillStyle = darkAccent;
+                ctx.fillRect(26, -10, 2, 2); // Eye
+                ctx.fillRect(36, -4, 4, 4); // Nose
             }
         }
+        else if (ent.type === 'SHARK') {
+            const isFlop = ent.grounded && ent.vy < -2;
+            ctx.save();
+            if (isFlop) {
+                ctx.rotate(Math.PI / 4 * (Math.sin(timeRef.current/2)));
+            }
+            // Tail
+            ctx.fillStyle = '#607d8b'; // blue gray
+            ctx.beginPath();
+            ctx.moveTo(-16, -2);
+            ctx.lineTo(-24, -8);
+            ctx.lineTo(-24, 8);
+            ctx.fill();
+            
+            // Body
+            ctx.fillStyle = '#607d8b';
+            ctx.fillRect(-16, -6, 28, 12);
+            ctx.fillStyle = '#cfd8dc'; // light underbelly
+            ctx.fillRect(-16, 2, 28, 4);
+            
+            // Head
+            ctx.fillStyle = '#607d8b';
+            ctx.beginPath();
+            ctx.moveTo(12, -6);
+            ctx.lineTo(20, -2);
+            ctx.lineTo(12, 6);
+            ctx.fill();
+            ctx.fillStyle = '#cfd8dc';
+            ctx.beginPath();
+            ctx.moveTo(12, 2);
+            ctx.lineTo(18, 2);
+            ctx.lineTo(12, 6);
+            ctx.fill();
+            
+            // Dorsal Fin
+            ctx.fillStyle = '#455a64';
+            ctx.beginPath();
+            ctx.moveTo(-4, -6);
+            ctx.lineTo(-2, -14);
+            ctx.lineTo(6, -6);
+            ctx.fill();
+            
+            // Eye
+            ctx.fillStyle = '#000';
+            ctx.fillRect(14, -4, 2, 2);
+            
+            // Teeth
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(12, 2, 4, 2);
+            ctx.restore();
+        }
         else if (ent.type === 'DOG') {
-            ctx.fillStyle = '#d7ccc8';
+            const isTamed = ent.isTamed;
+            ctx.fillStyle = isTamed ? '#8d6e63' : '#a1887f'; // Tamed is warmer brown, wild is grayish brown
+            const highlight = isTamed ? '#d7ccc8' : '#cfd8dc';
+            
             if (ent.isSitting) {
-                ctx.fillRect(-10, -2, 16, 18); // Body sitting
-                ctx.fillRect(2, -10, 10, 10); // Head
-                ctx.fillRect(-12, 12, 4, 4); // Back legs
+                // Body sitting
+                ctx.fillRect(-8, -4, 14, 20); 
+                // Belly highlight
+                ctx.fillStyle = highlight;
+                ctx.fillRect(-6, 0, 10, 16); 
+                
+                // Head
+                ctx.fillStyle = isTamed ? '#8d6e63' : '#a1887f';
+                ctx.fillRect(2, -12, 12, 12); 
+                // Snout highlight
+                ctx.fillStyle = highlight;
+                ctx.fillRect(10, -6, 6, 6);
+                
+                // Ears
+                ctx.fillStyle = '#5d4037';
+                ctx.fillRect(2, -16, 3, 4);
+                ctx.fillRect(8, -16, 3, 4);
+
+                // Legs
+                ctx.fillStyle = '#795548';
+                ctx.fillRect(-10, 12, 6, 4); // Back legs
                 ctx.fillRect(6, 12, 4, 4); // Front legs
+                
+                // Tail
+                ctx.fillStyle = '#5d4037';
+                ctx.fillRect(-12, 6, 4, 8);
             } else {
+                // Legs
+                ctx.fillStyle = '#795548';
                 ctx.fillRect(-8, 6, 4, 10 + legOffset);
                 ctx.fillRect(4, 6, 4, 10 - legOffset);
-                ctx.fillRect(-10, -6, 20, 12); // Body
-                ctx.fillRect(6, -12, 10, 10); // Head
-                ctx.fillRect(-14, -4, 4, 4); // Tail
+                
+                // Body
+                ctx.fillStyle = isTamed ? '#8d6e63' : '#a1887f';
+                ctx.fillRect(-12, -8, 22, 14); 
+                
+                // Belly highlight
+                ctx.fillStyle = highlight;
+                ctx.fillRect(-10, 2, 18, 4);
+                
+                // Head
+                ctx.fillStyle = isTamed ? '#8d6e63' : '#a1887f';
+                ctx.fillRect(6, -14, 12, 12); 
+                
+                // Snout highlight
+                ctx.fillStyle = highlight;
+                ctx.fillRect(14, -8, 6, 6);
+                
+                // Ears
+                ctx.fillStyle = '#5d4037';
+                ctx.fillRect(6, -18, 3, 4);
+                ctx.fillRect(12, -18, 3, 4);
+
+                // Tail (wagging if tamed)
+                ctx.fillStyle = '#5d4037';
+                const tailWag = isTamed ? Math.sin(Date.now() / 100) * 4 : 0;
+                ctx.save();
+                ctx.translate(-12, -6);
+                ctx.rotate(tailWag * Math.PI / 180);
+                ctx.fillRect(-6, 0, 8, 4);
+                ctx.restore();
             }
+            
+            // Eye & Snout
             ctx.fillStyle = '#000';
-            ctx.fillRect(ent.isSitting ? 8 : 12, ent.isSitting ? -8 : -10, 2, 2); // Eye
-            ctx.fillRect(ent.isSitting ? 10 : 14, ent.isSitting ? -4 : -6, 2, 2); // Nose
+            ctx.fillRect(ent.isSitting ? 8 : 12, ent.isSitting ? -10 : -12, 2, 2); // Eye
+            ctx.fillStyle = 'white'; // Eye gleam
+            ctx.fillRect(ent.isSitting ? 9 : 13, ent.isSitting ? -10 : -12, 1, 1);
+            
+            ctx.fillStyle = '#212121';
+            ctx.fillRect(ent.isSitting ? 14 : 18, ent.isSitting ? -6 : -8, 2, 2); // Nose
+            
             if (ent.isTamed) {
                 ctx.fillStyle = '#f44336'; // Red collar
-                ctx.fillRect(ent.isSitting ? 2 : 6, ent.isSitting ? 0 : -2, 10, 2);
+                ctx.fillRect(ent.isSitting ? 2 : 6, ent.isSitting ? 0 : -2, 12, 3);
             }
         }
         else if (ent.type === 'CAMEL') {
@@ -1394,6 +1761,55 @@ export const GameCanvas: React.FC = () => {
                 ctx.moveTo(-6 + i*4, 4);
                 ctx.lineTo(0 + i*4 - legOffset, 12);
                 ctx.stroke();
+            }
+        }
+        else if (ent.type === 'BIRD') {
+            const birdColors = [
+                { body: '#1e90ff', wing: '#0a74da', tail: '#40a9ff', belly: '#e6f7ff' }, // Blue Jay
+                { body: '#e74c3c', wing: '#c0392b', tail: '#e67e22', belly: '#fdf2e9' }, // Red Cardinal
+                { body: '#f1c40f', wing: '#f39c12', tail: '#e67e22', belly: '#fef9e7' }, // Yellow Canary
+                { body: '#2ecc71', wing: '#27ae60', tail: '#f1c40f', belly: '#e9f7ef' }  // Green Parrot
+            ];
+            const hash = typeof ent.id === 'number' ? ent.id : String(ent.id).split('').reduce((a,b)=>a+b.charCodeAt(0),0);
+            const c = birdColors[hash % birdColors.length];
+            
+            // Tail
+            ctx.fillStyle = c.tail;
+            ctx.fillRect(-10, -2, 6, 4);
+
+            // Bird Body
+            ctx.fillStyle = c.body; 
+            ctx.fillRect(-6, -6, 12, 8); 
+
+            // Bird Belly
+            ctx.fillStyle = c.belly;
+            ctx.fillRect(-6, 0, 12, 2);
+            
+            // Bird Head
+            ctx.fillStyle = c.body;
+            ctx.fillRect(4, -10, 6, 6);
+            
+            // Beak
+            ctx.fillStyle = '#ffb300';
+            ctx.fillRect(10, -7, 3, 2);
+            
+            // Eye
+            ctx.fillStyle = 'black';
+            ctx.fillRect(6, -9, 2, 2);
+            ctx.fillStyle = 'white'; // Eye gleam
+            ctx.fillRect(7, -9, 1, 1);
+            
+            // Wing animation (flapping when vy < 0 or randomly)
+            ctx.fillStyle = c.wing;
+            const isFlapping = ent.vy < 0 || Math.sin(Date.now() / 50) > 0;
+            if (isFlapping) {
+                // Wing up
+                ctx.fillRect(-2, -12, 6, 8);
+                ctx.fillRect(-1, -13, 4, 1); // wing tip
+            } else {
+                // Wing down
+                ctx.fillRect(-2, -2, 6, 6);
+                ctx.fillRect(-1, 4, 4, 2); // wing tip
             }
         }
         else {
@@ -1585,6 +2001,28 @@ export const GameCanvas: React.FC = () => {
     const handleAdminGiveItem = (item: ItemStack) => { setInventory(prev => { const n = [...prev]; for(let i=0; i<n.length; i++) { if (!n[i]) { n[i] = { ...item }; return n; } } return n; }); };
     const handleCreativeGive = (item: ItemStack) => { handleAdminGiveItem(item); };
     const handleAdminSetTime = (time: 'DAY' | 'NIGHT') => { if (time === 'DAY') timeRef.current = DAWN_START; else timeRef.current = NIGHT_START; if(worldRef.current) updateLighting(worldRef.current, timeRef.current); };
+    const handleAdminTeleportBiome = (biomeName: string) => {
+        if (biomeName.includes('beach')) {
+            playerRef.current.x = (WORLD_WIDTH - 200) * BLOCK_SIZE;
+            playerRef.current.y = 0;
+            return;
+        }
+        let found = false;
+        const pX = Math.floor(playerRef.current.x / BLOCK_SIZE);
+        let chunkStart = Math.floor(pX / 500);
+        for(let i=1; i<150; i++) {
+            if (getBiome((chunkStart + i)*500, currentSeed) === biomeName) {
+                playerRef.current.x = (chunkStart + i)*500 * BLOCK_SIZE;
+                playerRef.current.y = 0;
+                found = true; break;
+            }
+            if (chunkStart - i > 0 && getBiome((chunkStart - i)*500, currentSeed) === biomeName) {
+                playerRef.current.x = (chunkStart - i)*500 * BLOCK_SIZE;
+                playerRef.current.y = 0;
+                found = true; break;
+            }
+        }
+    };
     
     // --- AUDIO STATE HANDLE ---
     useEffect(() => {
@@ -1613,11 +2051,11 @@ export const GameCanvas: React.FC = () => {
         audio.init();
         audio.stopMenuMusic();
         if (save) {
-            worldRef.current = save.worldData; playerRef.current = save.player; setInventory(save.inventory); setEquipment(save.equipment); setCurrentWorldId(save.id); setCurrentWorldName(save.name); setCurrentSeed(save.seed); timeRef.current = save.time;
+            worldRef.current = save.worldData; playerRef.current = save.player; setInventory(save.inventory); setEquipment(save.equipment); setCurrentWorldId(save.id); setCurrentWorldName(save.name); setCurrentSeed(save.seed); timeRef.current = save.time; totalDaysRef.current = save.totalDays || 0;
             setPlayerLevel(save.level || 1); setPlayerXP(save.xp || 0); setSkillPoints(save.skillPoints || 0); setPlayerStats(save.stats || DEFAULT_STATS); staminaRef.current = save.stamina !== undefined ? save.stamina : MAX_STAMINA; hungerRef.current = save.hunger !== undefined ? save.hunger : 10;
             if (save.options) setOptions(save.options);
             furnacesRef.current = new Map(save.furnaces); chestsRef.current = new Map(save.chests); if (save.crops) cropsRef.current = new Map(save.crops); else cropsRef.current = new Map();
-            entitiesRef.current = []; setHearts(save.player.health); setHunger(hungerRef.current); setStamina(staminaRef.current); updateRedstone(worldRef.current); updateLighting(worldRef.current, timeRef.current);
+            entitiesRef.current = []; weatherParticlesRef.current = []; snowCoverRef.current = 0; footprintsRef.current = []; cloudsRef.current = []; setHearts(save.player.health); setHunger(hungerRef.current); setStamina(staminaRef.current); updateRedstone(worldRef.current); updateLighting(worldRef.current, timeRef.current);
         } else if (newConfig) {
             // NOTE: If multiplayer client, we wait for seed from host. If host/singleplayer, generate now.
             if (!newConfig.options?.multiplayer || newConfig.options.multiplayer.mode === 'HOST') {
@@ -1680,11 +2118,19 @@ export const GameCanvas: React.FC = () => {
             
             setCurrentWorldId(Date.now().toString()); setCurrentWorldName(newConfig.name); setCurrentSeed(newConfig.seed); 
             if (newConfig.options) setOptions(newConfig.options); 
-            timeRef.current = 0; 
+            timeRef.current = 0; moonPhaseRef.current = 'NORMAL'; 
             setPlayerLevel(1); setPlayerXP(0); setSkillPoints(0); setPlayerStats(DEFAULT_STATS); staminaRef.current = MAX_STAMINA; hungerRef.current = 10;
             playerRef.current.invincibilityEndTime = Date.now() + 3000;
             const inv = Array(36).fill(null); inv[0] = { id: BlockType.TORCH, count: 16, type: ItemType.BLOCK }; setInventory(inv); setEquipment({ helmet: null, chestplate: null, leggings: null, boots: null, offHand: null });
-            furnacesRef.current = new Map(); chestsRef.current = new Map(); cropsRef.current = new Map(); entitiesRef.current = []; 
+            furnacesRef.current = new Map(); chestsRef.current = new Map(); cropsRef.current = new Map(); entitiesRef.current = []; weatherParticlesRef.current = []; snowCoverRef.current = 0; footprintsRef.current = []; cloudsRef.current = [];
+            
+            if (newConfig.options?.multiplayer?.mode === 'CLIENT') {
+                setConnectionPhase('CONNECTING');
+            } else {
+                setConnectionPhase('LOADED');
+            }
+        } else {
+            setConnectionPhase('LOADED');
         }
         
         setGameState('PLAYING');
@@ -1702,11 +2148,9 @@ export const GameCanvas: React.FC = () => {
             const onConnect = () => {
                 if (options.multiplayer?.mode === 'HOST') {
                     socket.emit('create-room', { roomId, maxPlayers: 4, worldState: null }); // Host creates the room
-                    // Note: We don't wait for 'room-created' here, we just assume it works and join visually. 
-                    // Actually, let's just make it handle joining via the unique ID we generated locally.
-                    // To keep it simple, since we already have roomId locally, let's just listen to 'room-created'.
                 } else {
                     socket.emit('join-room', roomId);
+                    setConnectionPhase('SYNCING');
                 }
                 
                 // Send Join Signal to game clients
@@ -1735,6 +2179,14 @@ export const GameCanvas: React.FC = () => {
                         } 
                     });
                 }
+            });
+
+            socket.on('player-left', (data) => {
+                setChatMessages(p => [...p, { msg: `Um jogador saiu do mundo.`, color: '#aaaaaa' }]);
+            });
+
+            socket.on('chat-message', (data) => {
+                setChatMessages(p => [...p, { msg: `${data.playerName}: ${data.msg}`, color: '#ffffff' }]);
             });
 
             socket.on('game-event', (data) => {
@@ -1830,17 +2282,18 @@ export const GameCanvas: React.FC = () => {
                     }
                 } else if (type === 'REMOVE_DROP') {
                     entitiesRef.current = entitiesRef.current.filter(e => e.id !== payload.id);
-                } else if (type === 'SYNC_ENTITIES') {
-                    // Client syncs ALL entities (Mobs + Drops) from Host
+                } else if (type === 'SYNC_ENTITIES_AND_WORLD') {
+                    // Client syncs ALL entities (Mobs + Drops) and World status from Host
                     if (options.multiplayer?.mode === 'CLIENT') {
-                        const hostEntities = payload as Entity[];
+                        const hostEntities = payload.entities as Entity[];
                         
-                        // Merge Strategy: Keep local players, replace everything else (Mobs/Drops) with Host state
-                        // This prevents Client physics fighting Host physics
                         const localPlayers = entitiesRef.current.filter(e => e.type === 'PLAYER' || e.type === 'PROJECTILE');
-                        
-                        const syncedEntities = [...localPlayers, ...hostEntities];
-                        entitiesRef.current = syncedEntities;
+                        entitiesRef.current = [...localPlayers, ...hostEntities];
+
+                        if (payload.time !== undefined) timeRef.current = payload.time;
+                        if (payload.weather !== undefined && worldRef.current) worldRef.current.weather = payload.weather;
+
+                        setConnectionPhase('LOADED');
                     }
                 } else if (type === 'DAMAGE_MOB') {
                     // Host receives damage request from Client
@@ -1875,7 +2328,10 @@ export const GameCanvas: React.FC = () => {
                         vx: p.vx,
                         vy: p.vy,
                         facingRight: p.facingRight,
-                        playerName: options.multiplayer?.playerName
+                        isMoving: Math.abs(p.vx) > 0.1 || Math.abs(p.vy) > 0.1,
+                        playerName: options.multiplayer?.playerName,
+                        // @ts-ignore
+                        heldItemIcon: cursorItem ? cursorItem.id : null
                     }
                 });
 
@@ -1885,16 +2341,18 @@ export const GameCanvas: React.FC = () => {
                     return (now - (op.lastSeen || 0)) < 3000;
                 });
 
-                // 3. Host Syncs Everything (Mobs + Drops)
+                // 3. Host Syncs Everything (Mobs + Drops + World Time/Weather)
                 if (options.multiplayer?.mode === 'HOST') {
                     const syncableEntities = entitiesRef.current.filter(e => e.type !== 'PLAYER' && e.type !== 'PROJECTILE');
-                    if (syncableEntities.length > 0) {
-                        socket.emit('game-event', {
-                            type: 'SYNC_ENTITIES',
-                            roomId,
-                            payload: syncableEntities
-                        });
-                    }
+                    socket.emit('game-event', {
+                        type: 'SYNC_ENTITIES_AND_WORLD',
+                        roomId,
+                        payload: {
+                            entities: syncableEntities,
+                            time: timeRef.current,
+                            weather: worldRef.current?.weather
+                        }
+                    });
                 } else if (options.multiplayer?.mode === 'CLIENT' && currentSeed === 12345) {
                     // If we are a client and still on the default seed, keep requesting sync
                     socket.emit('game-event', { type: 'REQUEST_SYNC', roomId, payload: {} });
@@ -1912,7 +2370,7 @@ export const GameCanvas: React.FC = () => {
 
     const saveGame = async () => {
         if (!worldRef.current) return;
-        const save: SavedWorld = { id: currentWorldId, name: currentWorldName, seed: currentSeed, version: 2, worldData: worldRef.current, player: playerRef.current, inventory: inventory, equipment: equipment, furnaces: Array.from(furnacesRef.current.entries()), chests: Array.from(chestsRef.current.entries()), crops: Array.from(cropsRef.current.entries()), time: timeRef.current, lastPlayed: Date.now(), xp: playerXP, level: playerLevel, skillPoints: skillPoints, stats: playerStats, stamina: staminaRef.current, hunger: hungerRef.current, options: options };
+        const save: SavedWorld = { id: currentWorldId, name: currentWorldName, seed: currentSeed, version: 2, worldData: worldRef.current, player: playerRef.current, inventory: inventory, equipment: equipment, furnaces: Array.from(furnacesRef.current.entries()), chests: Array.from(chestsRef.current.entries()), crops: Array.from(cropsRef.current.entries()), time: timeRef.current, totalDays: totalDaysRef.current, lastPlayed: Date.now(), xp: playerXP, level: playerLevel, skillPoints: skillPoints, stats: playerStats, stamina: staminaRef.current, hunger: hungerRef.current, options: options };
         try { await saveWorldToDB(save); console.log("Game Saved to IndexedDB!"); } catch (e) { console.error("Save failed", e); alert("Failed to save game! Database error."); }
     };
 
@@ -2011,7 +2469,7 @@ export const GameCanvas: React.FC = () => {
                      return;
                 }
             }
-            if (e.code === 'Escape') { if (isInventoryOpen || isFurnaceOpen || isChestOpen || isHammerMenuOpen || isAdminMenuOpen || isSleepUIOpen || isArmorBenchOpen) { setIsInventoryOpen(false); setIsFurnaceOpen(false); setIsChestOpen(false); setIsHammerMenuOpen(false); setIsAdminMenuOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); setActiveBuildBlock(null); setCursorItem(null); } else { setGameState(prev => prev === 'PLAYING' ? 'PAUSED' : 'PLAYING'); } return; }
+            if (e.code === 'Escape') { if (isInventoryOpen || isFurnaceOpen || isChestOpen || isHammerMenuOpen || isAdminMenuOpen || isSleepUIOpen || isArmorBenchOpen) { setIsInventoryOpen(false); setIsFurnaceOpen(false); setIsChestOpen(false); setIsHammerMenuOpen(false); setIsAdminMenuOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); setActiveBuildBlock(null); setCursorItem(null); } else { setGameState(prev => { if (prev === 'PLAYING') setPauseMenuState('MAIN'); return prev === 'PLAYING' ? 'PAUSED' : 'PLAYING'; }); } return; }
             if (gameState !== 'PLAYING') return;
             keysRef.current[e.code] = true;
             if (e.code === 'KeyE') { const heldItem = inventory[selectedSlot]; if (heldItem && (heldItem.id?.toString() || '').includes('hammer')) { setIsHammerMenuOpen(true); return; } if (isFurnaceOpen || isChestOpen || isSleepUIOpen || isArmorBenchOpen) { setIsFurnaceOpen(false); setIsChestOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); if (cursorItem) setCursorItem(null); } else { if (isInventoryOpen) { setIsInventoryOpen(false); setNearbyStation('NONE'); } else { setIsInventoryOpen(true); setNearbyStation('NONE'); } } }
@@ -2022,7 +2480,6 @@ export const GameCanvas: React.FC = () => {
                 treePassRef.current = !treePassRef.current;
                 addNotification(lang === 'PT' ? `Atravessar Árvores: ${treePassRef.current ? 'ON' : 'OFF'}` : `Tree Pass: ${treePassRef.current ? 'ON' : 'OFF'}`);
             }
-            if (e.code === 'KeyP' && options.adminMode) setIsAdminMenuOpen(p => !p);
             
             // POSTURE TOGGLE (C)
             if (e.code === 'KeyC') {
@@ -2070,7 +2527,7 @@ export const GameCanvas: React.FC = () => {
 
             if (e.code === 'KeyP') { 
                 if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
-                if (options.adminMode) { setIsAdminMenuOpen(prev => !prev); } 
+                if (options.adminMode || options.gameMode === 'GOD' || options.gameMode === 'CREATIVE') { setIsAdminMenuOpen(prev => !prev); } 
             }
             if (e.code.startsWith('Digit')) { const num = parseInt(e.code.replace('Digit', '')); if (num > 0 && num <= 9) setSelectedSlot(num - 1); }
             if (e.code === 'ShiftLeft') sprintRef.current = true;
@@ -2149,7 +2606,7 @@ export const GameCanvas: React.FC = () => {
                 
                 if (heldItem && (heldItem.id?.toString() || '').startsWith('spawn_')) {
                     const mobType = (heldItem.id?.toString() || '').replace('spawn_', '').toUpperCase();
-                    if (['ZOMBIE', 'PIG', 'COW', 'SHEEP', 'SCORPION', 'CAMEL', 'SNAKE', 'RABBIT', 'MUTANT_ZOMBIE', 'POLAR_BEAR', 'DOG'].includes(mobType)) {
+                    if (['ZOMBIE', 'PIG', 'COW', 'SHEEP', 'SCORPION', 'CAMEL', 'SNAKE', 'RABBIT', 'MUTANT_ZOMBIE', 'POLAR_BEAR', 'DOG', 'CHICKEN', 'NPC', 'BUSH_MOB', 'SPIDER', 'BIRD', 'BLOOD_ZOMBIE', 'PLAGUE_KING', 'ZOMBIE_KING', 'ZOMBIE_FROZEN', 'ZOMBIE_DARK', 'ZOMBIE_INFECTOR', 'ZOMBIE_SKELETON', 'ZOMBIE_TOXIC', 'ZOMBIE_EXPLOSIVE', 'ZOMBIE_TANK', 'ZOMBIE_RUNNER', 'GOLDEN_DEER', 'LUNAR_FOX', 'SHARK'].includes(mobType)) {
                         const mx = mouseRef.current.x + cameraRef.current.x;
                         const my = mouseRef.current.y + cameraRef.current.y;
                         const bx = Math.floor(mx / BLOCK_SIZE);
@@ -2369,7 +2826,24 @@ export const GameCanvas: React.FC = () => {
             }
 
             if (cheatTimeMultiplier !== 0) {
-                timeRef.current = (timeRef.current + (cheatTimeMultiplier > 0 ? Math.floor(cheatTimeMultiplier) : 1)) % FULL_DAY_TICKS;
+                const prevTime = timeRef.current;
+                let inc = cheatTimeMultiplier > 0 ? Math.floor(cheatTimeMultiplier) : 1;
+                
+                const currentSeason = options.seasonsEnabled ? Math.floor(totalDaysRef.current / 7) % 4 : -1;
+                const isDay = prevTime < 18000 && prevTime >= 6000;
+                
+                if (options.seasonsEnabled && cheatTimeMultiplier === 1) {
+                    if (currentSeason === 3 && isDay) {
+                         if (Math.random() < 0.3) inc += 1;
+                    } else if (currentSeason === 1 && isDay) {
+                         if (Math.random() < 0.3) inc = 0;
+                    }
+                }
+                
+                timeRef.current = (timeRef.current + inc) % FULL_DAY_TICKS;
+                if (timeRef.current < prevTime) {
+                    totalDaysRef.current += 1;
+                }
             }
             
             if (timeRef.current % 30 === 0) { // Every 0.5 seconds (at 60fps)
@@ -2379,7 +2853,8 @@ export const GameCanvas: React.FC = () => {
                 const px = Math.floor(player.x / BLOCK_SIZE);
                 const py = Math.floor(player.y / BLOCK_SIZE);
                 const inWater = world.blocks[py * WORLD_WIDTH + px] === BlockType.WATER || world.blocks[(py+1) * WORLD_WIDTH + px] === BlockType.WATER;
-                audio.updateAmbient(isRaining, false, isDay, inWater);
+                const isGolden = getBiome(px, currentSeed) === 'golden_forest';
+                audio.updateAmbient(isRaining, false, isDay, inWater, isGolden);
             }
             
             if (timeRef.current === DUSK_START) {
@@ -2425,16 +2900,27 @@ export const GameCanvas: React.FC = () => {
                     // Heavy rain spawns zombies
                     spawnMob('ZOMBIE');
                 }
-            } else if (Math.random() < adminFlags.rainChance) { // Chance to start weather
-                const r = Math.random();
-                if (r < 0.7) {
-                    world.weather.type = 'RAIN';
-                    world.weather.intensity = 0.5 + Math.random() * 0.5;
-                    world.weather.duration = 10800; // 3 minutes at 60fps
-                } else {
-                    world.weather.type = 'HEAVY_RAIN';
-                    world.weather.intensity = 1.0;
-                    world.weather.duration = 10800; // 3 minutes at 60fps
+            } else {
+                const currentSeason = options.seasonsEnabled ? Math.floor(totalDaysRef.current / 7) % 4 : -1;
+                let rainChance = adminFlags.rainChance;
+                if (currentSeason === 0) rainChance *= 2; 
+                else if (currentSeason === 1) rainChance *= 0.3; 
+                
+                if (Math.random() < rainChance) {
+                    const r = Math.random();
+                    if (currentSeason === 0) {
+                        world.weather.type = 'RAIN'; 
+                        world.weather.intensity = 0.3 + Math.random() * 0.3;
+                        world.weather.duration = 7200;
+                    } else if (r < 0.7) {
+                        world.weather.type = 'RAIN';
+                        world.weather.intensity = 0.5 + Math.random() * 0.5;
+                        world.weather.duration = 10800;
+                    } else {
+                        world.weather.type = 'HEAVY_RAIN';
+                        world.weather.intensity = 1.0;
+                        world.weather.duration = 10800;
+                    }
                 }
             }
 
@@ -2586,8 +3072,18 @@ export const GameCanvas: React.FC = () => {
             const isDay = timeRef.current >= 0 && timeRef.current < DUSK_START;
             if (Math.random() < 0.02 && entitiesRef.current.length < 50) { 
                 const r = Math.random(); 
+                
+                // Specific golden biome logic
+                const pX = Math.floor(player.x / BLOCK_SIZE);
+                if (getBiome(pX, currentSeed!) === 'golden_forest') {
+                    if (!isDay && Math.random() < 0.05) {
+                        spawnMob('LUNAR_FOX'); // 5% chance at night
+                    }
+                }
+                
                 if (isDay && r < 0.3) {
-                    const types: any[] = ['PIG', 'SHEEP', 'COW', 'CAMEL', 'SNAKE', 'RABBIT', 'POLAR_BEAR', 'DOG'];
+                    // Added GOLDEN_DEER multiple times to increase spawn rate
+                    const types: any[] = ['PIG', 'SHEEP', 'COW', 'CAMEL', 'SNAKE', 'RABBIT', 'POLAR_BEAR', 'DOG', 'BIRD', 'GOLDEN_DEER', 'GOLDEN_DEER', 'GOLDEN_DEER', 'SHARK'];
                     spawnMob(types[Math.floor(Math.random() * types.length)]);
                 }
                 else if (!isDay && r < 0.5) {
@@ -2604,7 +3100,7 @@ export const GameCanvas: React.FC = () => {
                         zombieTypes.push('ZOMBIE_SKELETON');
                     }
                     
-                    const types: any[] = [...zombieTypes, 'SCORPION', 'SNAKE', 'POLAR_BEAR', 'DOG'];
+                    const types: any[] = [...zombieTypes, 'SCORPION', 'SNAKE', 'POLAR_BEAR', 'DOG', 'LUNAR_FOX', 'SHARK'];
                     spawnMob(types[Math.floor(Math.random() * types.length)]);
                 } 
             }
@@ -2729,7 +3225,22 @@ export const GameCanvas: React.FC = () => {
                 if (checkCollision(player, world)) { player.y -= player.vy; player.vy = 0; }
                 
                 player.highestY = player.y;
-            } else if (blockingRef.current) { if (keysRef.current['KeyA']) { player.vx = -speed * 0.3; } else if (keysRef.current['KeyD']) { player.vx = speed * 0.3; } else { player.vx *= 0.8; } } else { if (keysRef.current['KeyA']) { player.vx = -speed; } else if (keysRef.current['KeyD']) { player.vx = speed; } else { player.vx *= 0.8; } }
+            } else if (blockingRef.current) {
+                if (Math.abs(player.vx) > speed) { player.vx *= 0.9; }
+                else if (keysRef.current['KeyA']) { player.vx = -speed * 0.3; } 
+                else if (keysRef.current['KeyD']) { player.vx = speed * 0.3; } 
+                else { player.vx *= 0.8; }
+            } else {
+                const isKnockedBack = player.lastDamageTime && Date.now() - player.lastDamageTime < 300;
+                if (isKnockedBack) {
+                    player.vx *= 0.95; // Preserve knockback velocity and don't allow key overrides temporarily
+                } else if (Math.abs(player.vx) > speed) { 
+                    player.vx *= 0.9; 
+                }
+                else if (keysRef.current['KeyA']) { player.vx = -speed; } 
+                else if (keysRef.current['KeyD']) { player.vx = speed; } 
+                else { player.vx *= 0.8; }
+            }
             
             // Face mouse direction
             const worldMouseX = mouseRef.current.x + cameraRef.current.x;
@@ -2869,9 +3380,19 @@ export const GameCanvas: React.FC = () => {
                     const ftB = world.blocks[Math.floor((player.y + player.height + 2) / BLOCK_SIZE) * WORLD_WIDTH + Math.floor((player.x + player.width/2)/BLOCK_SIZE)];
                     let mat = 'grass';
                     if (ftB === BlockType.STONE || ftB === BlockType.COAL_ORE || ftB === BlockType.IRON_ORE || ftB === BlockType.GOLD_ORE || ftB === BlockType.DIAMOND_ORE || ftB === BlockType.TITANIUM_ORE || ftB === BlockType.URANIUM_ORE || ftB === BlockType.BEDROCK) mat = 'stone';
-                    else if (ftB === BlockType.PLANKS || ftB === BlockType.WOOD || ftB === BlockType.CRAFTING_TABLE || ftB === BlockType.DOOR_BOTTOM_CLOSED || ftB === BlockType.DOOR_BOTTOM_OPEN || ftB === BlockType.CHEST) mat = 'wood';
+                    else if (ftB === BlockType.PLANKS || ftB === BlockType.DARK_PLANKS || ftB === BlockType.GOLDEN_PLANKS || ftB === BlockType.WOOD || ftB === BlockType.CRAFTING_TABLE || ftB === BlockType.DOOR_BOTTOM_CLOSED || ftB === BlockType.DOOR_BOTTOM_OPEN || ftB === BlockType.CHEST) mat = 'wood';
                     else if (ftB === BlockType.SNOW_BLOCK || ftB === BlockType.ICE) mat = 'snow';
                     audio.playStep(mat);
+
+                    // Add footprint
+                    if (ftB === BlockType.SAND || ftB === BlockType.SNOWY_GRASS || ftB === BlockType.SNOW_BLOCK) {
+                         footprintsRef.current.push({
+                             x: player.x + player.width/2 + (Math.random()-0.5)*8,
+                             y: Math.floor((player.y + player.height) / BLOCK_SIZE) * BLOCK_SIZE + BLOCK_SIZE - 2, // Floor level
+                             time: Date.now(),
+                             isSnow: ftB !== BlockType.SAND
+                         });
+                    }
                 }
             } else { stepTimerRef.current = 0; }
             if (player.x < 0) player.x = 0; if (player.x > WORLD_WIDTH * BLOCK_SIZE - player.width) player.x = WORLD_WIDTH * BLOCK_SIZE - player.width; 
@@ -3110,7 +3631,7 @@ export const GameCanvas: React.FC = () => {
                     if (options.multiplayer?.mode === 'CLIENT') {
                         const dx = (player.x + player.width/2) - (ent.x + ent.width/2); 
                         const dy = (player.y + player.height/2) - (ent.y + ent.height/2); 
-                        if (Math.sqrt(dx*dx + dy*dy) < 30) { 
+                        if (Math.sqrt(dx*dx + dy*dy) < 30 && (!ent.pickupDelay || Date.now() > ent.pickupDelay)) { 
                             setInventory(prev => { 
                                 const newInv = [...prev]; let added = false; 
                                 // FIX: Updated Stackability Logic
@@ -3149,12 +3670,31 @@ export const GameCanvas: React.FC = () => {
 
                     // HOST/SP: Simulate Physics
                     if (ent.creationTime && Date.now() - ent.creationTime > 60000) { entitiesRef.current.splice(i, 1); continue; } 
-                    ent.vy += GRAVITY; ent.y += ent.vy; if (checkCollision(ent, world)) { ent.y -= ent.vy; ent.vy = 0; } 
+                    
+                    // Check if inside water
+                    const cx = Math.floor((ent.x + ent.width / 2) / BLOCK_SIZE);
+                    const cy = Math.floor((ent.y + ent.height / 2) / BLOCK_SIZE);
+                    let inWater = false;
+                    if (cy >= 0 && cy < WORLD_HEIGHT && cx >= 0 && cx < WORLD_WIDTH) {
+                        if (world.blocks[cy * WORLD_WIDTH + cx] === BlockType.WATER) {
+                            inWater = true;
+                        }
+                    }
+
+                    if (inWater) {
+                        ent.vy += (GRAVITY * 0.1); // floaty gravity
+                        if (ent.vy > 2) ent.vy = 2; // terminal velocity in water
+                    } else {
+                        ent.vy += GRAVITY; 
+                    }
+                    
+                    ent.y += ent.vy; 
+                    if (checkCollision(ent, world)) { ent.y -= ent.vy; ent.vy = 0; } 
                     
                     // Host Pickup check (Self)
                     const dx = (player.x + player.width/2) - (ent.x + ent.width/2); 
                     const dy = (player.y + player.height/2) - (ent.y + ent.height/2); 
-                    if (Math.sqrt(dx*dx + dy*dy) < 30) { 
+                    if (Math.sqrt(dx*dx + dy*dy) < 30 && (!ent.pickupDelay || Date.now() > ent.pickupDelay)) { 
                         setInventory(prev => { 
                             const newInv = [...prev]; let added = false; 
                             // FIX: Updated Stackability Logic (HOST/SP)
@@ -3192,11 +3732,12 @@ export const GameCanvas: React.FC = () => {
                 
                 // --- PROJECTILE LOGIC ---
                 else if (ent.type === 'PROJECTILE') { 
+                    // [Projectile logic remains unchanged]
                     if (ent.projectileState === 'FLYING') { 
                         ent.vy += 0.2; ent.x += ent.vx; ent.y += ent.vy; ent.rotation = Math.atan2(ent.vy, ent.vx); 
                         if (ent.returnTime && ent.creationTime) { if (Date.now() - ent.creationTime > ent.returnTime) { ent.projectileState = 'RETURNING'; } }
-                        let projectileDestroyed = false; for (let j = entitiesRef.current.length - 1; j >= 0; j--) { const mob = entitiesRef.current[j]; if (mob.type === 'PLAYER' || mob.type === 'DROP' || mob.type === 'PROJECTILE') continue; if (ent.x < mob.x + mob.width && ent.x + ent.width > mob.x && ent.y < mob.y + mob.height && ent.y + ent.height > mob.y) { const heldItemId = ent.itemId ? (ent.itemId?.toString() || '') : 'wood_spear'; const isArrow = heldItemId === 'arrow'; const isRadioactive = heldItemId === 'uranium'; const damage = isRadioactive ? 5 : (isArrow ? 4 : (DAMAGE_VALUES[heldItemId] || 1)); mob.health -= damage; mob.lastDamageTime = Date.now(); if (mob.health <= 0) { gainXP(XP_PER_MOB); entitiesRef.current.splice(j, 1); if (mob.type === 'COW') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 1); } if (mob.type === 'PIG') spawnDrop(mob.x, mob.y, 'raw_porkchop', 2); if (mob.type === 'SHEEP') spawnDrop(mob.x, mob.y, BlockType.WOOL, 1); if (mob.type === 'ZOMBIE') spawnDrop(mob.x, mob.y, 'raw_beef', 1); if (mob.type === 'MUTANT_ZOMBIE') { spawnDrop(mob.x, mob.y, 'uranium_totem', 1); spawnDrop(mob.x, mob.y, 'uranium', 5); } } if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(!isArrow && !isRadioactive) spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); } projectileDestroyed = true; break; } } 
-                        if (!projectileDestroyed && (ent.itemId === 'uranium' || ent.itemId === 'spike' || ent.itemId === 'arrow')) { const p = playerRef.current; if (ent.x < p.x + p.width && ent.x + ent.width > p.x && ent.y < p.y + p.height && ent.y + ent.height > p.y) { p.health -= (ent.itemId === 'spike' ? 8 : ent.itemId === 'arrow' ? 5 : 5); audio.playHit(); entitiesRef.current.splice(i, 1); projectileDestroyed = true; } }
+                        let projectileDestroyed = false; for (let j = entitiesRef.current.length - 1; j >= 0; j--) { const mob = entitiesRef.current[j]; if (mob.type === 'PLAYER' || mob.type === 'DROP' || mob.type === 'PROJECTILE') continue; if (ent.x < mob.x + mob.width && ent.x + ent.width > mob.x && ent.y < mob.y + mob.height && ent.y + ent.height > mob.y) { const heldItemId = ent.itemId ? (ent.itemId?.toString() || '') : 'wood_spear'; const isArrow = heldItemId === 'arrow'; const isRadioactive = heldItemId === 'uranium'; const damage = isRadioactive ? 5 : (isArrow ? 4 : (DAMAGE_VALUES[heldItemId] || 1)); mob.health -= damage; mob.lastDamageTime = Date.now(); mob.vx = ent.vx * 0.5; if (mob.health <= 0) { gainXP(XP_PER_MOB); entitiesRef.current.splice(j, 1); if (mob.type === 'COW') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 1); } if (mob.type === 'GOLDEN_DEER') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 2); } if (mob.type === 'SHARK') spawnDrop(mob.x, mob.y, 'raw_beef', 2); if (mob.type === 'PIG') spawnDrop(mob.x, mob.y, 'raw_porkchop', 2); if (mob.type === 'SHEEP') spawnDrop(mob.x, mob.y, BlockType.WOOL, 1); if (mob.type === 'LUNAR_FOX') { spawnDrop(mob.x, mob.y, 'raw_diamond', 2); spawnDrop(mob.x, mob.y, 'raw_gold', 3); } if (mob.type === 'ZOMBIE') spawnDrop(mob.x, mob.y, 'raw_beef', 1); if (mob.type === 'MUTANT_ZOMBIE') { spawnDrop(mob.x, mob.y, 'uranium_totem', 1); spawnDrop(mob.x, mob.y, 'uranium', 5); } } if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(!isArrow && !isRadioactive) spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); } projectileDestroyed = true; break; } } 
+                        if (!projectileDestroyed && (ent.itemId === 'uranium' || ent.itemId === 'spike' || ent.itemId === 'arrow')) { const p = playerRef.current; if (ent.x < p.x + p.width && ent.x + ent.width > p.x && ent.y < p.y + p.height && ent.y + ent.height > p.y) { p.health -= (ent.itemId === 'spike' ? 8 : ent.itemId === 'arrow' ? 5 : 5); p.vx = ent.vx * 0.5; audio.playHit(); entitiesRef.current.splice(i, 1); projectileDestroyed = true; } }
                         if (projectileDestroyed) continue; 
                         if (checkCollision(ent, world)) { if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(ent.itemId !== 'arrow' && ent.itemId !== 'uranium' && ent.itemId !== 'spike') spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); continue; } } 
                     } else if (ent.projectileState === 'RETURNING') { 
@@ -3207,14 +3748,87 @@ export const GameCanvas: React.FC = () => {
                 
                 // --- MOB LOGIC ---
                 if (options.multiplayer?.mode === 'CLIENT' && (ent.type === 'ZOMBIE' || ent.type === 'COW' || ent.type === 'PIG' || ent.type === 'SHEEP' || ent.type === 'MUTANT_ZOMBIE' || ent.type === 'SCORPION')) { continue; }
-                ent.vy += GRAVITY; ent.y += ent.vy; if (checkCollision(ent, world)) { ent.y -= ent.vy; ent.vy = 0; } let wallInFront = false; const nextX = ent.x + (ent.facingRight ? 5 : -5); const corners = [{ x: nextX, y: ent.y }, { x: nextX + ent.width, y: ent.y }, { x: nextX, y: ent.y + ent.height - 2 }, { x: nextX + ent.width, y: ent.y + ent.height - 2 }]; for(const p of corners) { const bx = Math.floor(p.x / BLOCK_SIZE); const by = Math.floor(p.y / BLOCK_SIZE); const b = world.blocks[by*WORLD_WIDTH + bx]; if (!NON_COLLIDABLE_BLOCKS.has(b)) wallInFront = true; } if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; const isPanic = (ent.health < ent.maxHealth && (ent.lastDamageTime && Date.now() - ent.lastDamageTime < 5000));
+                
+                const originalKnockbackVx = ent.vx; // SAVE IT BEFORE AI
+
+                // SOFT COLLISION (mob vs player)
+                if (Math.abs(ent.x - player.x) < 24 && Math.abs(ent.y - player.y) < 24 && ent.type !== 'NPC') {
+                    const diffX = ent.x - player.x;
+                    const diffY = ent.y - player.y;
+                    const len = Math.sqrt(diffX*diffX + diffY*diffY) || 1;
+                    const push = 1.0;
+                    ent.vx += (diffX / len) * push * 0.5;
+                    if (!adminFlags.noClip) player.vx -= (diffX / len) * push;
+                }
+                
+                // SOFT COLLISION (mob vs mob)
+                for (let j = i - 1; j >= 0; j--) {
+                    const otherEnt = entitiesRef.current[j];
+                    if (otherEnt.type === 'DROP' || otherEnt.type === 'PROJECTILE' || ent.type === 'DROP' || ent.type === 'PROJECTILE') continue;
+                    if (Math.abs(ent.x - otherEnt.x) < 20 && Math.abs(ent.y - otherEnt.y) < 20) {
+                        const diffX = ent.x - otherEnt.x;
+                        const diffY = ent.y - otherEnt.y;
+                        const len = Math.sqrt(diffX*diffX + diffY*diffY) || 1;
+                        ent.vx += (diffX / len) * 0.5;
+                        otherEnt.vx -= (diffX / len) * 0.5;
+                    }
+                }
+
+                if (ent.type !== 'BIRD') { ent.vy += GRAVITY; }  
+                ent.y += ent.vy; if (checkCollision(ent, world)) { ent.y -= ent.vy; ent.vy = 0; } let wallInFront = false; const nextX = ent.x + (ent.facingRight ? 5 : -5); const corners = [{ x: nextX, y: ent.y }, { x: nextX + ent.width, y: ent.y }, { x: nextX, y: ent.y + ent.height - 2 }, { x: nextX + ent.width, y: ent.y + ent.height - 2 }]; for(const p of corners) { const bx = Math.floor(p.x / BLOCK_SIZE); const by = Math.floor(p.y / BLOCK_SIZE); const b = world.blocks[by*WORLD_WIDTH + bx]; if (!NON_COLLIDABLE_BLOCKS.has(b)) { if (ent.type !== 'PLAYER' && ent.type !== 'PROJECTILE' && ent.type !== 'DROP' && (b === BlockType.WOOD || b === BlockType.DARK_WOOD || b === BlockType.PINE_WOOD || b === BlockType.GOLDEN_WOOD || b === BlockType.FROZEN_WOOD)) { /* ignore */ } else { wallInFront = true; } } } if (wallInFront && ent.vy === 0 && ent.type !== 'BIRD') ent.vy = -JUMP_FORCE; 
+                
+                if (ent.type === 'LUNAR_FOX' && isDay) { entitiesRef.current.splice(i, 1); continue; }
                 
                 let targetX = player.x; let targetY = player.y; let minDist = Math.abs(player.x - ent.x); let closestPlayer = player;
                 otherPlayersRef.current.forEach(op => { const d = Math.abs(op.x - ent.x); if (d < minDist) { minDist = d; targetX = op.x; targetY = op.y; closestPlayer = op; } });
                 const distToPlayer = targetX - ent.x; const distY = Math.abs(targetY - ent.y);
+                
+                let isPanic = (ent.health < ent.maxHealth && (ent.lastDamageTime && Date.now() - ent.lastDamageTime < 5000));
+                if ((ent.type === 'GOLDEN_DEER' || ent.type === 'LUNAR_FOX') && Math.abs(distToPlayer) < 250) {
+                    isPanic = true;
+                }
 
-                if ((ent.type?.toString() || '').includes('ZOMBIE') || ent.type === 'PLAGUE_KING' || ent.type === 'MUTANT_ZOMBIE' || (ent.type === 'SCORPION' && isPanic) || ent.type === 'SNAKE' || (ent.type === 'SPIDER' && (player as any).spiderAggro) || (ent.type === 'BUSH_MOB' && !ent.isSleeping)) { 
-                    if (ent.type === 'ZOMBIE' && isDay) { entitiesRef.current.splice(i, 1); continue; } 
+                if ((ent.type?.toString() || '').includes('ZOMBIE') || ent.type === 'PLAGUE_KING' || ent.type === 'MUTANT_ZOMBIE' || (ent.type === 'SCORPION' && isPanic) || ent.type === 'SNAKE' || ent.type === 'SHARK' || (ent.type === 'SPIDER' && (player as any).spiderAggro) || (ent.type === 'BUSH_MOB' && !ent.isSleeping)) { 
+                    if ((ent.type === 'ZOMBIE' || ent.type === 'LUNAR_FOX') && isDay) { entitiesRef.current.splice(i, 1); continue; } 
+                    
+                    // SHARK LOGIC
+                    if (ent.type === 'SHARK') {
+                        const eX = Math.floor(ent.x / BLOCK_SIZE);
+                        const eY = Math.floor((ent.y + ent.height/2) / BLOCK_SIZE);
+                        const isWater = world.blocks[eY * WORLD_WIDTH + eX] === BlockType.WATER || world.blocks[(eY-1) * WORLD_WIDTH + eX] === BlockType.WATER;
+                        
+                        if (isWater) {
+                             ent.vy *= 0.5; // Swim logic
+                             if (Math.abs(distToPlayer) < 600 && Math.abs(targetY - ent.y) < 300) {
+                                  ent.facingRight = distToPlayer > 0;
+                                  ent.vx = ent.facingRight ? 5 : -5;
+                                  ent.vy = (targetY - ent.y) * 0.05; 
+                             } else {
+                                  if (Math.random() < 0.05) ent.vx = (Math.random() - 0.5) * 6;
+                                  if (Math.random() < 0.05) ent.vy = (Math.random() - 0.5) * 4;
+                             }
+                             // limit vy
+                             if (ent.vy > -1 && world.blocks[(eY-2) * WORLD_WIDTH + eX] === BlockType.AIR) ent.vy += 1; // don't jump out naturally
+                        } else {
+                             // Flop
+                             if (ent.grounded && Math.random() < 0.1) {
+                                  ent.vy = -6; 
+                                  ent.vx = (Math.random() - 0.5) * 6;
+                             }
+                             if (Math.random() < 0.01) ent.health -= 1; // suffocates
+                        }
+                        
+                        if (Math.abs(distToPlayer) < 60 && Math.abs(targetY - ent.y) < 60 && (ent.attackCooldown || 0) <= 0) {
+                             if (closestPlayer.id === player.id) {
+                                 audio.playHit();
+                                 player.health = 0; // INSTANT KILL (World Limit)
+                                 player.vx += (distToPlayer>0?8:-8); player.vy = -2; 
+                                 ent.attackCooldown = 150; 
+                                 setHearts(player.health);
+                                 addNotification(lang === 'PT' ? "Tubarão estripador o encontrou!" : "Shredder Shark found you!");
+                             }
+                        }
+                    }
                     
                     // SNAKE LOGIC
                     if (ent.type === 'SNAKE') {
@@ -3268,8 +3882,9 @@ export const GameCanvas: React.FC = () => {
                             
                             // Shoot projectiles
                             if (Math.random() < 0.03 && (ent.attackCooldown || 0) <= 0) {
-                                const angle = Math.atan2((targetY + 10) - ent.y, (targetX + 10) - ent.x); 
-                                entitiesRef.current.push({ id: generateEntityId(), type: 'PROJECTILE', x: ent.x + ent.width/2, y: ent.y + ent.height/3, width: 8, height: 8, vx: Math.cos(angle) * 12, vy: Math.sin(angle) * 12, grounded: false, health: 1, maxHealth: 1, facingRight: ent.facingRight, itemId: 'spike', projectileState: 'FLYING', creationTime: Date.now() });
+                                const angle = Math.atan2((targetY + 10) - (ent.y + ent.height/3), (targetX + 10) - (ent.x + ent.width/2)); 
+                                const px = ent.facingRight ? ent.x + ent.width + 8 : ent.x - 16;
+                                entitiesRef.current.push({ id: generateEntityId(), type: 'PROJECTILE', x: px, y: ent.y + ent.height/3, width: 8, height: 8, vx: Math.cos(angle) * 12, vy: Math.sin(angle) * 12, grounded: false, health: 1, maxHealth: 1, facingRight: ent.facingRight, itemId: 'spike', projectileState: 'FLYING', creationTime: Date.now() });
                                 ent.attackCooldown = 80;
                             }
                             
@@ -3359,7 +3974,15 @@ export const GameCanvas: React.FC = () => {
                         let speed = 1.5;
                         if (ent.type === 'ZOMBIE_RUNNER') speed = 4.5;
                         if (ent.type === 'ZOMBIE_TANK') speed = 0.8;
-                        ent.facingRight = distToPlayer > 0; ent.vx = ent.facingRight ? speed : -speed; if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; if (distY > 32 && targetY < ent.y && ent.vy === 0 && Math.random() < 0.1) ent.vy = -JUMP_FORCE; 
+                        const isEntKnockedBack = ent.lastDamageTime && Date.now() - ent.lastDamageTime < 300;
+                        if (isEntKnockedBack) {
+                            ent.vx *= 0.95;
+                        } else {
+                            ent.facingRight = distToPlayer > 0; 
+                            ent.vx = ent.facingRight ? speed : -speed; 
+                            if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; 
+                            if (distY > 32 && targetY < ent.y && ent.vy === 0 && Math.random() < 0.1) ent.vy = -JUMP_FORCE; 
+                        }
                     } else { if (Math.random() < 0.02) { ent.vx = (Math.random() - 0.5) * 2; if (ent.vx > 0) ent.facingRight = true; if (ent.vx < 0) ent.facingRight = false; } } 
                     
                     if (Math.abs(distToPlayer) < 30 && Math.abs(targetY - ent.y) < 50 && (ent.attackCooldown || 0) <= 0 && ent.type !== 'ZOMBIE_EXPLOSIVE') { 
@@ -3412,9 +4035,9 @@ export const GameCanvas: React.FC = () => {
                                     ent.vx += (distToPlayer > 0 ? -10 : 10);
                                 }
 
-                                player.vx += (distToPlayer>0?15:-15); player.vy = -3; ent.attackCooldown = 150; hungerRef.current = Math.max(0, hungerRef.current - 1); 
+                                player.vx += (distToPlayer>0?6:-6); player.vy = -3; ent.attackCooldown = 60; hungerRef.current = Math.max(0, hungerRef.current - 1); 
                             } 
-                        } else { ent.attackCooldown = 150; }
+                        } else { ent.attackCooldown = 60; }
                     } 
                     ent.attackCooldown = Math.max(0, (ent.attackCooldown || 0) - 1); 
                 } else if (ent.type === 'BUSH_MOB') {
@@ -3440,7 +4063,10 @@ export const GameCanvas: React.FC = () => {
                     }
                 } else if (ent.type === 'RABBIT') {
                     // Flee Logic
-                    if (Math.abs(distToPlayer) < 150) {
+                    const isEntKnockedBack = ent.lastDamageTime && Date.now() - ent.lastDamageTime < 300;
+                    if (isEntKnockedBack) {
+                        ent.vx *= 0.95;
+                    } else if (Math.abs(distToPlayer) < 150) {
                         ent.facingRight = distToPlayer < 0; 
                         ent.vx = ent.facingRight ? 5 : -5; 
                         if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE;
@@ -3495,6 +4121,26 @@ export const GameCanvas: React.FC = () => {
                                 ent.vx = 0; // Stop frequently
                             }
                         }
+                    } else if (ent.type === 'BIRD') {
+                        // BIRD AI
+                        if (Math.abs(distToPlayer) < 300) {
+                            if (distToPlayer < 60) { // Flee from player
+                                ent.facingRight = distToPlayer < 0;
+                                ent.vx = ent.facingRight ? 4 : -4;
+                                ent.vy = -3;
+                            } else {
+                                // Wander relative to player
+                                if (Math.random() < 0.05) ent.vx = (Math.random() - 0.5) * 6;
+                                ent.vy = Math.sin(Date.now() / 200) * 1.5;
+                                if (ent.y > targetY - 100) ent.vy -= 1; // fly higher if low
+                                ent.facingRight = ent.vx > 0;
+                            }
+                            if (Math.random() < 0.01) audio.playBird();
+                        } else {
+                            if (Math.random() < 0.05) ent.vx = (Math.random() - 0.5) * 4;
+                            ent.vy = Math.sin(Date.now() / 500) * 1;
+                            ent.facingRight = ent.vx > 0;
+                        }
                     } else {
                         ent.isSleeping = false;
                         if (isPanic && !ent.targetId) {
@@ -3505,9 +4151,14 @@ export const GameCanvas: React.FC = () => {
                             if (Math.abs(distToPlayer) > 400) {
                                 ent.targetId = undefined; // Lose aggro
                             } else {
-                                ent.facingRight = distToPlayer > 0;
-                                ent.vx = ent.facingRight ? 4 : -4;
-                                if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE;
+                                const isEntKnockedBack = ent.lastDamageTime && Date.now() - ent.lastDamageTime < 300;
+                                if (isEntKnockedBack) {
+                                    ent.vx *= 0.95;
+                                } else {
+                                    ent.facingRight = distToPlayer > 0;
+                                    ent.vx = ent.facingRight ? 4 : -4;
+                                    if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE;
+                                }
                                 
                                 // Attack
                                 if (Math.abs(distToPlayer) < 30 && Math.abs(targetY - ent.y) < 40 && (ent.attackCooldown || 0) <= 0) {
@@ -3579,8 +4230,15 @@ export const GameCanvas: React.FC = () => {
                 } else { 
                     const heldItem = inventory[selectedSlot]; let attracted = false; 
                     if (heldItem) { if (ent.type === 'PIG' && heldItem.id === 'carrot') attracted = true; if ((ent.type === 'COW' || ent.type === 'SHEEP') && heldItem.id === 'wheat') attracted = true; } 
-                    if (attracted) { if (Math.abs(distToPlayer) < 200) { ent.facingRight = distToPlayer > 0; ent.vx = ent.facingRight ? 3 : -3; if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; } else { ent.vx = 0; } } else if (isPanic) { ent.facingRight = targetX < ent.x; ent.vx = ent.facingRight ? 3 : -3; } else if (Math.random() < 0.02) { ent.vx = (Math.random() - 0.5) * 2; if (ent.vx > 0) ent.facingRight = true; if (ent.vx < 0) ent.facingRight = false; } 
+                    if (attracted) { if (Math.abs(distToPlayer) < 200) { ent.facingRight = distToPlayer > 0; ent.vx = ent.facingRight ? 3 : -3; if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; } else { ent.vx = 0; } } else if (isPanic) { ent.facingRight = targetX < ent.x; const panicSpeed = ent.type === 'LUNAR_FOX' ? 5 : 3; ent.vx = ent.facingRight ? panicSpeed : -panicSpeed; if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; } else if (Math.random() < 0.02) { ent.vx = (Math.random() - 0.5) * 2; if (ent.vx > 0) ent.facingRight = true; if (ent.vx < 0) ent.facingRight = false; } 
                 }
+                
+                // RESTORE KNOCKBACK OVERRIDE
+                const isEntKnockedBackEnd = ent.lastDamageTime && Date.now() - ent.lastDamageTime < 300;
+                if (isEntKnockedBackEnd) {
+                    ent.vx = originalKnockbackVx * 0.95;
+                }
+
                 ent.x += ent.vx; 
                 if (checkCollision(ent, world)) { 
                     ent.y -= 16;
@@ -3638,7 +4296,7 @@ export const GameCanvas: React.FC = () => {
                              });
                          }
 
-                         if (ent.health <= 0) { gainXP(XP_PER_MOB); if (ent.type === 'COW') { spawnDrop(ent.x, ent.y, 'raw_beef', 2); spawnDrop(ent.x, ent.y, 'leather', 1); } if (ent.type === 'PIG') spawnDrop(ent.x, ent.y, 'raw_porkchop', 2); if (ent.type === 'SHEEP') { spawnDrop(ent.x, ent.y, 'raw_mutton', 1); spawnDrop(ent.x, ent.y, BlockType.WOOL, 1); } if (ent.type === 'MUTANT_ZOMBIE') { spawnDrop(ent.x, ent.y, 'uranium_totem', 1); spawnDrop(ent.x, ent.y, 'uranium', 5); } if (ent.type === 'ZOMBIE' && Math.random() < 0.5) { spawnDrop(ent.x, ent.y, 'bone', 1); } entitiesRef.current = entitiesRef.current.filter(e => e.id !== ent.id); } } }); damageTool(selectedSlot); }
+                         if (ent.health <= 0) { gainXP(XP_PER_MOB); if (ent.type === 'COW') { spawnDrop(ent.x, ent.y, 'raw_beef', 2); spawnDrop(ent.x, ent.y, 'leather', 1); } if (ent.type === 'GOLDEN_DEER') { spawnDrop(ent.x, ent.y, 'raw_beef', 2); spawnDrop(ent.x, ent.y, 'leather', 2); } if (ent.type === 'SHARK') spawnDrop(ent.x, ent.y, 'raw_beef', 2); if (ent.type === 'PIG') spawnDrop(ent.x, ent.y, 'raw_porkchop', 2); if (ent.type === 'SHEEP') { spawnDrop(ent.x, ent.y, 'raw_mutton', 1); spawnDrop(ent.x, ent.y, BlockType.WOOL, 1); } if (ent.type === 'LUNAR_FOX') { spawnDrop(ent.x, ent.y, 'raw_diamond', 2); spawnDrop(ent.x, ent.y, 'raw_gold', 3); } if (ent.type === 'MUTANT_ZOMBIE') { spawnDrop(ent.x, ent.y, 'uranium_totem', 1); spawnDrop(ent.x, ent.y, 'uranium', 5); } if (ent.type === 'ZOMBIE' && Math.random() < 0.5) { spawnDrop(ent.x, ent.y, 'bone', 1); } entitiesRef.current = entitiesRef.current.filter(e => e.id !== ent.id); } } }); damageTool(selectedSlot); }
                 }
                 if (!hitEntity) { 
                     if (bx >= 0 && bx < WORLD_WIDTH && by >= 0 && by < WORLD_HEIGHT) { 
@@ -3664,7 +4322,7 @@ export const GameCanvas: React.FC = () => {
                                     if (bType === BlockType.DOOR_BOTTOM_CLOSED || bType === BlockType.DOOR_BOTTOM_OPEN) { setBlockAt(bx, by - 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_BOTTOM_CLOSED, 1); } else if (bType === BlockType.DOOR_TOP_CLOSED || bType === BlockType.DOOR_TOP_OPEN) { setBlockAt(bx, by + 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_BOTTOM_CLOSED, 1); } 
                                     if (bType === BlockType.DOOR_STONE_BOTTOM_CLOSED || bType === BlockType.DOOR_STONE_BOTTOM_OPEN) { setBlockAt(bx, by - 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_STONE_BOTTOM_CLOSED, 1); } else if (bType === BlockType.DOOR_STONE_TOP_CLOSED || bType === BlockType.DOOR_STONE_TOP_OPEN) { setBlockAt(bx, by + 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_STONE_BOTTOM_CLOSED, 1); } 
                                     if (bType === BlockType.DOOR_IRON_BOTTOM_CLOSED || bType === BlockType.DOOR_IRON_BOTTOM_OPEN) { setBlockAt(bx, by - 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_IRON_BOTTOM_CLOSED, 1); } else if (bType === BlockType.DOOR_IRON_TOP_CLOSED || bType === BlockType.DOOR_IRON_TOP_OPEN) { setBlockAt(bx, by + 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_IRON_BOTTOM_CLOSED, 1); } 
-                                    if ((bType === BlockType.WOOD || bType === BlockType.DARK_WOOD || bType === BlockType.PINE_WOOD) && heldItem && (heldItem.id?.toString() || '').includes('axe')) {
+                                    if ((bType === BlockType.WOOD || bType === BlockType.DARK_WOOD || bType === BlockType.PINE_WOOD || bType === BlockType.FROZEN_WOOD || bType === BlockType.GOLDEN_WOOD) && heldItem && (heldItem.id?.toString() || '').includes('axe')) {
                                         // Recursively break tree
                                         const queue = [{x: bx, y: by}];
                                         const visited = new Set<string>();
@@ -3676,11 +4334,20 @@ export const GameCanvas: React.FC = () => {
                                             const b = worldRef.current.blocks[p.y * WORLD_WIDTH + p.x];
                                             setBlockAt(p.x, p.y, BlockType.AIR);
                                             if (p.x !== bx || p.y !== by) { // Not the base block which drops normally later
-                                                 if (b === BlockType.WOOD || b === BlockType.DARK_WOOD || b === BlockType.PINE_WOOD) {
+                                                 if (b === BlockType.WOOD || b === BlockType.DARK_WOOD || b === BlockType.PINE_WOOD || b === BlockType.FROZEN_WOOD || b === BlockType.GOLDEN_WOOD) {
                                                      spawnDrop(p.x * BLOCK_SIZE, p.y * BLOCK_SIZE, bType, 1);
-                                                 } else if (b === BlockType.LEAVES || b === BlockType.DARK_LEAVES || b === BlockType.PINE_LEAVES || b === BlockType.APPLE_LEAVES || b === BlockType.SNOWY_LEAVES) {
-                                                     if (Math.random() < 0.3) {
+                                                 } else if (b === BlockType.LEAVES || b === BlockType.DARK_LEAVES || b === BlockType.PINE_LEAVES || b === BlockType.APPLE_LEAVES || b === BlockType.SNOWY_LEAVES || b === BlockType.GOLDEN_LEAVES) {
+                                                     const isAutumn = options.seasonsEnabled && (Math.floor(totalDaysRef.current / 7) % 4) === 2;
+                                                     const isSpring = options.seasonsEnabled && (Math.floor(totalDaysRef.current / 7) % 4) === 0;
+                                                     
+                                                     if (Math.random() < (isAutumn ? 0.5 : 0.3)) {
                                                          spawnDrop(p.x * BLOCK_SIZE, p.y * BLOCK_SIZE, 'tree_seed', 1);
+                                                     }
+                                                     if (isAutumn && Math.random() < 0.05) {
+                                                         spawnDrop(p.x * BLOCK_SIZE, p.y * BLOCK_SIZE, 'golden_wood', 1);
+                                                     }
+                                                     if (isSpring && Math.random() < 0.05) {
+                                                         spawnDrop(p.x * BLOCK_SIZE, p.y * BLOCK_SIZE, 'rare_flower', 1);
                                                      }
                                                  }
                                             }
@@ -3693,7 +4360,7 @@ export const GameCanvas: React.FC = () => {
                                                         const key = `${nx},${ny}`;
                                                         if (!visited.has(key)) {
                                                             const nb = worldRef.current.blocks[ny * WORLD_WIDTH + nx];
-                                                            if (nb === BlockType.WOOD || nb === BlockType.DARK_WOOD || nb === BlockType.PINE_WOOD || nb === BlockType.LEAVES || nb === BlockType.DARK_LEAVES || nb === BlockType.PINE_LEAVES || nb === BlockType.APPLE_LEAVES || nb === BlockType.SNOWY_LEAVES) {
+                                                            if (nb === BlockType.WOOD || nb === BlockType.DARK_WOOD || nb === BlockType.PINE_WOOD || nb === BlockType.FROZEN_WOOD || nb === BlockType.LEAVES || nb === BlockType.DARK_LEAVES || nb === BlockType.PINE_LEAVES || nb === BlockType.APPLE_LEAVES || nb === BlockType.SNOWY_LEAVES || nb === BlockType.GOLDEN_WOOD || nb === BlockType.GOLDEN_LEAVES) {
                                                                 visited.add(key);
                                                                 queue.push({x: nx, y: ny});
                                                             }
@@ -3722,13 +4389,13 @@ export const GameCanvas: React.FC = () => {
                                         else if (bType === BlockType.SEED_BUSH) { const rand = Math.random(); if (rand < 0.33) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'wheat_seeds', 1); else if (rand < 0.66) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'carrot', 1); else spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'potato', 1); } 
                                         else if (bType === BlockType.BUSH) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'stick', 1); } 
                                         else if (bType === BlockType.GRASS || bType === BlockType.DARK_GRASS || bType === BlockType.SNOWY_GRASS) { if (Math.random() < 0.1) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'wheat_seeds', 1); if (Math.random() < 0.05) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'carrot', 1); if (Math.random() < 0.05) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'potato', 1); } 
-                                        else if (bType === BlockType.COAL_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'coal', 1); }
-                                        else if (bType === BlockType.IRON_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'iron_ingot', 1); }
-                                        else if (bType === BlockType.GOLD_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'gold_ingot', 1); }
-                                        else if (bType === BlockType.DIAMOND_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'diamond', 1); }
-                                        else if (bType === BlockType.COPPER_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'copper_ingot', 1); }
-                                        else if (bType === BlockType.TITANIUM_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'titanium', 1); }
-                                        else if (bType === BlockType.URANIUM_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'uranium', 1); } 
+                                        else if (bType === BlockType.COAL_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.COAL_ORE, 1); }
+                                        else if (bType === BlockType.IRON_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'raw_iron', 1); }
+                                        else if (bType === BlockType.GOLD_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'raw_gold', 1); }
+                                        else if (bType === BlockType.DIAMOND_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'raw_diamond', 1); }
+                                        else if (bType === BlockType.COPPER_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'raw_copper', 1); }
+                                        else if (bType === BlockType.TITANIUM_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'raw_titanium', 1); }
+                                        else if (bType === BlockType.URANIUM_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'raw_uranium', 1); } 
                                         else if (bType === BlockType.FLOWER_RED || bType === BlockType.FLOWER_GREEN || bType === BlockType.FLOWER_BLUE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, bType, 1); } 
                                         else if (bType === BlockType.CACTUS) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'dark_green_resin', 1); }
                                         else if (bType === BlockType.DRY_LEAVES) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'stick', 1 + Math.floor(Math.random() * 2)); }
@@ -3940,6 +4607,36 @@ export const GameCanvas: React.FC = () => {
         ctx.fillStyle = skyGrad;
         ctx.fillRect(0, 0, cvs.width, cvs.height);
         
+        // Stars
+        if (time < DAWN_START || time > DUSK_START) {
+             const opacity = time < 5400 ? 1 : (time > 20000 ? 1 : (time > DUSK_START ? (time - DUSK_START) / 2000 : (DAWN_START - time) / 2000));
+             if (opacity > 0) {
+                 ctx.save();
+                 ctx.globalAlpha = opacity;
+                 ctx.fillStyle = 'white';
+                 // Pseudo random stars based on seed to not flicker
+                 for(let i=0; i<150; i++) {
+                     const sx = Math.abs(Math.sin(currentSeed * i * 3.14)) * cvs.width;
+                     const sy = Math.abs(Math.cos(currentSeed * i * 2.71)) * (cvs.height / 2);
+                     const r = Math.abs(Math.sin(i * 1.5)) * 1.5;
+                     ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+                 }
+                 
+                 // Shooting star
+                 if (Math.random() < 0.005) {
+                     const shX = Math.random() * cvs.width;
+                     const shY = Math.random() * cvs.height / 3;
+                     ctx.strokeStyle = 'white';
+                     ctx.lineWidth = 1;
+                     ctx.beginPath();
+                     ctx.moveTo(shX, shY);
+                     ctx.lineTo(shX - 40, shY + 30);
+                     ctx.stroke();
+                 }
+                 ctx.restore();
+             }
+        }
+
         // Draw Sun
         if (sunY > -50 && sunY < cvs.height && !isPrecipitating) {
             const sunGrad = ctx.createRadialGradient(sunX, sunY, 15, sunX, sunY, 80);
@@ -4035,6 +4732,27 @@ export const GameCanvas: React.FC = () => {
         const startCol = Math.floor(cameraRef.current.x / BLOCK_SIZE) - 1; const endCol = startCol + (cvs.width / BLOCK_SIZE) + 3;
         const startRow = Math.floor(cameraRef.current.y / BLOCK_SIZE) - 1; const endRow = startRow + (cvs.height / BLOCK_SIZE) + 3;
         const hasTorch = (inventory[selectedSlot]?.id === BlockType.TORCH) || (equipment.offHand?.id === BlockType.TORCH);
+
+        // --- SEASONAL BLENDING ---
+        let seasonGrass = BLOCK_COLORS[BlockType.GRASS];
+        let seasonDarkGrass = BLOCK_COLORS[BlockType.DARK_GRASS];
+        let seasonLeaf = BLOCK_COLORS[BlockType.LEAVES];
+        let seasonDarkLeaf = BLOCK_COLORS[BlockType.DARK_LEAVES];
+        let seasonDirt = BLOCK_COLORS[BlockType.DIRT];
+        
+        let currentSeason = -1;
+        let nextSeason = -1;
+        if (options.seasonsEnabled) {
+            currentSeason = Math.floor(totalDaysRef.current / 7) % 4;
+            nextSeason = (currentSeason + 1) % 4;
+            const progress = ((totalDaysRef.current % 7) + (timeRef.current / FULL_DAY_TICKS)) / 7.0;
+            
+            seasonGrass = lerpColorHex(getSeasonTargetColor('GRASS', currentSeason), getSeasonTargetColor('GRASS', nextSeason), progress);
+            seasonDarkGrass = lerpColorHex(getSeasonTargetColor('DARK_GRASS', currentSeason), getSeasonTargetColor('DARK_GRASS', nextSeason), progress);
+            seasonLeaf = lerpColorHex(getSeasonTargetColor('LEAF', currentSeason), getSeasonTargetColor('LEAF', nextSeason), progress);
+            seasonDarkLeaf = lerpColorHex(getSeasonTargetColor('DARK_LEAF', currentSeason), getSeasonTargetColor('DARK_LEAF', nextSeason), progress);
+            seasonDirt = '#795548'; // Dirt stays mostly same for now, but we could lerp
+        }
 
         if (options.shaderLevel >= 2) {
             const shadowPath = new Path2D();
@@ -4169,6 +4887,89 @@ export const GameCanvas: React.FC = () => {
                         ctx.fillRect(x*BLOCK_SIZE + 4, y*BLOCK_SIZE + 4, 8, 4);
                         ctx.fillRect(x*BLOCK_SIZE + 16, y*BLOCK_SIZE + 16, 12, 6);
                         ctx.fillRect(x*BLOCK_SIZE + 24, y*BLOCK_SIZE + 4, 4, 4);
+                    }
+                    else if (block === BlockType.FALLEN_LOG) {
+                        const wLeft = x > 0 ? world.blocks[y * WORLD_WIDTH + x - 1] : BlockType.AIR;
+                        const wRight = x < WORLD_WIDTH - 1 ? world.blocks[y * WORLD_WIDTH + x + 1] : BlockType.AIR;
+                        const hasLeft = wLeft === BlockType.FALLEN_LOG;
+                        const hasRight = wRight === BlockType.FALLEN_LOG;
+
+                        // Background base (bark)
+                        ctx.fillStyle = '#4a2f1d';
+                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 4, BLOCK_SIZE, BLOCK_SIZE - 4);
+                        
+                        // Roundness shadow (bottom edge)
+                        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 24, BLOCK_SIZE, 8);
+                        
+                        // Roundness highlight (top edge)
+                        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 4, BLOCK_SIZE, 6);
+
+                        // Horizontal bark ridges
+                        ctx.fillStyle = '#3b2210';
+                        for (let i = 0; i < 3; i++) {
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + i * 8 + 8, BLOCK_SIZE, 2);
+                            if (x % 2 === 0) ctx.fillRect(x * BLOCK_SIZE + 6, y * BLOCK_SIZE + i * 8 + 6, 8, 1);
+                        }
+                        
+                        if (!hasLeft) {
+                            // Left chopped end
+                            ctx.fillStyle = '#bcaaa4'; // Lighter inner wood
+                            ctx.beginPath();
+                            ctx.ellipse(x * BLOCK_SIZE + 6, y * BLOCK_SIZE + 18, 4, 14, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                            
+                            // Inner wooden rings (Left)
+                            ctx.strokeStyle = '#8d6e63';
+                            ctx.lineWidth = 1.5;
+                            ctx.beginPath();
+                            ctx.ellipse(x * BLOCK_SIZE + 6, y * BLOCK_SIZE + 18, 2, 8, 0, 0, Math.PI * 2);
+                            ctx.stroke();
+                        }
+
+                        if (!hasRight) {
+                            // Right chopped end
+                            ctx.fillStyle = '#bcaaa4'; 
+                            ctx.beginPath();
+                            ctx.ellipse(x * BLOCK_SIZE + 26, y * BLOCK_SIZE + 18, 4, 14, 0, 0, Math.PI * 2);
+                            ctx.fill();
+                            
+                            // Inner wooden rings (Right)
+                            ctx.strokeStyle = '#8d6e63';
+                            ctx.lineWidth = 1.5;
+                            ctx.beginPath();
+                            ctx.ellipse(x * BLOCK_SIZE + 26, y * BLOCK_SIZE + 18, 2, 8, 0, 0, Math.PI * 2);
+                            ctx.stroke();
+                        }
+
+                        // Moss or mushroom on top of log
+                        if (x % 2 === 0) {
+                            ctx.fillStyle = '#41980a'; // Moss
+                            ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 2, 12, 4);
+                            ctx.fillRect(x * BLOCK_SIZE + 10, y * BLOCK_SIZE + 6, 8, 2);
+                        } else {
+                            // Mushroom
+                            ctx.fillStyle = '#f5f6fa'; // stem
+                            ctx.fillRect(x * BLOCK_SIZE + 17, y * BLOCK_SIZE - 2, 2, 6);
+                            ctx.fillStyle = '#ee5a24'; // Mushroom cap
+                            ctx.fillRect(x * BLOCK_SIZE + 14, y * BLOCK_SIZE - 5, 8, 4);
+                            ctx.fillStyle = '#f5f6fa'; // Mushroom spots
+                            ctx.fillRect(x * BLOCK_SIZE + 15, y * BLOCK_SIZE - 4, 2, 2);
+                        }
+                    }
+                    else if (block === BlockType.TALL_GRASS) {
+                        ctx.strokeStyle = '#41980a';
+                        ctx.lineWidth = 2;
+                        const windSway = Math.sin((Date.now() / 800) + x) * 6;
+                        for (let i = 0; i < 4; i++) {
+                            ctx.beginPath();
+                            ctx.moveTo(x * BLOCK_SIZE + 4 + i * 8, y * BLOCK_SIZE + 32);
+                            ctx.bezierCurveTo(x * BLOCK_SIZE + 4 + i * 8, y * BLOCK_SIZE + 16, 
+                                            x * BLOCK_SIZE + 4 + i * 8 + windSway, y * BLOCK_SIZE + 12 + (i%2*6), 
+                                            x * BLOCK_SIZE + 4 + i * 8 + windSway*1.5, y * BLOCK_SIZE + (i%2*8));
+                            ctx.stroke();
+                        }
                     }
                     else if (block === BlockType.CABLE || block === BlockType.CABLE_ON) {
                         const isOn = block === BlockType.CABLE_ON;
@@ -4373,12 +5174,20 @@ export const GameCanvas: React.FC = () => {
                         BlockType.DIRT, BlockType.FARMLAND,
                         BlockType.WOOD, BlockType.DARK_WOOD,
                         BlockType.LEAVES, BlockType.APPLE_LEAVES, BlockType.DARK_LEAVES, BlockType.SNOWY_LEAVES,
-                        BlockType.PLANKS,
+                        BlockType.PLANKS, BlockType.DARK_PLANKS, BlockType.GOLDEN_PLANKS,
                         BlockType.STONE, BlockType.DEEP_STONE,
                         BlockType.SAND,
                         BlockType.COAL_ORE, BlockType.IRON_ORE, BlockType.GOLD_ORE, BlockType.DIAMOND_ORE, BlockType.URANIUM_ORE, BlockType.TITANIUM_ORE
                     ].includes(block)) {
-                        ctx.fillStyle = BLOCK_COLORS[block] || '#ff00ff';
+                        let c = BLOCK_COLORS[block] || '#ff00ff';
+                        if (options.seasonsEnabled) {
+                            if (block === BlockType.GRASS) c = seasonGrass;
+                            if (block === BlockType.DARK_GRASS) c = seasonDarkGrass;
+                            if (block === BlockType.LEAVES || block === BlockType.APPLE_LEAVES) c = seasonLeaf;
+                            if (block === BlockType.DARK_LEAVES) c = seasonDarkLeaf;
+                            if (block === BlockType.DIRT) c = seasonDirt;
+                        }
+                        ctx.fillStyle = c;
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
                     }
                     else if (block === BlockType.URANIUM_BLOCK) { 
@@ -4407,10 +5216,16 @@ export const GameCanvas: React.FC = () => {
                         ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 24, 4, 4);
                     }
                     else if (block === BlockType.TITANIUM_BLOCK) { ctx.fillStyle = BLOCK_COLORS[block]; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE); ctx.strokeStyle = '#fff'; ctx.strokeRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 4, 24, 24); }
-                    else if (block === BlockType.GRASS || block === BlockType.DARK_GRASS) {
-                        ctx.fillStyle = BLOCK_COLORS[BlockType.DIRT];
+                    else if (block === BlockType.GRASS || block === BlockType.DARK_GRASS || block === BlockType.GOLDEN_GRASS) {
+                        ctx.fillStyle = options.seasonsEnabled ? seasonDirt : BLOCK_COLORS[BlockType.DIRT];
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-                        ctx.fillStyle = BLOCK_COLORS[block];
+                        
+                        let grassColor = block === BlockType.GRASS ? seasonGrass : (block === BlockType.DARK_GRASS ? seasonDarkGrass : BLOCK_COLORS[BlockType.GOLDEN_GRASS]);
+                        if (!options.seasonsEnabled) {
+                            grassColor = BLOCK_COLORS[block];
+                        }
+                        
+                        ctx.fillStyle = grassColor;
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, 8);
                         ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 8, 4, 4);
                         ctx.fillRect(x * BLOCK_SIZE + 16, y * BLOCK_SIZE + 8, 4, 6);
@@ -4418,6 +5233,12 @@ export const GameCanvas: React.FC = () => {
                         ctx.fillStyle = '#4a3018';
                         ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 16, 4, 4);
                         ctx.fillRect(x * BLOCK_SIZE + 20, y * BLOCK_SIZE + 24, 6, 4);
+
+                        if (currentSeason === 3) {
+                            // Layer of snow
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE - 2, BLOCK_SIZE, 4);
+                        }
                     }
                     else if (block === BlockType.SNOWY_GRASS) {
                         ctx.fillStyle = BLOCK_COLORS[BlockType.DIRT];
@@ -4490,20 +5311,55 @@ export const GameCanvas: React.FC = () => {
                             ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 14, BLOCK_SIZE, 4);
                         }
                     }
-                    else if (block === BlockType.WOOD || block === BlockType.DARK_WOOD) {
-                        ctx.fillStyle = BLOCK_COLORS[block];
+                    else if (block === BlockType.WOOD || block === BlockType.DARK_WOOD || block === BlockType.PINE_WOOD || block === BlockType.GOLDEN_WOOD || block === BlockType.FROZEN_WOOD) {
+                        ctx.fillStyle = BLOCK_COLORS[block] || '#795548';
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-                        ctx.fillStyle = block === BlockType.WOOD ? '#422e25' : '#241c1c';
-                        ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE, 2, BLOCK_SIZE);
-                        ctx.fillRect(x * BLOCK_SIZE + 12, y * BLOCK_SIZE, 4, BLOCK_SIZE);
-                        ctx.fillRect(x * BLOCK_SIZE + 22, y * BLOCK_SIZE, 2, BLOCK_SIZE);
-                        ctx.fillRect(x * BLOCK_SIZE + 28, y * BLOCK_SIZE, 2, BLOCK_SIZE);
+                        
+                        ctx.fillStyle = block === BlockType.WOOD ? '#422e25' : (block === BlockType.PINE_WOOD ? '#4e342e' : (block === BlockType.GOLDEN_WOOD ? '#F57F17' : (block === BlockType.FROZEN_WOOD ? '#4FC3F7' : '#241c1c')));
+                        // Vertical bark banding
+                        ctx.fillRect(x * BLOCK_SIZE + 6, y * BLOCK_SIZE, 3, BLOCK_SIZE);
+                        ctx.fillRect(x * BLOCK_SIZE + 14, y * BLOCK_SIZE, 4, BLOCK_SIZE);
+                        ctx.fillRect(x * BLOCK_SIZE + 24, y * BLOCK_SIZE, 2, BLOCK_SIZE);
+                        
+                        // Extra detail for Golden Wood
+                        if (block === BlockType.GOLDEN_WOOD) {
+                            ctx.fillStyle = '#FFF59D'; // Highlight
+                            ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE, 2, BLOCK_SIZE);
+                            ctx.fillRect(x * BLOCK_SIZE + 10, y * BLOCK_SIZE, 2, BLOCK_SIZE);
+                        }
+                        if (block === BlockType.FROZEN_WOOD) {
+                            ctx.fillStyle = '#E1F5FE'; // Snow frost
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, 2);
+                            ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 2, 4, 2);
+                        }
                     }
-                    else if (block === BlockType.LEAVES || block === BlockType.APPLE_LEAVES || block === BlockType.DARK_LEAVES || block === BlockType.SNOWY_LEAVES) {
-                        ctx.fillStyle = BLOCK_COLORS[block];
+                    else if (block === BlockType.LEAVES || block === BlockType.APPLE_LEAVES || block === BlockType.DARK_LEAVES || block === BlockType.SNOWY_LEAVES || block === BlockType.GOLDEN_LEAVES) {
+                        let leafColor = BLOCK_COLORS[block];
+                        if (options.seasonsEnabled && block !== BlockType.SNOWY_LEAVES && block !== BlockType.GOLDEN_LEAVES) {
+                            if (block === BlockType.DARK_LEAVES) leafColor = seasonDarkLeaf;
+                            else leafColor = seasonLeaf;
+                        }
+                        
+                        // Spawn leaf particles naturally from the block
+                        if (Math.random() < 0.0005 && weatherParticlesRef.current.length < 150) {
+                            weatherParticlesRef.current.push({
+                                type: block === BlockType.GOLDEN_LEAVES ? 'GOLDEN_LEAF' : (block === BlockType.SNOWY_LEAVES ? 'SNOW' : 'LEAF'),
+                                x: x * BLOCK_SIZE + Math.random() * BLOCK_SIZE,
+                                y: y * BLOCK_SIZE + BLOCK_SIZE,
+                                vx: (Math.random() - 0.5) * 2,
+                                vy: block === BlockType.SNOWY_LEAVES ? 1 + Math.random() : 0.5 + Math.random(),
+                                life: 600
+                            });
+                        }
+                        
+                        ctx.fillStyle = leafColor;
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
                         
                         const drawLeafDetails = (dark: string, light: string) => {
+                            if (options.seasonsEnabled && currentSeason === 2 && block !== BlockType.SNOWY_LEAVES && block !== BlockType.GOLDEN_LEAVES) {
+                                dark = block === BlockType.DARK_LEAVES ? '#a84600' : '#d35400';
+                                light = block === BlockType.DARK_LEAVES ? '#d67c24' : '#f39c12';
+                            }
                             ctx.fillStyle = dark;
                             ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE + 2, 8, 8);
                             ctx.fillRect(x * BLOCK_SIZE + 16, y * BLOCK_SIZE + 4, 10, 8);
@@ -4532,14 +5388,27 @@ export const GameCanvas: React.FC = () => {
                                 drawLeafDetails('#e0e0e0', '#ffffff');
                                 ctx.globalAlpha = 1.0;
                             }
+                        } else if (block === BlockType.GOLDEN_LEAVES) {
+                            drawLeafDetails('#f57f17', '#ffee58');
+                            ctx.fillStyle = '#fff9c4';
+                            const sparkleOffset = (timeRef.current / 50 + x * 10 + y * 20) % 32;
+                            if (sparkleOffset < 8) ctx.fillRect(x * BLOCK_SIZE + 4 + sparkleOffset, y * BLOCK_SIZE + 10 + sparkleOffset, 2, 2);
                         } else {
                             drawLeafDetails('#e0e0e0', '#ffffff');
                         }
+
+                        if (currentSeason === 3 && block !== BlockType.SNOWY_LEAVES) {
+                            // Layer of snow
+                            ctx.fillStyle = '#f8f9fa';
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, 6);
+                            ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE + 6, 8, 4);
+                            ctx.fillRect(x * BLOCK_SIZE + 16, y * BLOCK_SIZE + 6, 12, 6);
+                        }
                     }
-                    else if (block === BlockType.PLANKS) {
+                    else if (block === BlockType.PLANKS || block === BlockType.DARK_PLANKS || block === BlockType.GOLDEN_PLANKS) {
                         ctx.fillStyle = BLOCK_COLORS[block];
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-                        ctx.fillStyle = '#9e7d56';
+                        ctx.fillStyle = block === BlockType.DARK_PLANKS ? '#5a3d1c' : (block === BlockType.GOLDEN_PLANKS ? '#dfaa12' : '#9e7d56');
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 7, BLOCK_SIZE, 2);
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 15, BLOCK_SIZE, 2);
                         ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 23, BLOCK_SIZE, 2);
@@ -4594,17 +5463,25 @@ export const GameCanvas: React.FC = () => {
                         ctx.fillRect(x * BLOCK_SIZE + 18, y * BLOCK_SIZE + 12, 2, 2);
                         ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 20, 2, 2);
                     }
-                    else if (block === BlockType.BUSH) {
-                        ctx.fillStyle = '#2d6a06';
+                    else if (block === BlockType.BUSH || block === BlockType.GOLDEN_BUSH) {
+                        const isGolden = block === BlockType.GOLDEN_BUSH;
+                        const sway = isGolden ? Math.sin((Date.now() / 800) + x) * 3 : 0;
+                        
+                        ctx.save();
+                        if (isGolden) {
+                            ctx.translate(sway, 0);
+                        }
+                        ctx.fillStyle = isGolden ? '#FBC02D' : '#2d6a06';
                         ctx.beginPath(); ctx.arc(x*BLOCK_SIZE+16, y*BLOCK_SIZE+18, 12, 0, Math.PI*2); ctx.fill();
                         ctx.beginPath(); ctx.arc(x*BLOCK_SIZE+8, y*BLOCK_SIZE+22, 10, 0, Math.PI*2); ctx.fill();
                         ctx.beginPath(); ctx.arc(x*BLOCK_SIZE+24, y*BLOCK_SIZE+22, 10, 0, Math.PI*2); ctx.fill();
                         ctx.beginPath(); ctx.arc(x*BLOCK_SIZE+12, y*BLOCK_SIZE+12, 8, 0, Math.PI*2); ctx.fill();
                         ctx.beginPath(); ctx.arc(x*BLOCK_SIZE+20, y*BLOCK_SIZE+12, 8, 0, Math.PI*2); ctx.fill();
-                        ctx.fillStyle = '#41980a';
+                        ctx.fillStyle = isGolden ? '#FFF59D' : '#41980a';
                         ctx.beginPath(); ctx.arc(x*BLOCK_SIZE+12, y*BLOCK_SIZE+16, 3, 0, Math.PI*2); ctx.fill();
                         ctx.beginPath(); ctx.arc(x*BLOCK_SIZE+22, y*BLOCK_SIZE+20, 3, 0, Math.PI*2); ctx.fill();
                         ctx.beginPath(); ctx.arc(x*BLOCK_SIZE+16, y*BLOCK_SIZE+24, 3, 0, Math.PI*2); ctx.fill();
+                        ctx.restore();
                     }
                     else if (block === BlockType.FENCE) {
                         // A more beautiful, detailed fence
@@ -4681,13 +5558,24 @@ export const GameCanvas: React.FC = () => {
                             ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 20, 4, 8); // handle left
                         }
                     }
-                    else if (block >= BlockType.FLOWER_RED && block <= BlockType.FLOWER_BLUE || block === BlockType.FLOWER_YELLOW || block === BlockType.FLOWER_PURPLE) {
+                    else if (block >= BlockType.FLOWER_RED && block <= BlockType.FLOWER_BLUE || block === BlockType.FLOWER_YELLOW || block === BlockType.FLOWER_PURPLE || block === BlockType.GOLDEN_FLOWER) {
                         // Drawing flowers!
                         ctx.fillStyle = '#4caf50'; // stem
                         ctx.fillRect(x*BLOCK_SIZE + 14, y*BLOCK_SIZE + 16, 4, 16);
-                        ctx.fillStyle = BLOCK_COLORS[block] || '#ff00ff'; // petals
+                        
+                        // Golden flower glowing logic
+                        if (block === BlockType.GOLDEN_FLOWER && timeRef.current >= DUSK_START && timeRef.current < DAWN_START) {
+                            ctx.fillStyle = '#FFF59D';
+                            ctx.shadowColor = '#FFF59D';
+                            ctx.shadowBlur = 10;
+                        } else {
+                            ctx.fillStyle = BLOCK_COLORS[block] || '#ff00ff'; // petals
+                        }
+                        
                         ctx.fillRect(x*BLOCK_SIZE + 8, y*BLOCK_SIZE + 4, 16, 16);
-                        ctx.fillStyle = '#fff9c4'; // center
+                        ctx.shadowBlur = 0; // reset
+                        
+                        ctx.fillStyle = block === BlockType.GOLDEN_FLOWER ? '#FBC02D' : '#fff9c4'; // center
                         ctx.fillRect(x*BLOCK_SIZE + 12, y*BLOCK_SIZE + 8, 8, 8);
                     }
                     else {
@@ -4869,6 +5757,17 @@ export const GameCanvas: React.FC = () => {
                                 ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 16);
                             }
                         }
+                        else if (block === BlockType.CONCRETE_BLUE) {
+                            ctx.fillStyle = BLOCK_COLORS[block];
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                            // Darker blue details to make it vibrant
+                            ctx.fillStyle = '#1565C0'; // Darker blue
+                            ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 4, 8, 8);
+                            ctx.fillRect(x * BLOCK_SIZE + 20, y * BLOCK_SIZE + 8, 6, 4);
+                            ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 20, 6, 6);
+                            ctx.fillStyle = '#0D47A1'; // Even darker
+                            ctx.fillRect(x * BLOCK_SIZE + 22, y * BLOCK_SIZE + 22, 4, 4);
+                        }
                         else {
                             ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
                         }
@@ -4891,6 +5790,31 @@ export const GameCanvas: React.FC = () => {
             ctx.shadowBlur = 8;
             ctx.shadowOffsetX = 8; // Generic offset
             ctx.shadowOffsetY = 8;
+            
+            // --- DRAW FOOTPRINTS ---
+            const nowMs = Date.now();
+            for (let i = 0; i < footprintsRef.current.length; i++) {
+                 const fp = footprintsRef.current[i];
+                 const age = nowMs - fp.time;
+                 if (age > 20000) {
+                     footprintsRef.current.splice(i, 1);
+                     i--;
+                     continue;
+                 }
+                 
+                 // Draw within screen
+                 if (fp.x > cameraRef.current.x - 10 && fp.x < cameraRef.current.x + cvs.width + 10 &&
+                     fp.y > cameraRef.current.y - 10 && fp.y < cameraRef.current.y + cvs.height + 10) {
+                     
+                     const alpha = Math.max(0, 1 - (age / 20000));
+                     ctx.fillStyle = fp.isSnow ? `rgba(200, 200, 200, ${alpha * 0.4})` : `rgba(100, 80, 50, ${alpha * 0.3})`;
+                     ctx.shadowBlur = 0; // Temporarily disable shadow for footprint
+                     ctx.beginPath();
+                     ctx.ellipse(fp.x, fp.y, 4, 2, 0, 0, Math.PI * 2);
+                     ctx.fill();
+                     ctx.shadowBlur = 8; // re-enable
+                 }
+            }
             
             [player, ...otherPlayersRef.current, ...entitiesRef.current].forEach(ent => {
                 if (ent.type !== 'PROJECTILE' && ent.type !== 'DROP' && !ent.isParticle) {
@@ -5358,9 +6282,39 @@ export const GameCanvas: React.FC = () => {
         }
 
         otherPlayersRef.current.forEach(p => {
-            ctx.fillStyle = '#7e57c2'; ctx.fillRect(p.x, p.y, p.width, p.height);
-            ctx.fillStyle = 'white'; ctx.fillRect(p.x + (p.facingRight?4:-8), p.y + 8, 4, 4); 
-            if(p.playerName) { ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = 'white'; ctx.strokeStyle = 'black'; ctx.lineWidth = 3; ctx.strokeText(p.playerName, p.x + p.width/2, p.y - 10); ctx.fillText(p.playerName, p.x + p.width/2, p.y - 10); }
+            const isMoving = p.isMoving || false;
+            // Simple bounce animation based on time when moving
+            const bounce = isMoving ? Math.sin(Date.now() / 100) * 2 : 0;
+            
+            ctx.save();
+            ctx.translate(p.x + p.width/2, p.y + p.height/2 + bounce);
+            
+            // Body
+            ctx.fillStyle = '#7e57c2'; 
+            ctx.fillRect(-p.width/2, -p.height/2, p.width, p.height);
+            
+            // Eyes
+            ctx.fillStyle = 'white'; 
+            ctx.fillRect((p.facingRight ? 4 : -8) - p.width/2, 8 - p.height/2, 4, 4); 
+            
+            // Held Item Indicator
+            if (p.heldItemIcon) {
+                const heldCol = typeof p.heldItemIcon === 'number' ? BLOCK_COLORS[p.heldItemIcon] : (ITEM_COLORS[String(p.heldItemIcon)] || '#fff');
+                ctx.fillStyle = heldCol as string;
+                ctx.fillRect(p.facingRight ? 8 : -16, -4, 8, 8);
+            }
+            
+            ctx.restore();
+
+            if(p.playerName) { 
+                ctx.font = 'bold 12px monospace'; 
+                ctx.textAlign = 'center'; 
+                ctx.fillStyle = 'white'; 
+                ctx.strokeStyle = 'black'; 
+                ctx.lineWidth = 3; 
+                ctx.strokeText(p.playerName, p.x + p.width/2, p.y - 12); 
+                ctx.fillText(p.playerName, p.x + p.width/2, p.y - 12); 
+            }
         });
 
         entitiesRef.current.forEach(ent => { 
@@ -5402,11 +6356,14 @@ export const GameCanvas: React.FC = () => {
         }
         
         // --- RENDER WEATHER ---
+        const playerBiome = getBiome(Math.floor(playerRef.current.x / BLOCK_SIZE), currentSeed);
         if (world.weather && world.weather.duration > 0) {
-            const isSnowBiome = getBiome(Math.floor(playerRef.current.x / BLOCK_SIZE), currentSeed) === 'snow';
-            const wType = isSnowBiome ? 'SNOW' : world.weather.type;
+            let wType = world.weather.type;
+            if (playerBiome === 'snow') wType = 'SNOW';
+            else if (playerBiome === 'desert') wType = 'SAND';
+
             const intensity = world.weather.intensity || 1;
-            const count = wType === 'HEAVY_RAIN' ? 300 : (wType === 'SNOW' ? 200 : 150) * intensity;
+            const count = wType === 'HEAVY_RAIN' ? 300 : (wType === 'SNOW' ? 200 : (wType === 'SAND' ? 250 : 150)) * intensity;
             
             if (wType === 'SNOW') {
                 snowCoverRef.current = Math.min(1, snowCoverRef.current + 0.002);
@@ -5414,61 +6371,245 @@ export const GameCanvas: React.FC = () => {
                 snowCoverRef.current = Math.max(0, snowCoverRef.current - 0.001);
             }
 
-            // Update particles
-            while (weatherParticlesRef.current.length < count) {
+            // Convert old weather particles to new weather type immediately to prevent mixed weather
+            const renderType = wType === 'HEAVY_RAIN' ? 'RAIN' : wType as any;
+            weatherParticlesRef.current.forEach(p => {
+                if (['RAIN', 'SNOW', 'SAND'].includes(p.type) && p.type !== renderType) {
+                    p.type = renderType;
+                }
+            });
+
+            // Count existing rain/snow/sand
+            const weatherEntities = weatherParticlesRef.current.filter(p => ['RAIN', 'SNOW', 'SAND'].includes(p.type));
+            let currentCount = weatherEntities.length;
+
+            while (currentCount < count) {
                 weatherParticlesRef.current.push({
                     x: cameraRef.current.x + Math.random() * cvs.width,
-                    y: cameraRef.current.y - Math.random() * cvs.height,
-                    vx: (Math.random() - 0.5) * 2 + (wType === 'SNOW' ? 1 : 2),
-                    vy: wType === 'SNOW' ? 2 + Math.random() * 2 : 10 + Math.random() * 10,
-                    type: wType === 'SNOW' ? 'SNOW' : 'RAIN'
+                    y: cameraRef.current.y - 100 - Math.random() * cvs.height,
+                    vx: wType === 'SAND' ? 10 + Math.random() * 5 : ((Math.random() - 0.5) * 2 + (wType === 'SNOW' ? 1 : 2)),
+                    vy: wType === 'SAND' ? 1 + Math.random() * 2 : (wType === 'SNOW' ? 2 + Math.random() * 2 : 10 + Math.random() * 10),
+                    type: renderType
                 });
+                currentCount++;
             }
-            if (weatherParticlesRef.current.length > count) {
-                weatherParticlesRef.current.length = Math.floor(count);
-            }
-            
-            ctx.fillStyle = wType === 'SNOW' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(150, 150, 255, 0.6)';
-            ctx.strokeStyle = 'rgba(150, 150, 255, 0.6)';
-            ctx.lineWidth = 1;
-            
-            for (let i = 0; i < weatherParticlesRef.current.length; i++) {
-                const p = weatherParticlesRef.current[i];
-                p.x += p.vx;
-                p.y += p.vy;
-                
-                let hitBlock = false;
-                const bx = Math.floor(p.x / BLOCK_SIZE);
-                const by = Math.floor(p.y / BLOCK_SIZE);
-                if (by >= 0 && by < WORLD_HEIGHT && bx >= 0 && bx < WORLD_WIDTH) {
-                    const block = world.blocks[by * WORLD_WIDTH + bx];
-                    if (!NON_COLLIDABLE_BLOCKS.has(block)) {
-                        hitBlock = true;
+            if (currentCount > count) {
+                let removed = 0;
+                for (let i = weatherParticlesRef.current.length - 1; i >= 0; i--) {
+                    const p = weatherParticlesRef.current[i];
+                    if (['RAIN', 'SNOW', 'SAND'].includes(p.type)) {
+                        weatherParticlesRef.current.splice(i, 1);
+                        removed++;
+                        if (currentCount - removed <= count) break;
                     }
-                }
-
-                // Reset if out of bounds or hit block
-                if (hitBlock || p.y > cameraRef.current.y + cvs.height || p.x < cameraRef.current.x || p.x > cameraRef.current.x + cvs.width) {
-                    p.x = cameraRef.current.x + Math.random() * cvs.width;
-                    p.y = cameraRef.current.y - 10;
-                    p.type = wType === 'SNOW' ? 'SNOW' : 'RAIN';
-                    p.vx = (Math.random() - 0.5) * 2 + (wType === 'SNOW' ? 1 : 2);
-                    p.vy = wType === 'SNOW' ? 2 + Math.random() * 2 : 10 + Math.random() * 10;
-                }
-                
-                if (p.type === 'SNOW') {
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
-                    ctx.fill();
-                } else {
-                    ctx.beginPath();
-                    ctx.moveTo(p.x, p.y);
-                    ctx.lineTo(p.x - p.vx * 2, p.y - p.vy * 2);
-                    ctx.stroke();
                 }
             }
         } else {
             snowCoverRef.current = Math.max(0, snowCoverRef.current - 0.001);
+            // Clear remaining weather particles
+            weatherParticlesRef.current = weatherParticlesRef.current.filter(p => !['RAIN', 'SNOW', 'SAND'].includes(p.type));
+        }
+
+        // --- AMBIENT PARTICLES ---
+        const isNightParticle = timeRef.current < DAWN_START || timeRef.current > DUSK_START;
+        
+        const currentSeasonPart = options.seasonsEnabled ? Math.floor(totalDaysRef.current / 7) % 4 : -1;
+        
+        // Target ambient count based on biome and season
+        let targetAmbientCount = (playerBiome === 'forest' || playerBiome === 'plains') ? 20 : 0;
+        
+        // 0=SPRING, 1=SUMMER, 2=AUTUMN, 3=WINTER
+        if (currentSeasonPart === 0) targetAmbientCount = 60; // Borboletas na primavera
+        if (currentSeasonPart === 1) targetAmbientCount = 50; // Vagalumes no verão (increase count)
+        if (currentSeasonPart === 2) targetAmbientCount = 60; // Chuva de folhas no outono
+        if (currentSeasonPart === 3) targetAmbientCount = 5;  // Neblina no inverno (few particles)
+        if (playerBiome === 'golden_forest') targetAmbientCount = 60;
+        
+        const currentAmbientCount = weatherParticlesRef.current.filter(p => p.type === 'LEAF' || p.type === 'FIREFLY' || p.type === 'BUTTERFLY' || p.type === 'GOLDEN_LEAF').length;
+        
+        if (currentAmbientCount < targetAmbientCount) {
+             const typeRoll = Math.random();
+             let type: 'LEAF'|'FIREFLY'|'BUTTERFLY'|'GOLDEN_LEAF' = playerBiome === 'golden_forest' ? 'GOLDEN_LEAF' : 'LEAF';
+             let vx = 0;
+             let vy = 0;
+             
+             if (playerBiome === 'golden_forest') {
+                 if (typeRoll < 0.2 || isNightParticle) {
+                     type = 'FIREFLY';
+                     vx = (Math.random() - 0.5) * 1.5;
+                     vy = (Math.random() - 0.5) * 1.5;
+                 } else {
+                     type = 'GOLDEN_LEAF';
+                     vx = (Math.random() - 0.5) * 2;
+                     vy = 1 + Math.random();
+                 }
+             } else if (currentSeasonPart === 1 || isNightParticle) {
+                 type = 'FIREFLY'; // Em verão, muitos vagalumes. Sempre vagalumes de noite
+                 vx = (Math.random() - 0.5) * (currentSeasonPart === 1 ? 2 : 1);
+                 vy = (Math.random() - 0.5) * (currentSeasonPart === 1 ? 2 : 1);
+             } else if (currentSeasonPart === 0) {
+                 // Primavera - Borboletas predominam
+                 if (typeRoll < 0.7) {
+                     type = 'BUTTERFLY';
+                     vx = (Math.random() < 0.5 ? 1 : -1) * (1 + Math.random() * 2);
+                     vy = (Math.random() - 0.5);
+                 } else {
+                     type = 'BUTTERFLY';
+                     vx = (Math.random() - 0.5) * 2;
+                     vy = 1 + Math.random();
+                 }
+             } else if (currentSeasonPart === 2) {
+                 // Outono - Chuva de folhas
+                 type = 'FIREFLY'; // Avoid random spawning
+                 vx = (Math.random() - 0.5) * 3;
+                 vy = 2 + Math.random() * 3;
+             } else {
+                 if (typeRoll < 0.2 && currentSeasonPart !== 3) {
+                     type = 'BUTTERFLY';
+                     vx = (Math.random() < 0.5 ? 1 : -1) * (1 + Math.random() * 2);
+                     vy = (Math.random() - 0.5);
+                 } else {
+                     type = 'LEAF';
+                     vx = (Math.random() - 0.5) * 2;
+                     vy = 1 + Math.random();
+                 }
+             }
+
+             weatherParticlesRef.current.push({
+                 x: cameraRef.current.x + Math.random() * cvs.width,
+                 y: cameraRef.current.y + ((type === 'LEAF' || type === 'GOLDEN_LEAF') && currentSeasonPart === 2 ? -100 : Math.random() * cvs.height),
+                 vx, vy, type: type as any
+             });
+        }
+        
+        // Inverno: Neblina (fog effect)
+        if (currentSeasonPart === 3 && options.seasonsEnabled) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${isNightParticle ? 0.05 : 0.15})`;
+            ctx.fillRect(0, 0, cvs.width, cvs.height);
+        }
+        
+        ctx.fillStyle = 'rgba(150, 150, 255, 0.6)';
+        ctx.strokeStyle = 'rgba(150, 150, 255, 0.6)';
+        ctx.lineWidth = 1;
+
+        for (let i = 0; i < weatherParticlesRef.current.length; i++) {
+            const p = weatherParticlesRef.current[i];
+            
+            if (p.type === 'FIREFLY') {
+                p.vx += (Math.random() - 0.5) * 0.2;
+                p.vy += (Math.random() - 0.5) * 0.2;
+                p.vx = Math.max(-1, Math.min(1, p.vx));
+                p.vy = Math.max(-1, Math.min(1, p.vy));
+            } else if (p.type === 'BUTTERFLY') {
+                p.vy += (Math.random() - 0.5) * 0.5;
+                p.vx += (Math.random() - 0.5) * 0.5;
+                const spd = 2;
+                p.vx = Math.max(-spd, Math.min(spd, p.vx));
+                p.vy = Math.max(-spd, Math.min(spd, p.vy));
+            }
+
+            p.x += p.vx;
+            p.y += p.vy;
+            
+            let hitBlock = false;
+            const bx = Math.floor(p.x / BLOCK_SIZE);
+            const by = Math.floor(p.y / BLOCK_SIZE);
+            if (by >= 0 && by < WORLD_HEIGHT && bx >= 0 && bx < WORLD_WIDTH) {
+                const block = world.blocks[by * WORLD_WIDTH + bx];
+                if (!NON_COLLIDABLE_BLOCKS.has(block)) {
+                    hitBlock = true;
+                }
+            }
+
+            if (hitBlock) {
+                 if (p.type === 'LEAF' || p.type === 'GOLDEN_LEAF') {
+                     p.vx = 0; p.vy = 0;
+                     p.y = by * BLOCK_SIZE - 2; // rest on top
+                     if (!p.life) p.life = 100;
+                     else p.life--;
+                     
+                     if (p.life <= 0) {
+                         weatherParticlesRef.current.splice(i, 1);
+                         i--;
+                         continue;
+                     }
+                 } else if (p.type === 'FIREFLY' || p.type === 'BUTTERFLY') {
+                     weatherParticlesRef.current.splice(i, 1);
+                     i--;
+                     continue;
+                 } else {
+                     p.x = cameraRef.current.x + Math.random() * cvs.width + (p.type === 'SAND' ? cvs.width : 0) - (p.type === 'SAND' ? cvs.width/2 : 0);
+                     p.y = cameraRef.current.y - 100 - Math.random() * 50;
+                     // It's rain, snow or sand
+                     p.vx = p.type === 'SAND' ? 10 + Math.random() * 5 : ((Math.random() - 0.5) * 2 + (p.type === 'SNOW' ? 1 : 2));
+                     p.vy = p.type === 'SAND' ? 1 + Math.random() * 2 : (p.type === 'SNOW' ? 2 + Math.random() * 2 : 10 + Math.random() * 10);
+                 }
+            } else if (p.y > cameraRef.current.y + cvs.height || p.x < cameraRef.current.x - 200 || p.x > cameraRef.current.x + cvs.width + 200) {
+                 if (p.type === 'LEAF' || p.type === 'GOLDEN_LEAF' || p.type === 'FIREFLY' || p.type === 'BUTTERFLY') {
+                     weatherParticlesRef.current.splice(i, 1);
+                     i--;
+                     continue;
+                 } else {
+                     p.x = cameraRef.current.x + Math.random() * cvs.width + (p.type === 'SAND' ? cvs.width : 0) - (p.type === 'SAND' ? cvs.width/2 : 0);
+                     p.y = cameraRef.current.y - 100 - Math.random() * 50;
+                     p.vx = p.type === 'SAND' ? 10 + Math.random() * 5 : ((Math.random() - 0.5) * 2 + (p.type === 'SNOW' ? 1 : 2));
+                     p.vy = p.type === 'SAND' ? 1 + Math.random() * 2 : (p.type === 'SNOW' ? 2 + Math.random() * 2 : 10 + Math.random() * 10);
+                 }
+            }
+            
+            if (p.type === 'SNOW') {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (p.type === 'SAND') {
+                ctx.fillStyle = 'rgba(210, 180, 140, 0.6)';
+                ctx.fillRect(p.x, p.y, 3, 3);
+            } else if (p.type === 'RAIN') {
+                ctx.strokeStyle = 'rgba(150, 150, 255, 0.6)';
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p.x - p.vx * 2, p.y - p.vy * 2);
+                ctx.stroke();
+            } else if (p.type === 'LEAF' || p.type === 'GOLDEN_LEAF') {
+                let currentSeason = options.seasonsEnabled ? Math.floor(totalDaysRef.current / 7) % 4 : -1;
+                let leafColor = p.type === 'GOLDEN_LEAF' ? '#ffc107' : '#4caf50'; // Golden leaf vs Green leaf
+                if (p.type !== 'GOLDEN_LEAF') {
+                    if (currentSeason === 0) leafColor = '#8bc34a'; // Spring
+                    if (currentSeason === 1) leafColor = '#4caf50'; // Summer
+                    if (currentSeason === 2) leafColor = ['#d35400', '#e67e22', '#c0392b'][i % 3]; // Autumn
+                    if (currentSeason === 3) leafColor = '#ffffff'; // Winter
+                } else {
+                    leafColor = ['#ffc107', '#ffca28', '#ffd54f'][i % 3]; // Variation of gold
+                }
+                ctx.fillStyle = leafColor;
+                ctx.fillRect(p.x, p.y, 3, 3);
+            } else if (p.type === 'BUTTERFLY') {
+                const colors = ['#fbc531', '#00a8ff', '#e84118', '#8c7ae6'];
+                ctx.fillStyle = colors[i % colors.length];
+                ctx.beginPath();
+                const flap = Math.abs(Math.sin(Date.now() / 150 + i)) * 4;
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p.x - flap, p.y - flap);
+                ctx.lineTo(p.x - flap, p.y + flap);
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p.x + flap, p.y - flap);
+                ctx.lineTo(p.x + flap, p.y + flap);
+                ctx.fill();
+            } else if (p.type === 'FIREFLY') {
+                let currentSeason = options.seasonsEnabled ? Math.floor(totalDaysRef.current / 7) % 4 : -1;
+                if (isNightParticle || currentSeason === 1) {
+                    ctx.fillStyle = '#ffeb3b';
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Glow
+                    ctx.fillStyle = 'rgba(255, 235, 59, 0.2)';
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
         }
 
         // --- REALISTIC BLOOM AND POST PROCESSING ---
@@ -5488,13 +6629,14 @@ export const GameCanvas: React.FC = () => {
                     if (furnace && furnace.burnTime > 0) isFurnaceActive = true;
                 }
 
-                if (block === BlockType.TORCH || block === BlockType.LAMP_ON || block === BlockType.LAVA || block === BlockType.URANIUM_ORE || block === BlockType.URANIUM_BLOCK || isFurnaceActive) {
+                if (block === BlockType.TORCH || block === BlockType.LAMP_ON || block === BlockType.LAVA || block === BlockType.URANIUM_ORE || block === BlockType.URANIUM_BLOCK || block === BlockType.GOLDEN_FLOWER || isFurnaceActive) {
                    const cx = x * BLOCK_SIZE + BLOCK_SIZE/2;
                    const cy = y * BLOCK_SIZE + BLOCK_SIZE/2;
                    const isUranium = block === BlockType.URANIUM_ORE || block === BlockType.URANIUM_BLOCK;
+                   const isGoldenFlower = block === BlockType.GOLDEN_FLOWER;
                    
                    const grad = ctx.createRadialGradient(cx, cy, 2, cx, cy, BLOCK_SIZE * 4);
-                   grad.addColorStop(0, isUranium ? 'rgba(118, 255, 3, 0.4)' : 'rgba(255, 152, 0, 0.4)');
+                   grad.addColorStop(0, isUranium ? 'rgba(118, 255, 3, 0.4)' : (isGoldenFlower ? 'rgba(255, 245, 157, 0.4)' : 'rgba(255, 152, 0, 0.4)'));
                    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
                    
                    ctx.fillStyle = grad;
@@ -5545,11 +6687,29 @@ export const GameCanvas: React.FC = () => {
                 const b = 255;
                 ambientTint = `rgba(${r}, ${g}, ${b}, 1)`;
             }
-            if (isPrecip) ambientTint = 'rgba(160, 160, 170, 1)'; // moody gray in rain
+            if (isPrecip) {
+                const precipBiome = getBiome(Math.floor(playerRef.current.x / BLOCK_SIZE), currentSeed);
+                if (precipBiome === 'desert') ambientTint = 'rgba(230, 200, 150, 1)'; // Sandstorm tint
+                else if (precipBiome === 'snow') ambientTint = 'rgba(230, 240, 255, 1)'; // Snowstorm tint
+                else ambientTint = 'rgba(160, 160, 170, 1)'; // Rain moody gray
+            }
             
             ctx.globalCompositeOperation = 'multiply';
             ctx.fillStyle = ambientTint;
             ctx.fillRect(0, 0, cvs.width, cvs.height);
+
+            // 2. Weather mist (Overlay)
+            if (isPrecip) {
+                const precipBiome = getBiome(Math.floor(playerRef.current.x / BLOCK_SIZE), currentSeed);
+                ctx.globalCompositeOperation = 'source-over';
+                if (precipBiome === 'desert') {
+                    ctx.fillStyle = 'rgba(210, 180, 140, 0.4)'; // Sandy mist
+                    ctx.fillRect(0, 0, cvs.width, cvs.height);
+                } else if (precipBiome === 'snow') {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)'; // Snowy mist
+                    ctx.fillRect(0, 0, cvs.width, cvs.height);
+                }
+            }
 
             // 3. Vignette
             ctx.globalCompositeOperation = 'multiply';
@@ -5740,6 +6900,17 @@ export const GameCanvas: React.FC = () => {
 
     return (
         <div className="relative w-full h-full">
+            {connectionPhase !== 'NONE' && connectionPhase !== 'LOADED' && (
+                <div className="absolute inset-0 bg-zinc-900 z-50 flex flex-col items-center justify-center text-white">
+                    <h1 className="text-4xl font-bold text-green-400 mb-6 drop-shadow-md">
+                        {connectionPhase === 'CONNECTING' ? 'Conectando ao servidor...' : 'Sincronizando mundo...'}
+                    </h1>
+                    <div className="animate-pulse flex flex-col gap-2 items-center">
+                        <div className="text-xl text-gray-300">Carregando jogadores...</div>
+                        <div className="text-xl text-gray-300">Entrando no mundo...</div>
+                    </div>
+                </div>
+            )}
             <canvas ref={canvasRef} width={window.innerWidth} height={window.innerHeight} className={` ${options.customCursor !== false && !options.isMobile ? 'cursor-none' : ''} touch-none`} />
             {(gameState === 'PLAYING' || gameState === 'PAUSED') && (
                 <>
@@ -5835,7 +7006,7 @@ export const GameCanvas: React.FC = () => {
                                     <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet modo f')}>/chet modo f - Espectador</div>
                                     <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet matar jogador')}>/chet matar jogador</div>
                                     <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet hora 10')}>/chet hora &lt;1-100&gt;</div>
-                                    <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet tp bioma ')}>/chet tp bioma &lt;planicie|deserto|neve|floresta&gt;</div>
+                                    <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet tp bioma ')}>/chet tp bioma &lt;planicie|deserto|neve|floresta|praia&gt;</div>
                                     <div className="cursor-pointer hover:bg-gray-700 px-1" onClick={() => setChatInput('/chet tp estrutura ')}>/chet tp estrutura &lt;cidade grande|fazenda&gt;</div>
                                 </div>
                             )}
@@ -5855,9 +7026,9 @@ export const GameCanvas: React.FC = () => {
                                     setChatMessages(p => [...p, {msg: 'Modo sobrevivência ativado.', color: '#00ff00'}]);
                                     isCommand = true;
                                 } else if(text.startsWith('/chet modo c')) {
-                                    setOptions(prev => ({...prev, gameMode: 'CREATIVE'}));
+                                    setOptions(prev => ({...prev, gameMode: 'GOD'}));
                                     setAdminFlags(prev => ({...prev, noClip: false}));
-                                    setChatMessages(p => [...p, {msg: 'Modo criativo ativado.', color: '#00ff00'}]);
+                                    setChatMessages(p => [...p, {msg: 'Modo Deus ativado.', color: '#00ff00'}]);
                                     isCommand = true;
                                 } else if(text.startsWith('/chet matar jogador') || text.startsWith('/chet matar player')) {
                                     playerRef.current.health = 0;
@@ -5873,16 +7044,24 @@ export const GameCanvas: React.FC = () => {
                                     isCommand = true;
                                 } else if(text.startsWith('/chet tp bioma') || text.startsWith('/chet tp biome')) {
                                     const rawName = text.substring(14).trim().toLowerCase();
-                                    let biomeName = 'desconhecido';
-                                    if (rawName.includes('planicie') || rawName.includes('plains')) biomeName = 'plains';
-                                    if (rawName.includes('neve') || rawName.includes('snow')) biomeName = 'snow';
-                                    if (rawName.includes('deserto') || rawName.includes('desert')) biomeName = 'desert';
-                                    if (rawName.includes('floresta') || rawName.includes('forest')) biomeName = 'forest';
                                     
-                                    if (biomeName !== 'desconhecido') {
-                                         let found = false;
-                                         const pX = Math.floor(playerRef.current.x / BLOCK_SIZE);
-                                         let chunkStart = Math.floor(pX / 500);
+                                    if (rawName.includes('praia') || rawName.includes('beach')) {
+                                        playerRef.current.x = (WORLD_WIDTH - 200) * BLOCK_SIZE;
+                                        playerRef.current.y = 0; // Fallback safe spawn
+                                        setChatMessages(p => [...p, {msg: `Teleportado para Praia!`, color: '#00ff00'}]);
+                                        isCommand = true;
+                                    } else {
+                                        let biomeName = 'desconhecido';
+                                        if (rawName.includes('planicie') || rawName.includes('plains')) biomeName = 'plains';
+                                        if (rawName.includes('neve') || rawName.includes('snow')) biomeName = 'snow';
+                                        if (rawName.includes('deserto') || rawName.includes('desert')) biomeName = 'desert';
+                                        if (rawName.includes('floresta') || rawName.includes('forest')) biomeName = 'forest';
+                                        if (rawName.includes('dourado') || rawName.includes('golden')) biomeName = 'golden_forest';
+                                        
+                                        if (biomeName !== 'desconhecido') {
+                                             let found = false;
+                                             const pX = Math.floor(playerRef.current.x / BLOCK_SIZE);
+                                             let chunkStart = Math.floor(pX / 500);
                                          
                                          // Search for biome in both directions
                                          for(let i=1; i<40; i++) {
@@ -5900,7 +7079,8 @@ export const GameCanvas: React.FC = () => {
                                          if(found) setChatMessages(p => [...p, {msg: `Teleportado para bioma: ${rawName}.`, color: '#00ff00'}]);
                                          else setChatMessages(p => [...p, {msg: `Bioma ${rawName} não encontrado por perto.`, color: '#ff0000'}]);
                                     } else {
-                                        setChatMessages(p => [...p, {msg: `Bioma ${rawName} inválido. Tente: planicie, neve, deserto, floresta`, color: '#ff0000'}]);
+                                        setChatMessages(p => [...p, {msg: `Bioma ${rawName} inválido. Ex: planicie, neve, deserto, floresta, praia, dourado`, color: '#ff0000'}]);
+                                    }
                                     }
                                     isCommand = true;
                                 } else if(text.startsWith('/chet tp estrutura')) {
@@ -5932,7 +7112,13 @@ export const GameCanvas: React.FC = () => {
                                     isCommand = true;
                                 }
                                 
-                                if (!isCommand) setChatMessages(p => [...p, {msg: `Você: ${text}`}]);
+                                if (!isCommand) {
+                                    if (options.multiplayer) {
+                                        socketRef.current?.emit('chat-message', { roomId: options.multiplayer.roomId, playerName: options.multiplayer.playerName || 'Player', msg: text });
+                                    } else {
+                                        setChatMessages(p => [...p, {msg: `Você: ${text}`}]);
+                                    }
+                                }
                                 setChatInput("");
                                 setIsChatOpen(false);
                             }} className="flex w-full max-w-lg mx-auto bg-gray-800 border-2 border-gray-600 rounded">
@@ -6011,7 +7197,7 @@ export const GameCanvas: React.FC = () => {
                     {isArmorBenchOpen && (<ArmorBenchUI onClose={() => { setIsArmorBenchOpen(false); if(cursorItem) setCursorItem(null); }} playerInv={inventory} onPlayerSlotClick={(idx) => handleInventorySlotClick(idx, 0)} selectedSlot={selectedSlot} lang={lang} onReturnItem={handleArmorBenchReturn} onCraft={handleCraft} />)}
                     {showAchievementsUI && (<AchievementsOverlay unlocked={unlockedAchievements} onClose={() => setShowAchievementsUI(false)} />)}
                     {isFishing && (<FishingMinigame onSuccess={handleFishingSuccess} onFail={handleFishingFail} />)}
-                    {isAdminMenuOpen && (<AdminPanel onClose={() => setIsAdminMenuOpen(false)} adminState={adminFlags} setAdminState={setAdminFlags} onGiveItem={handleAdminGiveItem} onSetTime={handleAdminSetTime} onChangeWeather={(w) => { if(worldRef.current) { if(!worldRef.current.weather) worldRef.current.weather = {type:'CLEAR', intensity:0, duration:0}; worldRef.current.weather.type = w; worldRef.current.weather.duration = w === 'CLEAR' ? 0 : 999999; worldRef.current.weather.intensity = w === 'HEAVY_RAIN' ? 1.0 : 0.5; } }} onChangeMoon={(m) => moonPhaseRef.current = m} lang={lang} />)}
+                    {isAdminMenuOpen && (<AdminPanel onClose={() => setIsAdminMenuOpen(false)} adminState={adminFlags} setAdminState={setAdminFlags} onGiveItem={handleAdminGiveItem} onSetTime={handleAdminSetTime} onChangeWeather={(w) => { if(worldRef.current) { if(!worldRef.current.weather) worldRef.current.weather = {type:'CLEAR', intensity:0, duration:0}; worldRef.current.weather.type = w; worldRef.current.weather.duration = w === 'CLEAR' ? 0 : 999999; worldRef.current.weather.intensity = w === 'HEAVY_RAIN' ? 1.0 : 0.5; } }} onChangeMoon={(m) => moonPhaseRef.current = m} onTeleportBiome={handleAdminTeleportBiome} lang={lang} />)}
                     {isSleepUIOpen && (<SleepUI onClose={() => setIsSleepUIOpen(false)} onSleep={handleSleep} lang={lang} />)}
                     {activeNpc && (<NpcUI npc={activeNpc} onClose={() => setActiveNpc(null)} onCompleteQuest={handleCompleteQuest} inventory={inventory} lang={lang} />)}
                 </>
@@ -6064,7 +7250,81 @@ export const GameCanvas: React.FC = () => {
                     </div>
                 </div>
             )}
-            {gameState === 'PAUSED' && !showDeathScreen && (<div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center"><div className="flex flex-col gap-4 w-64"><h1 className="text-4xl text-white font-bold text-center mb-4">PAUSED</h1><button onClick={() => setGameState('PLAYING')} className="bg-gray-700 hover:bg-green-600 text-white p-4 border-2 border-gray-400 font-mono text-xl">Back to Game</button><button onClick={() => setLang(l => l === 'EN' ? 'PT' : 'EN')} className="bg-gray-700 hover:bg-blue-600 text-white p-4 border-2 border-gray-400 font-mono text-xl flex justify-between"><span>Language</span><span className="text-yellow-400">{lang}</span></button><button onClick={handleSaveAndQuit} className="bg-gray-700 hover:bg-red-600 text-white p-4 border-2 border-gray-400 font-mono text-xl">Save & Quit</button></div></div>)}
+            {gameState === 'PAUSED' && !showDeathScreen && (
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+                    {pauseMenuState === 'MAIN' && (
+                        <div className="flex flex-col gap-4 w-64">
+                            <h1 className="text-4xl text-white font-bold text-center mb-4">{lang === 'PT' ? 'PAUSADO' : 'PAUSED'}</h1>
+                            <button onClick={() => setGameState('PLAYING')} className="bg-gray-700 hover:bg-green-600 text-white p-4 border-2 border-gray-400 font-mono text-xl">{lang === 'PT' ? 'Voltar a jogar' : 'Resume'}</button>
+                            <button onClick={() => setPauseMenuState('OPTIONS')} className="bg-gray-700 hover:bg-blue-600 text-white p-4 border-2 border-gray-400 font-mono text-xl text-center">{lang === 'PT' ? 'Opções' : 'Options'}</button>
+                            <button onClick={handleSaveAndQuit} className="bg-gray-700 hover:bg-red-600 text-white p-4 border-2 border-gray-400 font-mono text-xl">{lang === 'PT' ? 'Sair e Salvar' : 'Save & Quit'}</button>
+                        </div>
+                    )}
+                    {pauseMenuState === 'OPTIONS' && (
+                        <div className="flex flex-col w-[500px] h-[500px] bg-gray-800/90 border-4 border-gray-500 shadow-2xl overflow-hidden">
+                             <h1 className="text-3xl font-bold text-white my-4 text-center">{lang === 'PT' ? 'Opções' : 'Options'}</h1>
+                             <div className="flex bg-gray-900 border-b-4 border-gray-500 font-mono text-sm">
+                                 <button onClick={() => setOptionsTab('GAME')} className={`flex-1 py-2 font-bold ${optionsTab==='GAME' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}>{lang === 'PT' ? 'JOGO' : 'GAME'}</button>
+                                 <button onClick={() => setOptionsTab('VIDEO')} className={`flex-1 py-2 font-bold ${optionsTab==='VIDEO' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}>{lang === 'PT' ? 'VÍDEO' : 'VIDEO'}</button>
+                                 <button onClick={() => setOptionsTab('AUDIO')} className={`flex-1 py-2 font-bold ${optionsTab==='AUDIO' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}>{lang === 'PT' ? 'ÁUDIO' : 'AUDIO'}</button>
+                             </div>
+                             <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-4">
+                                {optionsTab === 'GAME' && (
+                                    <>
+                                        <button onClick={() => setLang(lang === 'EN' ? 'PT' : lang === 'PT' ? 'ES' : lang === 'ES' ? 'JA' : 'EN')} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                                            <span>{lang === 'PT' ? 'Idioma' : 'Language'}</span>
+                                            <span className="text-blue-400">{lang}</span>
+                                        </button>
+                                        <button onClick={() => setOptions({...options, isMobile: !options.isMobile})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                                            <span>{lang === 'PT' ? 'Controles Mobile' : 'Mobile Controls'}</span>
+                                            <span className={options.isMobile ? "text-green-400" : "text-red-400"}>{options.isMobile ? 'ON' : 'OFF'}</span>
+                                        </button>
+                                        <button onClick={() => setOptions({...options, showCoordinates: !options.showCoordinates})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                                            <span>{lang === 'PT' ? 'Mostrar Coordenadas' : 'Show Coordinates'}</span>
+                                            <span className={options.showCoordinates ? "text-green-400" : "text-red-400"}>{options.showCoordinates ? 'ON' : 'OFF'}</span>
+                                        </button>
+                                        <button onClick={() => setOptions({...options, seasonsEnabled: !options.seasonsEnabled})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                                            <span>{lang === 'PT' ? 'Estações do Ano' : 'Seasons'}</span>
+                                            <span className={options.seasonsEnabled ? "text-green-400" : "text-red-400"}>{options.seasonsEnabled ? 'ON' : 'OFF'}</span>
+                                        </button>
+                                    </>
+                                )}
+                                {optionsTab === 'VIDEO' && (
+                                    <>
+                                        <button onClick={() => setOptions({...options, shaderLevel: options.shaderLevel === 1 ? 2 : (options.shaderLevel === 2 ? 3 : 1)})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                                            <span>Shaders</span>
+                                            <span className="text-blue-400">{options.shaderLevel === 3 ? 'Ultra Realista' : `Nível ${options.shaderLevel || 1}`}</span>
+                                        </button>
+                                        <button onClick={() => setOptions({...options, textureQuality: options.textureQuality === 'ultra' ? 'medium' : 'ultra'})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                                            <span>{lang === 'PT' ? 'Textura dos Blocos' : 'Block Texture'}</span>
+                                            <span className="text-blue-400">{options.textureQuality === 'ultra' ? 'Ultra (Litxuma)' : 'Media'}</span>
+                                        </button>
+                                        <button onClick={() => setOptions({...options, graphicsQuality: options.graphicsQuality === 'ULTRA' ? 'NORMAL' : (options.graphicsQuality === 'NORMAL' ? 'UGLY' : 'ULTRA')})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                                            <span>{lang === 'PT' ? 'Partículas e Efeitos' : 'Particles & FX'}</span>
+                                            <span className="text-blue-400">{options.graphicsQuality || 'ULTRA'}</span>
+                                        </button>
+                                    </>
+                                )}
+                                {optionsTab === 'AUDIO' && (
+                                    <>
+                                         <div className="flex flex-col gap-2 bg-gray-700 p-4 border-2 border-gray-400">
+                                             <div className="flex justify-between text-white font-mono text-lg">
+                                                 <span>{lang === 'PT' ? 'Volume Mestre' : 'Master Volume'}</span>
+                                                 <span className="text-blue-400">{Math.round((options.volume || 1) * 100)}%</span>
+                                             </div>
+                                             <input type="range" min="0" max="1" step="0.05" value={options.volume || 1} onChange={(e) => setOptions({...options, volume: parseFloat(e.target.value)})} className="w-full h-4 bg-gray-900 outline-none" />
+                                         </div>
+                                    </>
+                                )}
+                             </div>
+                             <div className="p-4 border-t-4 border-gray-500 bg-gray-900">
+                                 <button onClick={() => setPauseMenuState('MAIN')} className="w-full bg-gray-700 hover:bg-gray-600 text-white p-3 font-bold font-mono text-xl">{lang === 'PT' ? 'Voltar' : 'Back'}</button>
+                             </div>
+                        </div>
+                    )}
+                </div>
+            )}
+            {gameState === 'INTRO' && (<IntroScreen onComplete={() => setGameState('MENU')} />)}
             {gameState === 'MENU' && (<MainMenu onStartGame={startNewGame} lang={lang} setLang={setLang} />)}
         </div>
     );

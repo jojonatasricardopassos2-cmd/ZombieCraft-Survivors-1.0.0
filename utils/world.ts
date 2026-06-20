@@ -30,11 +30,14 @@ function smoothNoise(x: number, seed: number, scale: number): number {
 
 
 export const getBiome = (x: number, noiseSeed: number): string => {
+    if (x < 150 || x > WORLD_WIDTH - 150) return 'beach';
     const biomeNoise = smoothNoise(Math.floor(x / 500) * 500, noiseSeed + 1000, 2000);
-    const val = Math.abs(biomeNoise * 100) % 5;
-    if (val < 1) return 'plains';
-    if (val < 2) return 'desert';
-    if (val < 3) return 'forest';
+    const val = Math.abs(biomeNoise * 100) % 6;
+    if (val < 1.2) return 'plains';
+    if (val < 2.0) return 'desert';
+    if (val < 3.2) return 'forest';
+    if (val < 3.7) return 'river'; // Reduced river from 1.0 size to 0.5 size
+    if (val < 4.8) return 'golden_forest';
     return 'snow';
 };
 
@@ -44,10 +47,6 @@ export function generateWorld(seedInput: number): WorldData {
   
   const rng = new SeededRNG(seedInput);
   const noiseSeed = seedInput; 
-
-  // Biome map generation
-  // 0: plains, 1: desert, 2: forest, 3: snow
-  
 
   // Surface generation
   const surfaceHeight = new Array(WORLD_WIDTH);
@@ -60,9 +59,9 @@ export function generateWorld(seedInput: number): WorldData {
       smoothNoise(x, noiseSeed + 100, 10) * 5
     );
     
-    // Mountains in snow?
+    // Mountains in snow? Make it subtract from height so the terrain goes UP (lower Y)
     if (biomeMap[x] === 'snow') {
-        variation += Math.floor(smoothNoise(x, noiseSeed + 200, 50) * 20);
+        variation -= Math.floor(smoothNoise(x, noiseSeed + 200, 50) * 20);
     } else if (biomeMap[x] === 'river') {
         // Drop the terrain to make a river bed
         variation += 10;
@@ -103,11 +102,12 @@ export function generateWorld(seedInput: number): WorldData {
       if (y === h) {
           if (biome === 'forest') blockType = BlockType.DARK_GRASS;
           else if (biome === 'snow') blockType = BlockType.SNOWY_GRASS;
-          else if (biome === 'desert') blockType = BlockType.SAND;
+          else if (biome === 'desert' || biome === 'beach') blockType = BlockType.SAND;
           else if (biome === 'river') blockType = BlockType.WET_SAND;
+          else if (biome === 'golden_forest') blockType = BlockType.GOLDEN_GRASS;
           else blockType = BlockType.GRASS;
       } else if (y > h && y < h + 4) {
-          if (biome === 'desert') blockType = BlockType.SAND;
+          if (biome === 'desert' || biome === 'beach') blockType = BlockType.SAND;
           else if (biome === 'river') blockType = BlockType.STONE;
           else blockType = BlockType.DIRT;
       } else if (y >= h + 4) {
@@ -169,6 +169,83 @@ export function generateWorld(seedInput: number): WorldData {
                   blocks[idx] = BlockType.STONE; // Stone border
               }
           }
+      }
+  }
+
+  // Golden Forest Crystal Lakes
+  for (let pool = 0; pool < 15; pool++) {
+      const lx = Math.floor(rng.next() * (WORLD_WIDTH - 100)) + 50;
+      const biome = getBiome(lx, noiseSeed);
+      if (biome !== 'golden_forest') continue;
+      
+      const ly = surfaceHeight[lx];
+      
+      const width = 3 + Math.floor(rng.next() * 3);
+      const depth = 1 + Math.floor(rng.next() * 2);
+      
+      for (let px = lx - width; px <= lx + width; px++) {
+          for (let py = ly - 1; py <= ly + depth + 1; py++) {
+              if (px < 0 || px >= WORLD_WIDTH || py < 0 || py >= WORLD_HEIGHT) continue;
+              const dist = Math.sqrt(Math.pow((px - lx) * 1.5, 2) + Math.pow(py - ly, 2));
+              const idx = py * WORLD_WIDTH + px;
+              if (dist < width - 1 && py > ly) {
+                  blocks[idx] = BlockType.WATER;
+              } else if (dist <= width && py >= ly - 1) {
+                  if (py > ly) {
+                      blocks[idx] = BlockType.SAND; // Sandy border
+                  } else {
+                      blocks[idx] = BlockType.AIR; // Clear above water
+                  }
+              }
+          }
+      }
+  }
+
+  // Abandoned Houses and Ancient Ruins
+  for (let c = 0; c < 25; c++) {
+      const lx = Math.floor(rng.next() * (WORLD_WIDTH - 200)) + 100;
+      const ly = surfaceHeight[lx];
+      if (ly < INTERNAL_SURFACE_Y - 20 || ly > INTERNAL_SURFACE_Y + 15) continue; 
+      if (biomeMap[lx] === 'river') continue;
+      
+      const isRuin = rng.next() > 0.6;
+      const width = isRuin ? 4 : 5;
+      const height = isRuin ? 3 : 4;
+      
+      // Clear area and build walls
+      for (let px = lx - width; px <= lx + width; px++) {
+          // Floor
+          blocks[ly * WORLD_WIDTH + px] = isRuin ? BlockType.STONE : BlockType.PLANKS;
+          
+          for (let py = ly - height; py < ly; py++) {
+              if (px === lx - width || px === lx + width) {
+                  // Walls
+                  if (isRuin && rng.next() < 0.3) {
+                       blocks[py * WORLD_WIDTH + px] = BlockType.AIR; // Broken wall
+                  } else {
+                       blocks[py * WORLD_WIDTH + px] = isRuin ? BlockType.COBBLESTONE || BlockType.STONE : BlockType.WOOD;
+                       if (isRuin && rng.next() < 0.2) blocks[py * WORLD_WIDTH + px] = BlockType.MOSS;
+                  }
+              } else {
+                  blocks[py * WORLD_WIDTH + px] = BlockType.AIR; // Inside
+              }
+          }
+      }
+      // Roof
+      if (!isRuin) {
+          for (let px = lx - width - 1; px <= lx + width + 1; px++) {
+              blocks[(ly - height - 1) * WORLD_WIDTH + px] = BlockType.PLANKS;
+          }
+          // Door
+          blocks[(ly - 1) * WORLD_WIDTH + lx - width] = BlockType.AIR;
+          blocks[(ly - 2) * WORLD_WIDTH + lx - width] = BlockType.AIR;
+      }
+      
+      // Chest
+      blocks[(ly - 1) * WORLD_WIDTH + lx] = BlockType.CHEST;
+      if (!isRuin) {
+          blocks[(ly - 1) * WORLD_WIDTH + lx + 1] = BlockType.TABLE;
+          blocks[(ly - 1) * WORLD_WIDTH + lx + 2] = BlockType.CABINET;
       }
   }
 
@@ -355,7 +432,7 @@ export function generateWorld(seedInput: number): WorldData {
       let groundY = -1;
       for(let y=0; y<WORLD_HEIGHT; y++) {
           const b = blocks[y * WORLD_WIDTH + x];
-          if (b === BlockType.GRASS || b === BlockType.DARK_GRASS || b === BlockType.DIRT || b === BlockType.STONE || b === BlockType.SAND) {
+          if (b === BlockType.GRASS || b === BlockType.DARK_GRASS || b === BlockType.DIRT || b === BlockType.STONE || b === BlockType.SAND || b === BlockType.GOLDEN_GRASS || b === BlockType.SNOWY_GRASS) {
               groundY = y;
               break;
           }
@@ -366,13 +443,7 @@ export function generateWorld(seedInput: number): WorldData {
         const groundBlock = blocks[groundY * WORLD_WIDTH + x];
         
         // Scope variables for biome check
-        const biomeNoise = smoothNoise(Math.floor(x / 500) * 500, noiseSeed + 1000, 2000);
-        const val = Math.abs(biomeNoise * 100) % 5;
-        let biome = 'snow';
-        if (val < 1) biome = 'plains';
-        else if (val < 2) biome = 'desert';
-        else if (val < 3) biome = 'forest';
-        else if (val < 4) biome = 'river';
+        let biome = getBiome(x, noiseSeed);
 
         // DESERT VEGETATION
         if (biome === 'desert' && groundBlock === BlockType.SAND && blocks[(groundY-1)*WORLD_WIDTH + x] === BlockType.AIR) {
@@ -386,17 +457,19 @@ export function generateWorld(seedInput: number): WorldData {
             } 
             }
         // NORMAL VEGETATION
-        else if ((groundBlock === BlockType.GRASS || groundBlock === BlockType.DARK_GRASS) && blocks[(groundY-1)*WORLD_WIDTH + x] === BlockType.AIR) {
+        else if ((groundBlock === BlockType.GRASS || groundBlock === BlockType.DARK_GRASS || groundBlock === BlockType.GOLDEN_GRASS || groundBlock === BlockType.SNOWY_GRASS) && blocks[(groundY-1)*WORLD_WIDTH + x] === BlockType.AIR) {
             const r = rng.next();
             const isForest = biome === 'forest';
+            const isGolden = biome === 'golden_forest';
+            const isSnow = biome === 'snow';
 
             // Trees
             if (r < (isForest ? 0.08 : 0.05) && x > 2 && x < WORLD_WIDTH - 3) {
                 const isLargeTree = !isForest && rng.next() < 0.3; // 30% chance in plains
                 const heightAdd = isForest ? Math.floor(rng.next() * 4) + 4 : Math.floor(rng.next() * 2);
                 const treeHeight = 4 + heightAdd + (isLargeTree ? 2 : 0);
-                const logType = isForest ? BlockType.DARK_WOOD : BlockType.WOOD;
-                const leafType = isForest ? BlockType.DARK_LEAVES : BlockType.LEAVES;
+                const logType = isForest ? BlockType.DARK_WOOD : (isGolden ? BlockType.GOLDEN_WOOD : (isSnow ? BlockType.FROZEN_WOOD : BlockType.WOOD));
+                const leafType = isForest ? BlockType.DARK_LEAVES : (isGolden ? BlockType.GOLDEN_LEAVES : (isSnow ? BlockType.DARK_LEAVES : BlockType.LEAVES));
                 const appleLeafType = BlockType.APPLE_LEAVES; // Apple spawn in leaves
 
                 const treeWidth = isLargeTree ? 2 : 1;
@@ -415,7 +488,7 @@ export function generateWorld(seedInput: number): WorldData {
                         const lIdx = ly * WORLD_WIDTH + lx;
                         if (lIdx >= 0 && blocks[lIdx] === BlockType.AIR) {
                             if (Math.abs(lx - centerLogX) > leafRadius - 0.5 && ly < groundY - treeHeight - leafRadius + 1) continue; // round corners
-                            if (!isForest && rng.next() < 0.05) {
+                            if (!isForest && !isGolden && !isSnow && rng.next() < 0.05) {
                                 blocks[lIdx] = appleLeafType;
                             } else {
                                 blocks[lIdx] = leafType;
@@ -436,43 +509,32 @@ export function generateWorld(seedInput: number): WorldData {
                 blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.SEED_BUSH; // Seeds
             }
             else if (r < 0.15) {
-                blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.BUSH; // Generic
+                blocks[(groundY - 1) * WORLD_WIDTH + x] = isGolden ? BlockType.GOLDEN_BUSH : BlockType.BUSH; // Generic
             }
-            // Flowers
-            else if (r < 0.18) {
+            // Flowers and Tall Grass
+            else if (r < 0.28) {
                 const flowerR = rng.next();
-                if (flowerR < 0.33) blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.FLOWER_RED;
-                else if (flowerR < 0.66) blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.FLOWER_GREEN;
-                else blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.FLOWER_BLUE;
+                if (isGolden) {
+                    if (flowerR < 0.60) blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.GOLDEN_FLOWER;
+                    else if (flowerR < 0.80) blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.FLOWER_YELLOW; // More yellow
+                    else blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.TALL_GRASS;
+                } else if (isSnow) {
+                    if (flowerR < 0.2) blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.FLOWER_BLUE;
+                    else if (flowerR < 0.4) blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.FLOWER_RED; // Maybe some contrast
+                    else blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.TALL_GRASS;
+                } else {
+                    if (flowerR < 0.1) blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.FLOWER_RED;
+                    else if (flowerR < 0.2) blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.FLOWER_GREEN;
+                    else if (flowerR < 0.3) blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.FLOWER_BLUE;
+                    else if (flowerR < 0.4) blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.FLOWER_YELLOW;
+                    else blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.TALL_GRASS;
+                }
             }
-        }
-        // SNOW VEGETATION
-        else if (groundBlock === BlockType.SNOWY_GRASS && blocks[(groundY-1)*WORLD_WIDTH + x] === BlockType.AIR) {
-            const r = rng.next();
-            // Trees
-            if (r < 0.08 && x > 2 && x < WORLD_WIDTH - 2) {
-                const heightAdd = Math.floor(rng.next() * 4) + 4;
-                const treeHeight = 4 + heightAdd;
-                const logType = BlockType.PINE_WOOD;
-                const leafType = BlockType.PINE_LEAVES;
-
-                for (let i = 1; i <= treeHeight; i++) {
-                    blocks[(groundY - i) * WORLD_WIDTH + x] = logType;
-                }
-                
-                const leafRadius = 3;
-                
-                for (let lx = x - leafRadius; lx <= x + leafRadius; lx++) {
-                    for (let ly = groundY - treeHeight - leafRadius; ly <= groundY - treeHeight; ly++) {
-                        const lIdx = ly * WORLD_WIDTH + lx;
-                        if (lIdx >= 0 && blocks[lIdx] === BlockType.AIR) {
-                            if (lx !== x || ly < groundY - treeHeight) {
-                                blocks[lIdx] = leafType;
-                            }
-                        }
-                    }
-                }
-            } 
+            // Fallen logs
+            else if (r < 0.29 && isForest && x > 2 && x < WORLD_WIDTH - 2) {
+                blocks[(groundY - 1) * WORLD_WIDTH + x] = BlockType.FALLEN_LOG;
+                if (rng.next() < 0.5) blocks[(groundY - 1) * WORLD_WIDTH + x + 1] = BlockType.FALLEN_LOG;
+            }
         }
       }
   }

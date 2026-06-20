@@ -93,6 +93,77 @@ export class AudioEngine {
         setTimeout(() => this.playTone(300, 'sine', 0.1, 0.2), 50);
     }
 
+    // --- NEW ANIMAL SOUNDS ---
+    playCow() {
+        if (!this.ctx || !this.masterGain) return;
+        this.resume();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(100, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(80, this.ctx.currentTime + 0.8);
+        gain.gain.setValueAtTime(0, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.3, this.ctx.currentTime + 0.1);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.8);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.8);
+    }
+
+    playPig() {
+        if (!this.ctx || !this.masterGain) return;
+        this.resume();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(120, this.ctx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.3);
+    }
+
+    playSheep() {
+        if (!this.ctx || !this.masterGain) return;
+        this.resume();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(250, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(200, this.ctx.currentTime + 0.6);
+        gain.gain.setValueAtTime(0, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.2, this.ctx.currentTime + 0.1);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.6);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.6);
+    }
+
+    playBird() {
+        if (!this.ctx || !this.masterGain) return;
+        this.resume();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1000, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1500, this.ctx.currentTime + 0.1);
+        osc.frequency.setValueAtTime(1200, this.ctx.currentTime + 0.15);
+        osc.frequency.exponentialRampToValueAtTime(1800, this.ctx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.1, this.ctx.currentTime + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.25);
+    }
+    // -------------------------
+
     playHit() {
         this.playNoise(0.2, 0.6);
         this.playTone(100, 'sawtooth', 0.2, 1, true);
@@ -176,7 +247,7 @@ export class AudioEngine {
         this.ambientNodes[key].gain.gain.linearRampToValueAtTime(vol, this.ctx.currentTime + 1);
     }
 
-    updateAmbient(isRaining: boolean, isSnowing: boolean, isDay: boolean, inWater: boolean) {
+    updateAmbient(isRaining: boolean, isSnowing: boolean, isDay: boolean, inWater: boolean, isGolden: boolean = false) {
         if (!this.ctx) return;
         
         if (isRaining && !isSnowing) {
@@ -196,6 +267,16 @@ export class AudioEngine {
         } else {
              this.stopAmbient('water');
         }
+        
+        // Golden Forest Calming Chimes
+        if (isGolden && Math.random() < 0.02) {
+            const notes = [440, 493.88, 523.25, 587.33, 659.25, 783.99, 880]; // A Minor Pentatonic roughly or just calming notes
+            const note = notes[Math.floor(Math.random() * notes.length)];
+            this.playTone(note, 'sine', 3.0, 0.03); // Soft long chime
+            setTimeout(() => {
+                this.playTone(note * 1.5, 'sine', 2.0, 0.02);
+            }, 500);
+        }
 
         // Birds during day
         if (isDay && !isRaining && !isSnowing && Math.random() < 0.005) {
@@ -203,17 +284,32 @@ export class AudioEngine {
             setTimeout(() => this.playTone(1800 + Math.random() * 800, 'sine', 0.1, 0.05), Math.random() * 200 + 100);
         }
 
-        // Crickets during night
-        if (!isDay && !isRaining && !isSnowing && Math.random() < 0.01) {
-            this.playTone(4000 + Math.random() * 500, 'sine', 0.05, 0.02);
-            setTimeout(() => this.playTone(4000 + Math.random() * 500, 'sine', 0.05, 0.02), 100);
-            setTimeout(() => this.playTone(4000 + Math.random() * 500, 'sine', 0.05, 0.02), 200);
+        // Crickets and Owls during night
+        if (!isDay && !isRaining && !isSnowing) {
+            if (Math.random() < 0.01) {
+                this.playTone(4000 + Math.random() * 500, 'sine', 0.05, 0.02);
+                setTimeout(() => this.playTone(4000 + Math.random() * 500, 'sine', 0.05, 0.02), 100);
+                setTimeout(() => this.playTone(4000 + Math.random() * 500, 'sine', 0.05, 0.02), 200);
+            }
+            if (Math.random() < 0.001) { // Owl
+                this.playTone(300, 'sine', 0.6, 0.05);
+                setTimeout(() => this.playTone(300, 'sine', 0.4, 0.05), 800);
+            }
+        }
+        
+        // Wind
+        if (!this.ambientNodes['wind']) {
+            this.startAmbientNoise('wind', 200, 0.02, 'lowpass');
+        } else {
+            // Wind varies
+            this.setAmbientVolume('wind', 0.01 + Math.random() * 0.03);
         }
     }
     stopAllAmbients() {
         this.stopAmbient('rain');
         this.stopAmbient('snow');
         this.stopAmbient('water');
+        this.stopAmbient('wind');
     }
 
     // Menu music

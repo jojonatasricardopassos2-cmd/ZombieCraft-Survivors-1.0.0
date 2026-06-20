@@ -11,6 +11,7 @@ interface AdminPanelProps {
     onSetTime: (time: 'DAY' | 'NIGHT') => void;
     onChangeWeather: (type: 'CLEAR' | 'RAIN' | 'HEAVY_RAIN' | 'SNOW') => void;
     onChangeMoon: (phase: 'NORMAL' | 'FULL' | 'BLOOD') => void;
+    onTeleportBiome: (biomeName: string) => void;
     lang: 'EN' | 'PT';
 }
 
@@ -36,7 +37,7 @@ const AdminItemIcon: React.FC<{ id: string | BlockType, type: ItemType }> = ({ i
     );
 };
 
-export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, adminState, setAdminState, onGiveItem, onSetTime, onChangeWeather, onChangeMoon, lang }) => {
+export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, adminState, setAdminState, onGiveItem, onSetTime, onChangeWeather, onChangeMoon, onTeleportBiome, lang }) => {
     const t = TRANSLATIONS[lang];
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -86,7 +87,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, adminState, set
             'dark_green_resin', 'green_resin', 'blue_resin', 'red_resin', 'uranium_totem',
             'leather_helmet', 'leather_chestplate', 'leather_leggings', 'leather_boots',
             'uranium_helmet', 'uranium_chestplate', 'uranium_leggings', 'uranium_boots',
-            'spawn_zombie', 'spawn_pig', 'spawn_cow', 'spawn_sheep', 'spawn_scorpion', 'spawn_camel', 'spawn_snake', 'spawn_rabbit', 'spawn_mutant_zombie'
+            'spawn_zombie', 'spawn_pig', 'spawn_cow', 'spawn_sheep', 'spawn_chicken', 'spawn_scorpion', 'spawn_camel', 'spawn_snake', 'spawn_rabbit', 'spawn_mutant_zombie', 'spawn_polar_bear', 'spawn_dog', 'spawn_npc', 'spawn_zombie_runner', 'spawn_zombie_tank', 'spawn_zombie_explosive', 'spawn_zombie_toxic', 'spawn_zombie_skeleton', 'spawn_zombie_infector', 'spawn_zombie_dark', 'spawn_zombie_frozen', 'spawn_zombie_king', 'spawn_plague_king', 'spawn_bush_mob', 'spawn_spider', 'spawn_blood_zombie', 'spawn_bird', 'spawn_golden_deer', 'spawn_lunar_fox'
         ];
         extraItems.forEach(id => {
             if(!seenItems.has(id)) {
@@ -164,6 +165,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, adminState, set
 
             {/* Weather & Moon Phase */}
             <div className="mb-6 flex flex-col gap-2">
+                <h3 className="text-gray-400 text-sm mb-1 uppercase tracking-wider">Teleport Biome</h3>
+                <div className="flex flex-wrap gap-2 text-sm mb-2">
+                    <button onClick={() => onTeleportBiome('plains')} className="flex-1 bg-green-900 hover:bg-green-800 py-1 rounded">Plains</button>
+                    <button onClick={() => onTeleportBiome('forest')} className="flex-1 bg-green-900 hover:bg-green-800 py-1 rounded">Forest</button>
+                    <button onClick={() => onTeleportBiome('snow')} className="flex-1 bg-green-900 hover:bg-green-800 py-1 rounded">Snow</button>
+                    <button onClick={() => onTeleportBiome('desert')} className="flex-1 bg-green-900 hover:bg-green-800 py-1 rounded">Desert</button>
+                    <button onClick={() => onTeleportBiome('golden_forest')} className="flex-1 bg-yellow-600 hover:bg-yellow-500 py-1 rounded">Golden</button>
+                    <button onClick={() => onTeleportBiome('beach')} className="flex-1 bg-yellow-800 hover:bg-yellow-700 py-1 rounded">Beach</button>
+                </div>
+
                 <h3 className="text-gray-400 text-sm mb-1 uppercase tracking-wider">Environment</h3>
                 <div className="flex gap-2 text-sm">
                     <button onClick={() => onChangeMoon('NORMAL')} className="flex-1 bg-gray-700 hover:bg-gray-600 py-1 rounded">Moon</button>
