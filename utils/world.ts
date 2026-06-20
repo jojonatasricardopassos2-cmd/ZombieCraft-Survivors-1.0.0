@@ -33,10 +33,10 @@ export const getBiome = (x: number, noiseSeed: number): string => {
     if (x < 150 || x > WORLD_WIDTH - 150) return 'beach';
     const biomeNoise = smoothNoise(Math.floor(x / 500) * 500, noiseSeed + 1000, 2000);
     const val = Math.abs(biomeNoise * 100) % 6;
-    if (val < 1.2) return 'plains';
-    if (val < 2.0) return 'desert';
-    if (val < 3.2) return 'forest';
-    if (val < 3.7) return 'river'; // Reduced river from 1.0 size to 0.5 size
+    if (val < 1.3) return 'plains';
+    if (val < 2.3) return 'desert';
+    if (val < 3.5) return 'forest';
+    if (val < 3.7) return 'river'; // Reduced river from 1.0 to 0.2
     if (val < 4.8) return 'golden_forest';
     return 'snow';
 };
@@ -60,8 +60,9 @@ export function generateWorld(seedInput: number): WorldData {
     );
     
     // Mountains in snow? Make it subtract from height so the terrain goes UP (lower Y)
+    // Use Math.abs to ensure it only adds height (subtracted from Y) and prevents dipping below water level
     if (biomeMap[x] === 'snow') {
-        variation -= Math.floor(smoothNoise(x, noiseSeed + 200, 50) * 20);
+        variation -= Math.abs(Math.floor(smoothNoise(x, noiseSeed + 200, 50) * 30)) + 5;
     } else if (biomeMap[x] === 'river') {
         // Drop the terrain to make a river bed
         variation += 10;

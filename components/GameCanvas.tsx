@@ -287,6 +287,7 @@ export const GameCanvas: React.FC = () => {
     const [isChatOpen, setIsChatOpen] = useState(false);
     const [chatInput, setChatInput] = useState("");
     const [chatMessages, setChatMessages] = useState<{msg: string, color?: string}[]>([]);
+    const [showMultiplayerInfo, setShowMultiplayerInfo] = useState(false);
 
     useEffect(() => {
         if (chatMessages.length > 0) {
@@ -296,6 +297,14 @@ export const GameCanvas: React.FC = () => {
             return () => clearTimeout(timer);
         }
     }, [chatMessages]);
+
+    useEffect(() => {
+        if (connectionPhase === 'LOADED' && options.multiplayer) {
+            setShowMultiplayerInfo(true);
+            const timer = setTimeout(() => setShowMultiplayerInfo(false), 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [connectionPhase, options.multiplayer]);
     
     // Cheat states
     const [cheatTimeMultiplier, setCheatTimeMultiplier] = useState(1); // 0, 1, -1, 2
@@ -2136,6 +2145,19 @@ export const GameCanvas: React.FC = () => {
         setGameState('PLAYING');
     };
 
+    const activeChestPosRef = useRef(activeChestPos);
+    activeChestPosRef.current = activeChestPos;
+    const isChestOpenRef = useRef(isChestOpen);
+    isChestOpenRef.current = isChestOpen;
+    const activeFurnacePosRef = useRef(activeFurnacePos);
+    activeFurnacePosRef.current = activeFurnacePos;
+    const isFurnaceOpenRef = useRef(isFurnaceOpen);
+    isFurnaceOpenRef.current = isFurnaceOpen;
+    const connectionPhaseRef = useRef(connectionPhase);
+    connectionPhaseRef.current = connectionPhase;
+    const cursorItemRef = useRef(cursorItem);
+    cursorItemRef.current = cursorItem;
+    
     // --- MULTIPLAYER LOGIC ---
     useEffect(() => {
         if (gameState === 'PLAYING' && options.multiplayer) {
@@ -2201,7 +2223,7 @@ export const GameCanvas: React.FC = () => {
                                 type: 'SYNC_WORLD', 
                                 roomId,
                                 payload: { 
-                                    seed: currentSeed,
+                                    seed: currentSeedRef.current,
                                     world: null // Temporarily disabled full world sync due to size // Send the actual modified world object
                                 } 
                             });
@@ -2213,7 +2235,7 @@ export const GameCanvas: React.FC = () => {
                             type: 'SYNC_WORLD', 
                             roomId,
                             payload: { 
-                                seed: currentSeed,
+                                seed: currentSeedRef.current,
                                 world: null // Temporarily disabled full world sync due to size
                             } 
                         });
@@ -2250,7 +2272,7 @@ export const GameCanvas: React.FC = () => {
                     } else if (options.multiplayer?.mode === "CLIENT" && payload.seed) {
                         // Fallback for seed-only (legacy check)
                         console.log("Received Seed from Host:", payload.seed);
-                        if (currentSeed !== payload.seed) {
+                        if (currentSeed !== payload.seed || (worldRef.current && worldRef.current.blocks && worldRef.current.blocks[worldRef.current.blocks.length - 1] === 0)) {
                             const w = generateWorld(payload.seed);
                             worldRef.current = w;
                             respawnPlayer(w);
@@ -2258,6 +2280,7 @@ export const GameCanvas: React.FC = () => {
                             updateLighting(w, 0);
                             setCurrentSeed(payload.seed);
                             addNotification("Synced with Host World!");
+                            setConnectionPhase('LOADED');
                         }
                     }
                 } else if (type === 'BLOCK_UPDATE') {
@@ -2265,10 +2288,10 @@ export const GameCanvas: React.FC = () => {
                     setBlockAt(payload.x, payload.y, payload.type, false); // False = Don't broadcast back
                 } else if (type === 'CHEST_UPDATE') {
                     chestsRef.current.set(payload.key, payload.content);
-                    if (activeChestPos === payload.key && isChestOpen) setUiTick(t => t+1);
+                    if (activeChestPosRef.current === payload.key && isChestOpenRef.current) setUiTick(t => t+1);
                 } else if (type === 'FURNACE_UPDATE') {
                     furnacesRef.current.set(payload.key, payload.data);
-                    if (activeFurnacePos === payload.key && isFurnaceOpen) setUiTick(t => t+1);
+                    if (activeFurnacePosRef.current === payload.key && isFurnaceOpenRef.current) setUiTick(t => t+1);
                 } else if (type === 'SPAWN_DROP') {
                     // Both Host and Client receive this.
                     // Check if we already have it to avoid duplicates
@@ -2331,7 +2354,7 @@ export const GameCanvas: React.FC = () => {
                         isMoving: Math.abs(p.vx) > 0.1 || Math.abs(p.vy) > 0.1,
                         playerName: options.multiplayer?.playerName,
                         // @ts-ignore
-                        heldItemIcon: cursorItem ? cursorItem.id : null
+                        heldItemIcon: cursorItemRef.current ? cursorItemRef.current.id : null
                     }
                 });
 
@@ -2353,9 +2376,12 @@ export const GameCanvas: React.FC = () => {
                             weather: worldRef.current?.weather
                         }
                     });
-                } else if (options.multiplayer?.mode === 'CLIENT' && currentSeed === 12345) {
-                    // If we are a client and still on the default seed, keep requesting sync
-                    socket.emit('game-event', { type: 'REQUEST_SYNC', roomId, payload: {} });
+                } else if (options.multiplayer?.mode === 'CLIENT' && connectionPhaseRef.current !== 'LOADED') {
+                    // If we are a client and still syncing, keep requesting sync occasionally
+                    // Send once every 20 ticks (1 second) to avoid spamming the host
+                    if (Math.random() < 0.05) {
+                        socket.emit('game-event', { type: 'REQUEST_SYNC', roomId, payload: {} });
+                    }
                 }
 
             }, 50); 
@@ -2365,7 +2391,7 @@ export const GameCanvas: React.FC = () => {
                 socket.disconnect();
             };
         }
-    }, [gameState, options.multiplayer, currentSeed, activeChestPos, activeFurnacePos, isChestOpen, isFurnaceOpen]);
+    }, [gameState, options.multiplayer]);
 
 
     const saveGame = async () => {
@@ -2810,7 +2836,10 @@ export const GameCanvas: React.FC = () => {
     const gameLoop = () => {
         if (gameState !== 'PLAYING') { requestRef.current = requestAnimationFrame(gameLoop); if (gameState === 'PAUSED' && canvasRef.current) { const ctx = canvasRef.current.getContext('2d'); if(ctx) { ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height); } } return; }
         const player = playerRef.current; const world = worldRef.current; const cvs = canvasRef.current; if (!world || !cvs) return; const ctx = cvs.getContext('2d'); if (!ctx) return;
-        const isPaused = isInventoryOpen || isFurnaceOpen || isChestOpen || isHammerMenuOpen || isAdminMenuOpen || isSleepUIOpen || isArmorBenchOpen || isChatOpen;
+        let isPaused = isInventoryOpen || isFurnaceOpen || isChestOpen || isHammerMenuOpen || isAdminMenuOpen || isSleepUIOpen || isArmorBenchOpen || isChatOpen;
+        if (connectionPhaseRef.current === 'CONNECTING' || connectionPhaseRef.current === 'SYNCING') {
+            isPaused = true;
+        }
         
         let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
         if (temperatureRef.current > 85) curTempState = 'HOT';
@@ -6962,7 +6991,7 @@ export const GameCanvas: React.FC = () => {
                         {spearChargeStartRef.current && (<div className="absolute left-16 top-32 w-8 h-32 bg-black border-2 border-black rounded-lg overflow-hidden flex flex-col-reverse relative"><div className="absolute inset-0 w-full h-full" style={{ background: 'linear-gradient(to top, #00ff00 0%, #ffff00 50%, #ff0000 100%)' }}></div><div className="absolute w-full h-2 bg-gray-400 border-y border-black/50" style={{ bottom: `${chargePct * 100}%`, transition: 'bottom 75ms linear' }}></div></div>)}
                         {options.showCoordinates && (<div className="text-white font-mono text-sm bg-black/50 p-2 rounded w-fit absolute top-0 left-0 m-1 border border-gray-600 shadow-md">X: {Math.floor(playerRef.current.x / BLOCK_SIZE)} Y: {SEA_LEVEL - (Math.floor(playerRef.current.y / BLOCK_SIZE) - INTERNAL_SURFACE_Y)}</div>)}
                         {options.adminMode && !isAdminMenuOpen && (<div className="text-red-400 font-mono text-xs bg-black/50 p-1 rounded w-fit absolute top-20 left-0 m-1">{t.ADMIN_HINT}</div>)}
-                        {options.multiplayer && (<div className="bg-purple-900/80 border border-purple-500 p-2 rounded text-white font-mono text-sm mt-2 shadow-lg"><div className="font-bold text-yellow-300">ONLINE: {options.multiplayer.mode}</div><div>Room: {options.multiplayer.roomId}</div></div>)}
+                        {options.multiplayer && showMultiplayerInfo && (<div className="bg-purple-900/80 border border-purple-500 p-2 rounded text-white font-mono text-sm mt-2 shadow-lg"><div className="font-bold text-yellow-300">ONLINE: {options.multiplayer.mode}</div><div>Room: {options.multiplayer.roomId}</div></div>)}
                         <div className="fixed top-10 left-1/2 transform -translate-x-1/2 flex flex-col gap-2 pointer-events-none w-full items-center z-50">{notifications.map(note => (<div key={note.id} className="bg-black/70 text-yellow-300 px-4 py-2 rounded-full border border-yellow-500 shadow-lg animate-fade-in-out font-bold">{note.message}</div>))}</div>
                         
                         {/* Chat Messages */}
