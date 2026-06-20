@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import { createServer as createViteServer } from 'vite';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -14,6 +15,7 @@ interface Room {
 
 async function startServer() {
   const app = express();
+  app.use(cors());
   const PORT = 3000;
   const httpServer = createServer(app);
   const io = new Server(httpServer, {

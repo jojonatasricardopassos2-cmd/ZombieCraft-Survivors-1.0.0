@@ -593,7 +593,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
 
   useEffect(() => {
       if (menuState === 'JOIN_ROOM') {
-          fetch('/api/rooms')
+          const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
+          fetch(`${backendUrl}/api/rooms`)
               .then(res => res.json())
               .then(data => setActiveRooms(data.rooms || []))
               .catch(err => console.error("Failed to fetch rooms:", err));

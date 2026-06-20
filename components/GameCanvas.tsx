@@ -2162,7 +2162,8 @@ export const GameCanvas: React.FC = () => {
     useEffect(() => {
         if (gameState === 'PLAYING' && options.multiplayer) {
             const roomId = options.multiplayer.roomId;
-            const socket = io(); // Connects to the same host/port
+            const backendUrl = import.meta.env.VITE_BACKEND_URL || undefined;
+            const socket = io(backendUrl); // Connects to the host/port or VITE_BACKEND_URL
             socketRef.current = socket;
             
             const myPlayerId = Date.now() + Math.random(); 
