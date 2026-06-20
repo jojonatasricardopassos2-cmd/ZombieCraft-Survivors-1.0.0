@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
 import { audio } from '../utils/audio.ts';
+import { PeerSocket } from '../utils/peerSocket.ts';
 import { 
     BLOCK_SIZE, WORLD_HEIGHT, WORLD_WIDTH, GRAVITY, 
     PLAYER_SPEED, PLAYER_RUN_SPEED, JUMP_FORCE, BLOCK_COLORS, 
@@ -156,7 +156,7 @@ export const GameCanvas: React.FC = () => {
     // Multiplayer Support
     // We add a 'lastSeen' property to track active players
     const otherPlayersRef = useRef<(Entity & { lastSeen?: number })[]>([]);
-    const socketRef = useRef<Socket | null>(null);
+    const socketRef = useRef<PeerSocket | null>(null);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     
     const [unlockedAchievements, setUnlockedAchievements] = useState<number[]>([]);
@@ -2162,29 +2162,23 @@ export const GameCanvas: React.FC = () => {
     useEffect(() => {
         if (gameState === 'PLAYING' && options.multiplayer) {
             const roomId = options.multiplayer.roomId;
-            const backendUrl = import.meta.env.VITE_BACKEND_URL || undefined;
-            const socket = io(backendUrl); // Connects to the host/port or VITE_BACKEND_URL
+            const socket = new PeerSocket(options.multiplayer.mode, roomId, Date.now() + Math.random());
             socketRef.current = socket;
             
-            const myPlayerId = Date.now() + Math.random(); 
+            const myPlayerId = socket.myPlayerId; 
 
             const onConnect = () => {
-                if (options.multiplayer?.mode === 'HOST') {
-                    socket.emit('create-room', { roomId, maxPlayers: 4, worldState: null }); // Host creates the room
-                } else {
-                    socket.emit('join-room', roomId);
+                if (options.multiplayer?.mode === 'CLIENT') {
                     setConnectionPhase('SYNCING');
+                } else if (options.multiplayer?.mode === 'HOST') {
+                    setConnectionPhase('LOADED');
                 }
                 
                 // Send Join Signal to game clients
                 socket.emit('game-event', { type: 'JOIN', roomId, payload: { id: myPlayerId, name: options.multiplayer?.playerName } });
             };
 
-            if (socket.connected) {
-                onConnect();
-            } else {
-                socket.on('connect', onConnect);
-            }
+            socket.on('connect', onConnect);
 
             socket.on('room-error', (data) => {
                 addNotification(`Connection Error: ${data.message}`);

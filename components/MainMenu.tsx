@@ -593,11 +593,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
 
   useEffect(() => {
       if (menuState === 'JOIN_ROOM') {
-          const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
-          fetch(`${backendUrl}/api/rooms`)
-              .then(res => res.json())
-              .then(data => setActiveRooms(data.rooms || []))
-              .catch(err => console.error("Failed to fetch rooms:", err));
+          // No more server fetching for rooms since we use P2P
       }
   }, [menuState]);
 
@@ -606,7 +602,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
           <h2 className="text-2xl font-bold text-center mb-4 text-blue-300">{t.JOIN_ROOM_TITLE}</h2>
           
           <div className="flex flex-col gap-1">
-              <label className="text-gray-300 text-sm">{t.ENTER_CODE_LABEL}</label>
+              <label className="text-gray-300 text-sm">{t.ENTER_CODE_LABEL} (P2P)</label>
               <input 
                 type="text" 
                 value={joinCode || ''}
