@@ -39,6 +39,10 @@ async function startServer() {
     res.json({ status: 'ok' });
   });
 
+  app.get('/api/rooms', (req, res) => {
+      res.json({ rooms: Array.from(rooms.keys()) });
+  });
+
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
