@@ -2,7 +2,7 @@ import { ModCreator } from './ModCreator.tsx';
 
 import React, { useState, useEffect } from 'react';
 import { TRANSLATIONS } from '../constants.ts';
-import { SavedWorld, GameOptions, SavedAccount } from '../types.ts';
+import { SavedWorld, GameOptions, SavedAccount, DEFAULT_BINDINGS, KeyBindings } from '../types.ts';
 import { loadAllSavesMetadata, loadWorldFromDB, saveWorldToDB, deleteWorldFromDB } from '../utils/storage.ts';
 import { audio } from '../utils/audio.ts';
 import { TouchConfigUI } from './UI/TouchConfigUI.tsx';
@@ -32,7 +32,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
   const [loginError, setLoginError] = useState('');
 
   // Options
-  const [optionsTab, setOptionsTab] = useState<'GAME' | 'VIDEO' | 'AUDIO' | 'LANGUAGE' | 'TOUCH' | 'ACCOUNTS'>('GAME');
+  const [optionsTab, setOptionsTab] = useState<'GAME' | 'VIDEO' | 'AUDIO' | 'LANGUAGE' | 'TOUCH' | 'ACCOUNTS' | 'CONTROLS'>('GAME');
   const [showCoordinates, setShowCoordinates] = useState(false);
   const [tutorialEnabled, setTutorialEnabled] = useState(true);
   const [showMinimap, setShowMinimap] = useState(true);
@@ -47,6 +47,36 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
   const [customCursor, setCustomCursor] = useState(true);
   const [shaderLevel, setShaderLevel] = useState(1);
   const [textureQuality, setTextureQuality] = useState<'ultra' | 'medium'>('ultra');
+  const [bindings, setBindings] = useState(DEFAULT_BINDINGS);
+  const [mouseSensitivity, setMouseSensitivity] = useState(1.0);
+  const [gamepadSensitivity, setGamepadSensitivity] = useState(1.0);
+  const [editingBinding, setEditingBinding] = useState<keyof KeyBindings | null>(null);
+
+  useEffect(() => {
+      const handleGlobalKey = (e: KeyboardEvent) => {
+          if (editingBinding) {
+              e.preventDefault();
+              setBindings(prev => ({ ...prev, [editingBinding]: e.code }));
+              setEditingBinding(null);
+          }
+      };
+      const handleGlobalMouse = (e: MouseEvent) => {
+          if (editingBinding) {
+              e.preventDefault();
+              const map: Record<number, string> = { 0: 'MouseLeft', 1: 'MouseMiddle', 2: 'MouseRight', 3: 'Mouse4', 4: 'Mouse5' };
+              setBindings(prev => ({ ...prev, [editingBinding]: map[e.button] || `Mouse${e.button}` }));
+              setEditingBinding(null);
+          }
+      };
+      if (editingBinding) {
+          window.addEventListener('keydown', handleGlobalKey);
+          window.addEventListener('mousedown', handleGlobalMouse);
+          return () => {
+              window.removeEventListener('keydown', handleGlobalKey);
+              window.removeEventListener('mousedown', handleGlobalMouse);
+          };
+      }
+  }, [editingBinding]);
 
 
   // Edit/Export
@@ -108,6 +138,9 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
               if (parsed.customCursor !== undefined) setCustomCursor(parsed.customCursor);
               if (parsed.shaderLevel !== undefined) setShaderLevel(parsed.shaderLevel);
               if (parsed.textureQuality !== undefined) setTextureQuality(parsed.textureQuality);
+              if (parsed.bindings !== undefined) setBindings(parsed.bindings);
+              if (parsed.mouseSensitivity !== undefined) setMouseSensitivity(parsed.mouseSensitivity);
+              if (parsed.gamepadSensitivity !== undefined) setGamepadSensitivity(parsed.gamepadSensitivity);
               // don't setlang here since it might be done by app
           } catch(e) {}
       }
@@ -156,9 +189,12 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
           volume,
           customCursor,
           shaderLevel,
-          textureQuality
+          textureQuality,
+          bindings,
+          mouseSensitivity,
+          gamepadSensitivity
       }));
-  }, [showCoordinates, tutorialEnabled, showMinimap, adminMode, seasonsEnabled, isMobile, graphicsQuality, renderDistance, volume, customCursor, shaderLevel, textureQuality]);
+  }, [showCoordinates, tutorialEnabled, showMinimap, adminMode, seasonsEnabled, isMobile, graphicsQuality, renderDistance, volume, customCursor, shaderLevel, textureQuality, bindings, mouseSensitivity, gamepadSensitivity]);
 
   const handleCreateWorld = () => {
       const seed = newWorldSeed.trim() === '' ? Math.floor(Math.random() * 999999) : parseInt(newWorldSeed) || 0;
@@ -824,13 +860,14 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
          <h1 className="text-3xl font-bold text-white my-4 text-center">{t.OPTIONS_TITLE}</h1>
          
          {/* Tabs */}
-         <div className="flex bg-gray-900 border-b-4 border-gray-500 font-mono text-sm">
+         <div className="flex flex-wrap bg-gray-900 border-b-4 border-gray-500 font-mono text-sm">
              <button onClick={() => setOptionsTab('GAME')} className={`flex-1 p-2 border-r border-gray-600 ${optionsTab === 'GAME' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Game</button>
              <button onClick={() => setOptionsTab('VIDEO')} className={`flex-1 p-2 border-r border-gray-600 ${optionsTab === 'VIDEO' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Video</button>
              <button onClick={() => setOptionsTab('AUDIO')} className={`flex-1 p-2 border-r border-gray-600 ${optionsTab === 'AUDIO' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Audio</button>
-             <button onClick={() => setOptionsTab('LANGUAGE')} className={`flex-1 p-2 border-r border-gray-600 ${optionsTab === 'LANGUAGE' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Language</button>
-             <button onClick={() => setOptionsTab('TOUCH')} className={`flex-1 p-2 border-r border-gray-600 ${optionsTab === 'TOUCH' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Touch</button>
-             <button onClick={() => setOptionsTab('ACCOUNTS')} className={`flex-1 p-2 ${optionsTab === 'ACCOUNTS' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Contas</button>
+             <button onClick={() => setOptionsTab('LANGUAGE')} className={`flex-1 p-2 border-b border-r border-gray-600 ${optionsTab === 'LANGUAGE' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Language</button>
+             <button onClick={() => setOptionsTab('TOUCH')} className={`flex-1 p-2 border-b border-r border-gray-600 ${optionsTab === 'TOUCH' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Touch</button>
+             <button onClick={() => setOptionsTab('CONTROLS')} className={`flex-1 p-2 border-b border-r border-gray-600 ${optionsTab === 'CONTROLS' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Controles</button>
+             <button onClick={() => setOptionsTab('ACCOUNTS')} className={`flex-1 p-2 border-b border-gray-600 ${optionsTab === 'ACCOUNTS' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>Contas</button>
          </div>
 
          {/* Content */}
@@ -973,6 +1010,69 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
                      <button onClick={() => setShowTouchConfig(true)} className="bg-blue-700 hover:bg-blue-600 text-white p-4 border-2 border-blue-400 font-mono text-xl font-bold rounded">
                          Configurar Posições
                      </button>
+                 </>
+             )}
+
+             {optionsTab === 'CONTROLS' && (
+                 <>
+                     <h2 className="text-xl font-bold text-white mb-2">Controles e Gamepad</h2>
+                     <div className="flex flex-col gap-4 text-white">
+                         <div className="bg-gray-700 p-4 border border-gray-500 flex flex-col gap-4">
+                             <div className="flex justify-between items-center">
+                                 <h3 className="font-bold text-lg">Sensibilidade do Mouse</h3>
+                                 <span className="bg-gray-800 px-2 py-1">{mouseSensitivity.toFixed(2)}x</span>
+                             </div>
+                             <input type="range" min="0.1" max="3.0" step="0.1" value={mouseSensitivity} onChange={e => setMouseSensitivity(parseFloat(e.target.value))} className="w-full" />
+                             
+                             <div className="flex justify-between items-center mt-2">
+                                 <h3 className="font-bold text-lg">Sensibilidade do Gamepad</h3>
+                                 <span className="bg-gray-800 px-2 py-1">{gamepadSensitivity.toFixed(2)}x</span>
+                             </div>
+                             <input type="range" min="0.1" max="3.0" step="0.1" value={gamepadSensitivity} onChange={e => setGamepadSensitivity(parseFloat(e.target.value))} className="w-full" />
+                         </div>
+
+                         <div className="bg-gray-700 p-4 border border-gray-500">
+                             <div className="flex justify-between items-center mb-4">
+                                <h3 className="font-bold text-lg">Mapeamento de Teclado</h3>
+                                <button onClick={() => setBindings(DEFAULT_BINDINGS)} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-sm font-bold">Menu Padrão</button>
+                             </div>
+                             
+                             <div className="grid grid-cols-2 gap-2 text-sm">
+                                 {Object.entries({
+                                     up: 'Cima', down: 'Baixo', left: 'Esquerda', right: 'Direita',
+                                     jump: 'Pular', crouch: 'Agachar', sprint: 'Correr',
+                                     inventory: 'Inventário', interact: 'Usar/Mão Secundaria', drop: 'Dropar Item',
+                                     chat: 'Chat', attack: 'Atacar/Quebrar', place: 'Colocar/Mirar'
+                                 }).map(([k, label]) => {
+                                     const key = k as keyof KeyBindings;
+                                     return (
+                                         <div key={key} className="flex justify-between bg-gray-800 p-2 items-center border border-gray-600">
+                                             <span className="text-gray-300">{label}</span>
+                                             <button 
+                                                onClick={() => setEditingBinding(key)} 
+                                                className={`px-3 py-1 font-mono font-bold ${editingBinding === key ? 'bg-yellow-600 animate-pulse' : 'bg-gray-600 hover:bg-gray-500'}`}
+                                             >
+                                                 {editingBinding === key ? 'Pressione uma tecla...' : bindings[key]}
+                                             </button>
+                                         </div>
+                                     );
+                                 })}
+                             </div>
+                         </div>
+
+                         <div className="bg-gray-700 p-4 border border-gray-500">
+                             <h3 className="font-bold border-b border-gray-500 pb-2 mb-2">Gamepad (Ativado automaticamente)</h3>
+                             <ul className="text-sm space-y-1 list-disc pl-4 text-gray-300">
+                                 <li><strong>Mover:</strong> Analógico Esquerdo / D-pad</li>
+                                 <li><strong>Mirar:</strong> Analógico Direito</li>
+                                 <li><strong>Correr:</strong> Pressionar Analógico Esquerdo</li>
+                                 <li><strong>Pular:</strong> Botão A / Cruz</li>
+                                 <li><strong>Menu / Inventário:</strong> Botão X / Quadrado ou Start</li>
+                                 <li><strong>Quebrar / Atacar:</strong> RT (Gatilho Direito)</li>
+                                 <li><strong>Colocar Item:</strong> LT (Gatilho Esquerdo)</li>
+                             </ul>
+                         </div>
+                     </div>
                  </>
              )}
          </div>

@@ -128,6 +128,34 @@ export const Inventory: React.FC<InventoryProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
+
+    const getAvailableTabs = () => {
+        const tabs = ['INVENTORY', 'CHARACTER', 'CRAFTING'] as ('INVENTORY'|'CHARACTER'|'CRAFTING'|'CREATIVE'|'DECOR'|'ITEMS'|'COMBAT'|'MEDICAL'|'SCIENCE')[];
+        
+        if (gameMode === 'GOD' || gameMode === 'CREATIVE') tabs.push('CREATIVE');
+
+        if (nearbyStation === BlockType.CRAFTING_TABLE) tabs.push('DECOR', 'ITEMS', 'COMBAT');
+        if (nearbyStation === BlockType.MEDICAL_BENCH) tabs.push('MEDICAL');
+        if (nearbyStation === BlockType.SCIENCE_BENCH) tabs.push('SCIENCE', 'MEDICAL', 'CRAFTING');
+        
+        // Remove duplicates if any
+        return Array.from(new Set(tabs));
+    };
+
+    const handleTabPrev = () => {
+        const tabs = getAvailableTabs();
+        const currentIndex = tabs.indexOf(activeTab as any);
+        if (currentIndex > 0) setActiveTab(tabs[currentIndex - 1]);
+        else setActiveTab(tabs[tabs.length - 1]);
+    };
+
+    const handleTabNext = () => {
+        const tabs = getAvailableTabs();
+        const currentIndex = tabs.indexOf(activeTab as any);
+        if (currentIndex < tabs.length - 1) setActiveTab(tabs[currentIndex + 1]);
+        else setActiveTab(tabs[0]);
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
        if (document.activeElement?.tagName === 'INPUT') return;
        if (e.code === 'KeyQ') {
@@ -140,8 +168,14 @@ export const Inventory: React.FC<InventoryProps> = ({
        }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, hoveredSlotIndex, items, onDropItem, gameMode, onClearInventory]);
+    window.addEventListener('ui_tab_prev', handleTabPrev);
+    window.addEventListener('ui_tab_next', handleTabNext);
+    return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        window.removeEventListener('ui_tab_prev', handleTabPrev);
+        window.removeEventListener('ui_tab_next', handleTabNext);
+    };
+  }, [isOpen, hoveredSlotIndex, items, onDropItem, gameMode, onClearInventory, activeTab, nearbyStation]);
 
   useEffect(() => {
     if (nearbyStation === BlockType.CRAFTING_TABLE) setActiveTab('DECOR');
@@ -336,16 +370,14 @@ export const Inventory: React.FC<InventoryProps> = ({
               
               <div className="flex flex-col sm:flex-row gap-2 justify-between">
                   <div className="flex gap-2 flex-wrap">
-                      {!isTable && (
                           <>
                             <button onClick={() => setActiveTab('INVENTORY')} className={`px-3 py-1 rounded ${activeTab === 'INVENTORY' ? 'bg-blue-600' : 'bg-gray-700'}`}>{t.INVENTORY}</button>
                             <button onClick={() => setActiveTab('CHARACTER')} className={`px-3 py-1 rounded ${activeTab === 'CHARACTER' ? 'bg-purple-600' : 'bg-gray-700'}`}>{t.CHARACTER}</button>
                             <button onClick={() => setActiveTab('CRAFTING')} className={`px-3 py-1 rounded ${activeTab === 'CRAFTING' ? 'bg-green-600' : 'bg-gray-700'}`}>{t.CRAFTING}</button>
-                            {gameMode === 'GOD' && (
+                            {gameMode === 'GOD' || gameMode === 'CREATIVE' ? (
                                 <button onClick={() => setActiveTab('CREATIVE')} className={`px-3 py-1 rounded ${activeTab === 'CREATIVE' ? 'bg-yellow-600' : 'bg-gray-700'}`}>CREATIVE</button>
-                            )}
+                            ) : null}
                           </>
-                      )}
                       {nearbyStation === BlockType.CRAFTING_TABLE && (
                           <>
                             <button onClick={() => setActiveTab('DECOR')} className={`px-3 py-1 rounded ${activeTab === 'DECOR' ? 'bg-orange-600' : 'bg-gray-700'}`}>{t.DECOR}</button>

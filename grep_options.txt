@@ -1,0 +1,129 @@
+136:    const [optionsTab, setOptionsTab] = useState<'GAME' | 'VIDEO' | 'AUDIO'>('GAME');
+218:    const [options, setOptions] = useState<GameOptions>(() => {
+219:        const savedOptsStr = localStorage.getItem('zombiecraft_global_options');
+227:        localStorage.setItem('zombiecraft_global_options', JSON.stringify({
+228:            showCoordinates: options.showCoordinates,
+229:            tutorialEnabled: options.tutorialEnabled,
+230:            showMinimap: options.showMinimap,
+231:            adminMode: options.adminMode,
+232:            isMobile: options.isMobile,
+233:            graphicsQuality: options.graphicsQuality,
+234:            renderDistance: options.renderDistance,
+235:            volume: options.volume,
+236:            shaderLevel: options.shaderLevel,
+237:            textureQuality: options.textureQuality
+240:    }, [options, lang]);
+302:        if (connectionPhase === 'LOADED' && options.multiplayer) {
+307:    }, [connectionPhase, options.multiplayer]);
+341:        if (socketRef.current && options.multiplayer) {
+342:            socketRef.current.emit('game-event', { type, roomId: options.multiplayer.roomId, payload });
+645:                            if (!['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL') && (ent.invincibilityEndTime || 0) < Date.now()) {
+686:        if (options.multiplayer?.mode === 'CLIENT') return;
+820:        if (options.multiplayer?.mode === 'CLIENT') return;
+2059:    const startNewGame = (save: SavedWorld | null, newConfig?: { name: string, seed: number, options: GameOptions }) => {
+2065:            if (save.options) setOptions(save.options);
+2070:            if (!newConfig.options?.multiplayer || newConfig.options.multiplayer.mode === 'HOST') {
+2129:            if (newConfig.options) setOptions(newConfig.options); 
+2136:            if (newConfig.options?.multiplayer?.mode === 'CLIENT') {
+2189:        if (gameState === 'PLAYING' && options.multiplayer) {
+2190:            const roomId = options.multiplayer.roomId;
+2191:            const socket = new PeerSocket(options.multiplayer.mode, roomId, Date.now() + Math.random());
+2197:                if (options.multiplayer?.mode === 'CLIENT') {
+2199:                } else if (options.multiplayer?.mode === 'HOST') {
+2204:                socket.emit('game-event', { type: 'JOIN', roomId, payload: { id: myPlayerId, name: options.multiplayer?.playerName } });
+2214:                if (options.multiplayer?.mode === 'HOST' && worldRef.current) {
+2241:                        if (options.multiplayer?.mode === 'HOST' && worldRef.current) {
+2254:                    if (options.multiplayer?.mode === 'HOST' && worldRef.current) {
+2287:                    if (false && options.multiplayer?.mode === "CLIENT" && payload.world) {
+2295:                    } else if (options.multiplayer?.mode === "CLIENT" && payload.seed) {
+2333:                    if (options.multiplayer?.mode === 'CLIENT') {
+2346:                    if (options.multiplayer?.mode === 'HOST') {
+2388:                        playerName: options.multiplayer?.playerName,
+2407:                if (options.multiplayer?.mode === 'HOST') {
+2418:                } else if (options.multiplayer?.mode === 'CLIENT' && connectionPhaseRef.current !== 'LOADED') {
+2433:    }, [gameState, options.multiplayer]);
+2438:        const save: SavedWorld = { id: currentWorldId, name: currentWorldName, seed: currentSeed, version: 2, worldData: worldRef.current, player: playerRef.current, inventory: inventory, equipment: equipment, furnaces: Array.from(furnacesRef.current.entries()), chests: Array.from(chestsRef.current.entries()), crops: Array.from(cropsRef.current.entries()), time: timeRef.current, totalDays: totalDaysRef.current, lastPlayed: Date.now(), xp: playerXP, level: playerLevel, skillPoints: skillPoints, stats: playerStats, stamina: staminaRef.current, hunger: hungerRef.current, options: options };
+2595:                if (options.adminMode || options.gameMode === 'GOD' || options.gameMode === 'CREATIVE') { setIsAdminMenuOpen(prev => !prev); } 
+2824:            if (options.isMobile && gameState === 'PLAYING' && canvasRef.current) {
+2836:        if (options.isMobile) {
+2844:            if (options.isMobile) {
+2849:    }, [gameState, cursorItem, isFurnaceOpen, isChestOpen, isInventoryOpen, inventory, selectedSlot, playerStats, equipment, isHammerMenuOpen, activeBuildBlock, options.adminMode, isSleepUIOpen, options.isMobile, isArmorBenchOpen, isChatOpen]); 
+2852:        if (gameState !== 'PLAYING' || options.tutorialEnabled === false || unlockedAchievements.includes(0)) return;
+2872:    }, [inventory, equipment, tutorialStep, gameState, options.tutorialEnabled, unlockedAchievements, checkAchievement, lang]);
+3177:                const currentSeason = options.seasonsEnabled ? Math.floor(totalDaysRef.current / 7) % 4 : -1;
+3180:                if (options.seasonsEnabled && cheatTimeMultiplier === 1) {
+3249:                const currentSeason = options.seasonsEnabled ? Math.floor(totalDaysRef.current / 7) % 4 : -1;
+3292:            if (hasUranium && !hasHazmat && !['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) {
+3306:            const decayInterval = (HUNGER_DECAY_TICK + (playerStats.metabolism * 1000)) * (options.difficulty === 'EASY' ? 1.5 : 1); 
+3307:            if (!['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL') && timeRef.current % decayInterval < 1 && hungerRef.current > 0) hungerRef.current = Math.max(0, hungerRef.current - 0.5);
+3324:            if (timeRef.current % 10 === 0 && !['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) {
+3405:                const maxDistSquared = Math.pow((options.renderDistance || 15) * 16 * BLOCK_SIZE, 2);
+3695:                            if (isLandedOnSpikes && blocksFallen > 1 && !['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL') && (player.invincibilityEndTime || 0) < Date.now()) {
+3700:                            } else if (blocksFallen > 6 && !['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL') && (player.invincibilityEndTime || 0) < Date.now()) {
+3701:                                const multiplier = options.difficulty === 'HARD' ? 2 : (options.difficulty === 'EASY' ? 0.5 : 1);
+3750:                    if (['SURVIVAL'].includes(options.gameMode || 'SURVIVAL')) {
+3761:                if (['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) {
+3792:            const isGod = options.gameMode === 'CREATIVE' || options.gameMode === 'GOD';
+3820:            if (['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) {
+3976:                    if (options.multiplayer?.mode === 'CLIENT') {
+4095:                if (options.multiplayer?.mode === 'CLIENT' && (ent.type === 'ZOMBIE' || ent.type === 'COW' || ent.type === 'PIG' || ent.type === 'SHEEP' || ent.type === 'MUTANT_ZOMBIE' || ent.type === 'SCORPION')) { continue; }
+4337:                            else if (!['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL') && (player.invincibilityEndTime || 0) < Date.now()) { 
+4354:                                if (options.difficulty === 'EASY') finalDamage *= 0.5;
+4633:                     if (options.multiplayer?.mode === 'CLIENT') { broadcast('DAMAGE_MOB', { id: ent.id, damage: damage, knockbackX: player.x < ent.x ? 15 : -15, knockbackY: -3 }); ent.health -= damage; ent.vx = player.x < ent.x ? 15 : -15; ent.vy = -3; } else { ent.health -= damage; ent.lastDamageTime = Date.now(); ent.vx = player.x < ent.x ? 15 : -15; ent.vy = -3; 
+4685:                                                     const isAutumn = options.seasonsEnabled && (Math.floor(totalDaysRef.current / 7) % 4) === 2;
+4686:                                                     const isSpring = options.seasonsEnabled && (Math.floor(totalDaysRef.current / 7) % 4) === 0;
+5048:        if (options.graphicsQuality === 'ULTRA') {
+5090:        if (options.seasonsEnabled) {
+5102:        if (options.shaderLevel >= 2) {
+5516:                    else if (options.textureQuality === 'medium' && [
+5528:                        if (options.seasonsEnabled) {
+5565:                        ctx.fillStyle = options.seasonsEnabled ? seasonDirt : BLOCK_COLORS[BlockType.DIRT];
+5569:                        if (!options.seasonsEnabled) {
+5683:                        if (options.seasonsEnabled && block !== BlockType.SNOWY_LEAVES && block !== BlockType.GOLDEN_LEAVES) {
+5704:                            if (options.seasonsEnabled && currentSeason === 2 && block !== BlockType.SNOWY_LEAVES && block !== BlockType.GOLDEN_LEAVES) {
+6123:                if (options.graphicsQuality !== 'UGLY' && light < 15) { const darkness = 1 - (light / 15); ctx.fillStyle = `rgba(5, 10, 25, ${Math.min(0.92, darkness)})`; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE); }
+6133:        if (options.shaderLevel >= 2) {
+6621:        if (options.gameMode !== 'SPECTATOR') {
+6695:        if (options.isMobile && !isPaused) {
+6767:        const currentSeasonPart = options.seasonsEnabled ? Math.floor(totalDaysRef.current / 7) % 4 : -1;
+6837:        if (currentSeasonPart === 3 && options.seasonsEnabled) {
+6926:                let currentSeason = options.seasonsEnabled ? Math.floor(totalDaysRef.current / 7) % 4 : -1;
+6951:                let currentSeason = options.seasonsEnabled ? Math.floor(totalDaysRef.current / 7) % 4 : -1;
+7017:        if (options.graphicsQuality === 'ULTRA') {
+7074:            if (options.shaderLevel >= 3) {
+7114:        if (options.showMinimap !== false) {
+7124:            const isTutorialActive = options.tutorialEnabled !== false && !unlockedAchievements.includes(0) && tutorialStep < 3;
+7217:        if (options.customCursor !== false && !options.isMobile) {
+7265:            <canvas ref={canvasRef} width={window.innerWidth} height={window.innerHeight} className={` ${options.customCursor !== false && !options.isMobile ? 'cursor-none' : ''} touch-none`} />
+7269:                    {options.isMobile && !isInventoryOpen && !isFurnaceOpen && !isChestOpen && !isArmorBenchOpen && (
+7289:                        {options.gameMode !== 'CREATIVE' && options.gameMode !== 'SPECTATOR' && (
+7314:                        {options.showCoordinates && (<div className="text-white font-mono text-sm bg-black/50 p-2 rounded w-fit absolute top-0 left-0 m-1 border border-gray-600 shadow-md">X: {Math.floor(playerRef.current.x / BLOCK_SIZE)} Y: {SEA_LEVEL - (Math.floor(playerRef.current.y / BLOCK_SIZE) - INTERNAL_SURFACE_Y)}</div>)}
+7315:                        {options.adminMode && !isAdminMenuOpen && (<div className="text-red-400 font-mono text-xs bg-black/50 p-1 rounded w-fit absolute top-20 left-0 m-1">{t.ADMIN_HINT}</div>)}
+7316:                        {options.multiplayer && showMultiplayerInfo && (<div className="bg-purple-900/80 border border-purple-500 p-2 rounded text-white font-mono text-sm mt-2 shadow-lg"><div className="font-bold text-yellow-300">ONLINE: {options.multiplayer.mode}</div><div>Room: {options.multiplayer.roomId}</div></div>)}
+7341:                    {options.isMobile && !isChatOpen && (
+7467:                                    if (options.multiplayer) {
+7468:                                        socketRef.current?.emit('chat-message', { roomId: options.multiplayer.roomId, playerName: options.multiplayer.playerName || 'Player', msg: text });
+7499:                    {gameState === 'PLAYING' && options.tutorialEnabled !== false && !unlockedAchievements.includes(0) && tutorialStep < 3 && (
+7539:                        isMobile={options.isMobile}
+7540:                        gameMode={options.gameMode}
+7572:                        {options.difficulty === 'HARD' ? (
+7628:                                 <button onClick={() => setOptionsTab('GAME')} className={`flex-1 py-2 font-bold ${optionsTab==='GAME' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}>{lang === 'PT' ? 'JOGO' : 'GAME'}</button>
+7629:                                 <button onClick={() => setOptionsTab('VIDEO')} className={`flex-1 py-2 font-bold ${optionsTab==='VIDEO' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}>{lang === 'PT' ? 'VÍDEO' : 'VIDEO'}</button>
+7630:                                 <button onClick={() => setOptionsTab('AUDIO')} className={`flex-1 py-2 font-bold ${optionsTab==='AUDIO' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}>{lang === 'PT' ? 'ÁUDIO' : 'AUDIO'}</button>
+7633:                                {optionsTab === 'GAME' && (
+7639:                                        <button onClick={() => setOptions({...options, isMobile: !options.isMobile})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+7641:                                            <span className={options.isMobile ? "text-green-400" : "text-red-400"}>{options.isMobile ? 'ON' : 'OFF'}</span>
+7643:                                        <button onClick={() => setOptions({...options, showCoordinates: !options.showCoordinates})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+7645:                                            <span className={options.showCoordinates ? "text-green-400" : "text-red-400"}>{options.showCoordinates ? 'ON' : 'OFF'}</span>
+7647:                                        <button onClick={() => setOptions({...options, seasonsEnabled: !options.seasonsEnabled})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+7649:                                            <span className={options.seasonsEnabled ? "text-green-400" : "text-red-400"}>{options.seasonsEnabled ? 'ON' : 'OFF'}</span>
+7653:                                {optionsTab === 'VIDEO' && (
+7655:                                        <button onClick={() => setOptions({...options, shaderLevel: options.shaderLevel === 1 ? 2 : (options.shaderLevel === 2 ? 3 : 1)})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+7657:                                            <span className="text-blue-400">{options.shaderLevel === 3 ? 'Ultra Realista' : `Nível ${options.shaderLevel || 1}`}</span>
+7659:                                        <button onClick={() => setOptions({...options, textureQuality: options.textureQuality === 'ultra' ? 'medium' : 'ultra'})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+7661:                                            <span className="text-blue-400">{options.textureQuality === 'ultra' ? 'Ultra (Litxuma)' : 'Media'}</span>
+7663:                                        <button onClick={() => setOptions({...options, graphicsQuality: options.graphicsQuality === 'ULTRA' ? 'NORMAL' : (options.graphicsQuality === 'NORMAL' ? 'UGLY' : 'ULTRA')})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+7665:                                            <span className="text-blue-400">{options.graphicsQuality || 'ULTRA'}</span>
+7669:                                {optionsTab === 'AUDIO' && (
+7674:                                                 <span className="text-blue-400">{Math.round((options.volume || 1) * 100)}%</span>
+7676:                                             <input type="range" min="0" max="1" step="0.05" value={options.volume || 1} onChange={(e) => setOptions({...options, volume: parseFloat(e.target.value)})} className="w-full h-4 bg-gray-900 outline-none" />

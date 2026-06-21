@@ -9,7 +9,7 @@ import {
     COOKING_RECIPES, FUEL_VALUES, FOOD_VALUES, ITEM_COLORS, TERMINAL_VELOCITY, TRANSLATIONS, DAMAGE_VALUES, MAX_LIGHT, BLOCK_HARDNESS,
     ARMOR_PROTECTION, ITEM_NAMES, MAX_DURABILITY, XP_PER_MOB, DEFAULT_STATS, MAX_STAMINA, BASE_STAMINA_DRAIN, BASE_STAMINA_REGEN, HUNGER_DECAY_TICK, SPRINT_HUNGER_DRAIN, DEEP_SLATE_LEVEL, TICKS_PER_HOUR, SEA_LEVEL, INTERNAL_SURFACE_Y, NPC_NAMES, QUESTS
 } from '../constants.ts';
-import { BlockType, Entity, ItemStack, ItemType, WorldData, CraftingRecipe, FurnaceData, Equipment, SavedWorld, PlayerStats, CropData, GameOptions } from '../types.ts';
+import { BlockType, Entity, ItemStack, ItemType, WorldData, CraftingRecipe, FurnaceData, Equipment, SavedWorld, PlayerStats, CropData, GameOptions, DEFAULT_BINDINGS } from '../types.ts';
 import { generateWorld, getBiome } from '../utils/world.ts';
 import { saveWorldToDB, deleteWorldFromDB } from '../utils/storage.ts';
 import { Inventory } from './UI/Inventory.tsx';
@@ -152,6 +152,7 @@ export const GameCanvas: React.FC = () => {
     // Mechanics Refs
     const treePassRef = useRef<boolean>(false); // Allows walking through trees
     const eatingStartRef = useRef<number | null>(null); // Timestamp when eating started
+    const clickStartTimeRef = useRef<number>(0);
 
     // Multiplayer Support
     // We add a 'lastSeen' property to track active players
@@ -220,8 +221,14 @@ export const GameCanvas: React.FC = () => {
         if (savedOptsStr) {
             try { return JSON.parse(savedOptsStr); } catch(e){}
         }
-        return { showCoordinates: false, adminMode: false, isMobile: false, graphicsQuality: 'ULTRA', shaderLevel: 1, textureQuality: 'medium', volume: 1 };
+        return { showCoordinates: false, adminMode: false, isMobile: false, graphicsQuality: 'ULTRA', shaderLevel: 1, textureQuality: 'medium', volume: 1, bindings: DEFAULT_BINDINGS, mouseSensitivity: 1, gamepadSensitivity: 1 };
     });
+    
+    // Add optionsRef for use inside gameLoop
+    const optionsRef = useRef(options);
+    useEffect(() => {
+        optionsRef.current = options;
+    }, [options]);
     
     useEffect(() => {
         localStorage.setItem('zombiecraft_global_options', JSON.stringify({
@@ -234,7 +241,10 @@ export const GameCanvas: React.FC = () => {
             renderDistance: options.renderDistance,
             volume: options.volume,
             shaderLevel: options.shaderLevel,
-            textureQuality: options.textureQuality
+            textureQuality: options.textureQuality,
+            bindings: options.bindings || DEFAULT_BINDINGS,
+            mouseSensitivity: options.mouseSensitivity || 1,
+            gamepadSensitivity: options.gamepadSensitivity || 1
         }));
         localStorage.setItem('zombiecraft_lang', lang);
     }, [options, lang]);
@@ -2145,7 +2155,30 @@ export const GameCanvas: React.FC = () => {
         setGameState('PLAYING');
     };
 
-    const activeChestPosRef = useRef(activeChestPos);
+    
+    const inventoryRef = useRef(inventory);
+    inventoryRef.current = inventory;
+    const selectedSlotRef = useRef(selectedSlot);
+    selectedSlotRef.current = selectedSlot;
+    
+    const gamepadStateRef = useRef<{ 
+        usingGamepad: boolean, 
+        buttons: boolean[], 
+        virtualX: number, 
+        virtualY: number,
+        rtDown: boolean,
+        ltDown: boolean,
+        lastRightStickTime: number
+    }>({
+        usingGamepad: false,
+        buttons: new Array(20).fill(false),
+        virtualX: typeof window !== 'undefined' ? window.innerWidth / 2 : 400,
+        virtualY: typeof window !== 'undefined' ? window.innerHeight / 2 : 300,
+        rtDown: false,
+        ltDown: false,
+        lastRightStickTime: 0
+    });
+const activeChestPosRef = useRef(activeChestPos);
     activeChestPosRef.current = activeChestPos;
     const isChestOpenRef = useRef(isChestOpen);
     isChestOpenRef.current = isChestOpen;
@@ -2157,6 +2190,9 @@ export const GameCanvas: React.FC = () => {
     connectionPhaseRef.current = connectionPhase;
     const cursorItemRef = useRef(cursorItem);
     cursorItemRef.current = cursorItem;
+    const equipmentRef = useRef(equipment);
+    equipmentRef.current = equipment;
+    const isMiningRef = useRef(false);
     
     // --- MULTIPLAYER LOGIC ---
     useEffect(() => {
@@ -2244,6 +2280,8 @@ export const GameCanvas: React.FC = () => {
                             otherPlayersRef.current[existingIdx] = { 
                                 ...otherPlayersRef.current[existingIdx], 
                                 ...payload,
+                                targetX: payload.x,
+                                targetY: payload.y,
                                 lastSeen: Date.now() // Update heartbeat
                             };
                         } else {
@@ -2336,6 +2374,15 @@ export const GameCanvas: React.FC = () => {
                 const p = playerRef.current;
                 
                 // 1. Send Player Position
+                const accsStr = localStorage.getItem('zombiecraft_accounts');
+                const usrName = localStorage.getItem('zombiecraft_current_user');
+                let mySkin = null;
+                if (accsStr && usrName) {
+                    const accs = JSON.parse(accsStr);
+                    const usr = accs.find((a: any) => a.name === usrName);
+                    if (usr && usr.skin) mySkin = usr.skin;
+                }
+
                 socket.emit('game-event', {
                     type: 'UPDATE',
                     roomId,
@@ -2346,10 +2393,17 @@ export const GameCanvas: React.FC = () => {
                         vx: p.vx,
                         vy: p.vy,
                         facingRight: p.facingRight,
+                        posture: p.posture,
                         isMoving: Math.abs(p.vx) > 0.1 || Math.abs(p.vy) > 0.1,
                         playerName: options.multiplayer?.playerName,
                         // @ts-ignore
-                        heldItemIcon: cursorItemRef.current ? cursorItemRef.current.id : null
+                        heldItemIcon: cursorItemRef.current ? cursorItemRef.current.id : null,
+                        heldItem: inventory[selectedSlot] || null,
+                        equipment: equipmentRef.current,
+                        skin: mySkin,
+                        mouseXY: { x: mouseRef.current.x + cameraRef.current.x, y: mouseRef.current.y + cameraRef.current.y },
+                        isBlocking: blockingRef.current,
+                        attackCooldown: p.attackCooldown || 0
                     }
                 });
 
@@ -2379,7 +2433,7 @@ export const GameCanvas: React.FC = () => {
                     }
                 }
 
-            }, 50); 
+            }, 25); 
 
             return () => {
                 clearInterval(interval);
@@ -2480,10 +2534,11 @@ export const GameCanvas: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        const bindings = options.bindings || DEFAULT_BINDINGS;
         const handleKeyDown = (e: KeyboardEvent) => {
             if (isChatOpen || document.activeElement?.tagName === 'INPUT') return;
             if (gameState === 'MENU') return;
-            if (e.code === 'Enter' || e.code === 'KeyT') {
+            if (e.code === 'Enter' || e.code === bindings.chat) {
                 if (gameState === 'PLAYING') {
                      e.preventDefault();
                      setIsChatOpen(true);
@@ -2493,17 +2548,17 @@ export const GameCanvas: React.FC = () => {
             if (e.code === 'Escape') { if (isInventoryOpen || isFurnaceOpen || isChestOpen || isHammerMenuOpen || isAdminMenuOpen || isSleepUIOpen || isArmorBenchOpen) { setIsInventoryOpen(false); setIsFurnaceOpen(false); setIsChestOpen(false); setIsHammerMenuOpen(false); setIsAdminMenuOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); setActiveBuildBlock(null); setCursorItem(null); } else { setGameState(prev => { if (prev === 'PLAYING') setPauseMenuState('MAIN'); return prev === 'PLAYING' ? 'PAUSED' : 'PLAYING'; }); } return; }
             if (gameState !== 'PLAYING') return;
             keysRef.current[e.code] = true;
-            if (e.code === 'KeyE') { const heldItem = inventory[selectedSlot]; if (heldItem && (heldItem.id?.toString() || '').includes('hammer')) { setIsHammerMenuOpen(true); return; } if (isFurnaceOpen || isChestOpen || isSleepUIOpen || isArmorBenchOpen) { setIsFurnaceOpen(false); setIsChestOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); if (cursorItem) setCursorItem(null); } else { if (isInventoryOpen) { setIsInventoryOpen(false); setNearbyStation('NONE'); } else { setIsInventoryOpen(true); setNearbyStation('NONE'); } } }
-            if (e.code === 'KeyF') handleInteraction();
+            if (e.code === bindings.inventory) { const heldItem = inventory[selectedSlot]; if (heldItem && (heldItem.id?.toString() || '').includes('hammer')) { setIsHammerMenuOpen(true); return; } if (isFurnaceOpen || isChestOpen || isSleepUIOpen || isArmorBenchOpen) { setIsFurnaceOpen(false); setIsChestOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); if (cursorItem) setCursorItem(null); } else { if (isInventoryOpen) { setIsInventoryOpen(false); setNearbyStation('NONE'); } else { setIsInventoryOpen(true); setNearbyStation('NONE'); } } }
+            if (e.code === bindings.interact) handleInteraction();
             if (e.code === 'KeyL') setShowAchievementsUI(p => !p);
-            if (e.code === 'KeyQ') dropItem(selectedSlot, e.ctrlKey ? 64 : 1);
+            if (e.code === bindings.drop) dropItem(selectedSlot, e.ctrlKey ? 64 : 1);
             if (e.code === 'KeyX' && !isInventoryOpen && !isChestOpen && !isFurnaceOpen) {
                 treePassRef.current = !treePassRef.current;
                 addNotification(lang === 'PT' ? `Atravessar Árvores: ${treePassRef.current ? 'ON' : 'OFF'}` : `Tree Pass: ${treePassRef.current ? 'ON' : 'OFF'}`);
             }
             
-            // POSTURE TOGGLE (C)
-            if (e.code === 'KeyC') {
+            // POSTURE TOGGLE
+            if (e.code === bindings.crouch) {
                 if (!e.repeat) {
                     const p = playerRef.current;
                     if (p.posture === 'STAND' || !p.posture) {
@@ -2539,10 +2594,11 @@ export const GameCanvas: React.FC = () => {
             }
 
             // TREE PASS-THROUGH TOGGLE (PC)
-            if (e.code === 'KeyS') {
+            if (e.code === bindings.down) {
                 if (!e.repeat) {
                     treePassRef.current = !treePassRef.current;
-                    addNotification(treePassRef.current ? (lang==='PT' ? "Atravessar Árvores: LIGADO" : "Tree Pass: ON") : (lang==='PT' ? "Atravessar Árvores: DESLIGADO" : "Tree Pass: OFF"));
+                    // Note: 'KeyS' original functionality also had tree pass-through toggling. We keep it tied to down but maybe it conflicts with ladders.
+                    // Actually, ladder climbing uses bindings.down later. 
                 }
             }
 
@@ -2551,17 +2607,37 @@ export const GameCanvas: React.FC = () => {
                 if (options.adminMode || options.gameMode === 'GOD' || options.gameMode === 'CREATIVE') { setIsAdminMenuOpen(prev => !prev); } 
             }
             if (e.code.startsWith('Digit')) { const num = parseInt(e.code.replace('Digit', '')); if (num > 0 && num <= 9) setSelectedSlot(num - 1); }
-            if (e.code === 'ShiftLeft') sprintRef.current = true;
+            if (e.code === bindings.sprint) sprintRef.current = true;
             if (e.code === 'KeyR') { setEquipment(prev => ({ ...prev, offHand: inventory[selectedSlot] })); setInventory(prev => { const newInv = [...prev]; newInv[selectedSlot] = equipment.offHand; return newInv; }); }
+            
+            // KEYBOARD -> MOUSE BINDINGS
+            if (e.code === bindings.attack) { mouseRef.current.left = true; clickStartTimeRef.current = Date.now(); }
+            if (e.code === bindings.place) { 
+                mouseRef.current.right = true; 
+                if (equipment.offHand?.type === ItemType.SHIELD) blockingRef.current = true;
+                handleMouseDown({ button: 2, clientX: 0, clientY: 0 } as any); // Simulate full place logic easily
+            }
         };
-        const handleKeyUp = (e: KeyboardEvent) => { keysRef.current[e.code] = false; if (e.code === 'ShiftLeft') sprintRef.current = false; };
+        const handleKeyUp = (e: KeyboardEvent) => { 
+            const bindings = optionsRef.current.bindings || DEFAULT_BINDINGS;
+            keysRef.current[e.code] = false; 
+            if (e.code === bindings.sprint) sprintRef.current = false; 
+            if (e.code === bindings.attack) { mouseRef.current.left = false; breakingRef.current = { x: -1, y: -1, progress: 0 }; }
+            if (e.code === bindings.place) { mouseRef.current.right = false; blockingRef.current = false; eatingStartRef.current = null; }
+        };
         const handleMouseDown = (e: MouseEvent) => { 
             if (gameState !== 'PLAYING') return; 
-            if (e.button === 0) mouseRef.current.left = true; 
-            if (e.button === 1 || e.button === 2) {
+            const bindings = optionsRef.current.bindings || DEFAULT_BINDINGS;
+            const code: Record<number, string> = { 0: 'MouseLeft', 1: 'MouseMiddle', 2: 'MouseRight' };
+            const mCode = code[e.button] || `Mouse${e.button}`;
+            const isAttack = mCode === bindings.attack || e.button === 0;
+            const isPlace = mCode === bindings.place || e.button === 2;
+            
+            if (isAttack) { mouseRef.current.left = true; clickStartTimeRef.current = Date.now(); } 
+            if (isPlace || e.button === 1) {
                 if (equipment.offHand?.type === ItemType.SHIELD) blockingRef.current = true;
             }
-            if (e.button === 2) { 
+            if (isPlace) { 
                 mouseRef.current.right = true; 
                 const heldItem = inventory[selectedSlot]; 
                 
@@ -2751,11 +2827,17 @@ export const GameCanvas: React.FC = () => {
             } 
         };
         const handleMouseUp = (e: MouseEvent) => {
-            if (e.button === 0) { mouseRef.current.left = false; breakingRef.current = { x: -1, y: -1, progress: 0 }; }
-            if (e.button === 1 || e.button === 2) {
+            const bindings = optionsRef.current.bindings || DEFAULT_BINDINGS;
+            const code: Record<number, string> = { 0: 'MouseLeft', 1: 'MouseMiddle', 2: 'MouseRight' };
+            const mCode = code[e.button] || `Mouse${e.button}`;
+            const isAttack = mCode === bindings.attack || e.button === 0;
+            const isPlace = mCode === bindings.place || e.button === 2;
+            
+            if (isAttack) { mouseRef.current.left = false; breakingRef.current = { x: -1, y: -1, progress: 0 }; }
+            if (isPlace || e.button === 1) {
                 blockingRef.current = false;
             }
-            if (e.button === 2) {
+            if (isPlace) {
                 mouseRef.current.right = false;
                 eatingStartRef.current = null; // Stop eating on release
 
@@ -2836,11 +2918,299 @@ export const GameCanvas: React.FC = () => {
             isPaused = true;
         }
         
-        let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
+        
+            // --- GAMEPAD LOGIC START ---
+            const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+            const gp = gamepads[0];
+            if (gp && gp.connected) {
+                const gState = gamepadStateRef.current;
+                gState.usingGamepad = true;
+                
+                // Mover: Left Stick Axes 0 & 1 or D-Pad
+                const leftX = gp.axes[0] || 0;
+                const leftY = gp.axes[1] || 0;
+                
+                // Initialize gamepad previous state
+                if (!gState.prevFrame) gState.prevFrame = {};
+                const gpState: any = {};
+                
+                if (isPaused) {
+                    const dpadL = leftX < -0.3 || gp.buttons[14]?.pressed;
+                    const dpadR = leftX > 0.3 || gp.buttons[15]?.pressed;
+                    const dpadU = leftY < -0.3 || gp.buttons[12]?.pressed;
+                    const dpadD = leftY > 0.3 || gp.buttons[13]?.pressed;
+
+                    // UI Navigation grid snapping for Inventory/Hotbar
+                    if (dpadL || dpadR || dpadU || dpadD) {
+                        if (Date.now() - (gState.lastUIGridMove || 0) > 200) {
+                            setSelectedSlot(p => {
+                                let nv = p;
+                                if (dpadL) nv -= 1;
+                                if (dpadR) nv += 1;
+                                if (dpadU) nv -= 9;
+                                if (dpadD) nv += 9;
+                                return Math.max(0, Math.min(35, nv));
+                            });
+                            gState.lastUIGridMove = Date.now();
+                        }
+                    }
+
+                    // In UI: Right stick moves virtual cursor (or left stick if not navigating grid)
+                    let dx = 0; let dy = 0;
+                    if (!dpadL && !dpadR && !dpadU && !dpadD) {
+                        // Optional: You can fall back to virtual cursor logic here if needed
+                    }
+                    
+                    if (dx !== 0 || dy !== 0) {
+                        gState.virtualX += dx;
+                        gState.virtualY += dy;
+                        gState.virtualX = Math.max(0, Math.min(window.innerWidth, gState.virtualX));
+                        gState.virtualY = Math.max(0, Math.min(window.innerHeight, gState.virtualY));
+                        mouseRef.current.x = gState.virtualX;
+                        mouseRef.current.y = gState.virtualY;
+                        
+                        // Limit uiMousePos updates to avoid 60fps React render lagging the UI
+                        if (Date.now() - (gState.lastUIRender || 0) > 32) {
+                            setUiMousePos({ x: gState.virtualX, y: gState.virtualY });
+                            gState.lastUIRender = Date.now();
+                        }
+                    }
+                    
+                    // Release game movement when in UI
+                    ['KeyA', 'KeyD', 'KeyW', 'Space', 'ShiftLeft', 'KeyC'].forEach(k => {
+                        if (gState.prevFrame[k]) keysRef.current[k] = false;
+                        gpState[k] = false;
+                    });
+                } else {
+                    // In game: Move player
+                    gpState['KeyA'] = leftX < -0.3 || gp.buttons[14]?.pressed;
+                    gpState['KeyD'] = leftX > 0.3 || gp.buttons[15]?.pressed;
+                    gpState['ShiftLeft'] = Math.abs(leftX) > 0.8 || gp.buttons[10]?.pressed;
+                    gpState['KeyW'] = gp.buttons[0]?.pressed || gp.buttons[12]?.pressed;
+                    gpState['Space'] = gpState['KeyW'];
+                    gpState['KeyC'] = gp.buttons[13]?.pressed;
+                    
+                    // Apply GP inputs
+                    Object.keys(gpState).forEach(k => {
+                         if (gpState[k]) keysRef.current[k] = true;
+                         else if (gState.prevFrame[k]) keysRef.current[k] = false;
+                    });
+                    
+                    if (gpState['ShiftLeft']) sprintRef.current = true;
+                    else if (gState.prevFrame['ShiftLeft']) sprintRef.current = false;
+                }
+                gState.prevFrame = gpState;
+
+                // Mirar: Right Stick Axes 2 & 3
+                const rsX = Math.abs(gp.axes[2]) > 0.2 ? gp.axes[2] : 0;
+                const rsY = Math.abs(gp.axes[3]) > 0.2 ? gp.axes[3] : 0;
+                
+                if (rsX !== 0 || rsY !== 0) {
+                    const sens = optionsRef.current.gamepadSensitivity || 1.0;
+                    gState.virtualX += rsX * (isPaused ? 8 : 12) * sens;
+                    gState.virtualY += rsY * (isPaused ? 8 : 12) * sens;
+                    
+                    const cvsWidth = window.innerWidth;
+                    const cvsHeight = window.innerHeight;
+
+                    gState.virtualX = Math.max(0, Math.min(cvsWidth, gState.virtualX));
+                    gState.virtualY = Math.max(0, Math.min(cvsHeight, gState.virtualY));
+                    
+                    mouseRef.current.x = gState.virtualX;
+                    mouseRef.current.y = gState.virtualY;
+                    
+                    // Limit uiMousePos updates
+                    if (isPaused && Date.now() - (gState.lastUIRender || 0) > 32) {
+                        setUiMousePos({ x: gState.virtualX, y: gState.virtualY }); // update UI cursor
+                        gState.lastUIRender = Date.now();
+                    }
+                    gState.lastRightStickTime = Date.now();
+                }
+
+                // UI Click Simulation using A Button (0)
+                // A Button was also mapped to w. We should prevent jump if UI is open.
+                
+                // Buttons Tracking
+                for (let i = 0; i < gp.buttons.length; i++) {
+                    const pressed = gp.buttons[i].pressed;
+                    const justPressed = pressed && (!gState.buttons || !gState.buttons[i]);
+                    
+                    if (justPressed) {
+                        // Switch Hotbar
+                        if (i === 4) {
+                            if (isPaused) window.dispatchEvent(new CustomEvent('ui_tab_prev'));
+                            else setSelectedSlot(prev => (prev - 1 + 9) % 9);
+                        }
+                        if (i === 5) {
+                            if (isPaused) window.dispatchEvent(new CustomEvent('ui_tab_next'));
+                            else setSelectedSlot(prev => (prev + 1) % 9);
+                        }
+                        
+                        // Menu/Inventory (X/Square is 2, Start is 9)
+                        if (i === 2 || i === 9) {
+                            if (!isInventoryOpen) setIsInventoryOpen(true);
+                            else setIsInventoryOpen(false);
+                            keysRef.current['KeyW'] = false;
+                            keysRef.current['KeyA'] = false;
+                            keysRef.current['KeyD'] = false;
+                        }
+                        
+                        // OffHand (Y/Triangle is 3)
+                        if (i === 3) {
+                            setEquipment(e => {
+                                const currentInventory = inventoryRef && inventoryRef.current ? inventoryRef.current : inventory;
+                                const held = currentInventory[selectedSlotRef ? selectedSlotRef.current : selectedSlot];
+                                setInventory(prev => {
+                                     const n = [...prev];
+                                     n[selectedSlotRef ? selectedSlotRef.current : selectedSlot] = e.offHand;
+                                     return n;
+                                });
+                                return { ...e, offHand: held };
+                            });
+                        }
+                        
+                        // Fechar Menus ou Drop (B/Circle is 1)
+                        if (i === 1) {
+                            if (isInventoryOpen) setIsInventoryOpen(false);
+                            else if (isFurnaceOpen) setIsFurnaceOpen(false);
+                            else if (isChestOpen) setIsChestOpen(false);
+                            else if (isHammerMenuOpen) setIsHammerMenuOpen(false);
+                            else if (isAdminMenuOpen) setIsAdminMenuOpen(false);
+                            else if (isArmorBenchOpen) setIsArmorBenchOpen(false);
+                            else {
+                                dropItem(); // drop currently held item
+                            }
+                        }
+                        
+                        // If UI is open, simulate click with A button (0)
+                        if (i === 0 && isPaused) {
+                             const timeSinceDpad = Date.now() - (gState.lastUIGridMove || 0);
+                             const timeSinceRstick = Date.now() - (gState.lastRightStickTime || 0);
+                             
+                             if (isInventoryOpen && !isChestOpen && !isFurnaceOpen && !isArmorBenchOpen && !isHammerMenuOpen && timeSinceDpad < 3000 && timeSinceRstick > timeSinceDpad) {
+                                  // Directly interact using slot selection on inventory mode if D-Pad was used recently
+                                  handleInventorySlotClick(selectedSlotRef ? selectedSlotRef.current : selectedSlot, 0);
+                             } else {
+                                  // Use virtual cursor
+                                  const el = document.elementFromPoint(gState.virtualX, gState.virtualY) as HTMLElement;
+                                  if (el) {
+                                      const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, button: 0 });
+                                      el.dispatchEvent(ev);
+                                      const evUp = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, button: 0 });
+                                      el.dispatchEvent(evUp);
+                                      if (typeof el.click === 'function') el.click();
+                                  }
+                             }
+                        }
+                    }
+                    if (!gState.buttons) gState.buttons = [];
+                    gState.buttons[i] = pressed;
+                }
+
+                // RT / LT triggers -> Mine / Place
+                const rt = gp.buttons[7]?.pressed; // Mine
+                const lt = gp.buttons[6]?.pressed; // Place
+
+                if (rt) {
+                    mouseRef.current.left = true;
+                    if (!gState.rtDown) {
+                        gState.rtDown = true;
+                        isMiningRef.current = true;
+                        // Also trigger click if UI open
+                        if (isPaused) {
+                             const el = document.elementFromPoint(gState.virtualX, gState.virtualY) as HTMLElement;
+                             if (el) {
+                                 const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, button: 0 });
+                                 el.dispatchEvent(ev);
+                                 const evUp = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, button: 0 });
+                                 el.dispatchEvent(evUp);
+                                 if (typeof el.click === 'function') el.click();
+                             }
+                        }
+                    }
+                } else if (!rt) {
+                    mouseRef.current.left = false;
+                    if (gState.rtDown) {
+                        gState.rtDown = false;
+                        isMiningRef.current = false;
+                        breakingRef.current = { x: -1, y: -1, progress: 0 };
+                    }
+                }
+
+                if (lt) {
+                    if (!gState.ltDown) {
+                        gState.ltDown = true;
+                        if (isPaused) {
+                             const el = document.elementFromPoint(gState.virtualX, gState.virtualY) as HTMLElement;
+                             if (el) {
+                                 const ev = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, button: 2 });
+                                 el.dispatchEvent(ev);
+                                 const evUp = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, button: 2 });
+                                 el.dispatchEvent(evUp);
+                             }
+                        }
+                    }
+                    mouseRef.current.right = true;
+                } else if (!lt) {
+                    if (gState.ltDown) {
+                        gState.ltDown = false;
+                        eatingStartRef.current = null;
+                        
+                        // Door interact on release ONLY if gameplay
+                        if (!isPaused) {
+                            const heldItem = inventory[selectedSlot];
+                            if (heldItem && heldItem.type === ItemType.ARMOR) { 
+                                const idStr = (heldItem.id?.toString() || ''); 
+                                let slot: keyof Equipment | null = null; 
+                                if (idStr.includes('helmet')) slot = 'helmet'; else if (idStr.includes('chestplate')) slot = 'chestplate'; else if (idStr.includes('leggings')) slot = 'leggings'; else if (idStr.includes('boots')) slot = 'boots'; 
+                                if (slot) { 
+                                    const currentEquip = equipment[slot]; 
+                                    setEquipment(prev => ({ ...prev, [slot]: heldItem })); 
+                                    setInventory(prev => { const n = [...prev]; n[selectedSlot] = currentEquip; return n; }); 
+                                } 
+                            } else {
+                                const bx = Math.floor((mouseRef.current.x + cameraRef.current.x) / BLOCK_SIZE); const by = Math.floor((mouseRef.current.y + cameraRef.current.y) / BLOCK_SIZE);
+                                if (worldRef.current && mouseRef.current && cameraRef.current) { const idx = by * WORLD_WIDTH + bx; const b = worldRef.current.blocks[idx]; if (b === BlockType.DOOR_BOTTOM_CLOSED) { setBlockAt(bx, by, BlockType.DOOR_BOTTOM_OPEN); setBlockAt(bx, by - 1, BlockType.DOOR_TOP_OPEN); } else if (b === BlockType.DOOR_BOTTOM_OPEN) { setBlockAt(bx, by, BlockType.DOOR_BOTTOM_CLOSED); setBlockAt(bx, by - 1, BlockType.DOOR_TOP_CLOSED); } else if (b === BlockType.DOOR_TOP_CLOSED) { setBlockAt(bx, by, BlockType.DOOR_TOP_OPEN); setBlockAt(bx, by + 1, BlockType.DOOR_BOTTOM_OPEN); } else if (b === BlockType.DOOR_TOP_OPEN) { setBlockAt(bx, by, BlockType.DOOR_TOP_CLOSED); setBlockAt(bx, by + 1, BlockType.DOOR_BOTTOM_CLOSED); } }
+                            }
+                        }
+                    }
+                    mouseRef.current.right = false;
+                }
+            } else {
+                 if (gamepadStateRef.current.usingGamepad) {
+                     gamepadStateRef.current.usingGamepad = false;
+                 }
+            }
+            // If UI is open, don't let W act as jump
+            if (isPaused) {
+                 keysRef.current['KeyW'] = false;
+                 keysRef.current['Space'] = false;
+            }
+            // --- GAMEPAD LOGIC END ---
+
+let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
         if (temperatureRef.current > 85) curTempState = 'HOT';
         else if (temperatureRef.current < 15) curTempState = 'COLD';
 
         if (!isPaused) {
+
+
+            
+
+            // Smoothly project other players using interpolation to network target
+            otherPlayersRef.current.forEach(p => {
+                 if (p.targetX !== undefined && p.targetY !== undefined) {
+                     p.x += ((p.targetX || p.x) - p.x) * 0.4;
+                     p.y += ((p.targetY || p.y) - p.y) * 0.4;
+                 } else {
+                     // fallback if no targetX (very first frame before target set)
+                     if (Math.abs(p.vx || 0) > 0.1 || Math.abs(p.vy || 0) > 0.1) {
+                         p.x += (p.vx || 0);
+                         p.y += (p.vy || 0);
+                     }
+                 }
+            });
+
             // Slow motion frame skipping logic
             if (cheatTimeMultiplier === -1) {
                  if (Date.now() % 32 < 16) { 
@@ -3229,16 +3599,18 @@ export const GameCanvas: React.FC = () => {
             // --- LADDER PHYSICS ---
             
             if (!isOnLadder) isClimbingRef.current = false;
+            
+            const bindings = optionsRef.current.bindings || DEFAULT_BINDINGS;
 
             if (isClimbingRef.current) {
                 player.vx = 0;
                 player.vy = 0;
                 const climbSpeed = 3;
-                if (keysRef.current['KeyW']) player.vy = -climbSpeed;
-                if (keysRef.current['KeyS']) player.vy = climbSpeed;
-                if (keysRef.current['KeyA']) { player.vx = -climbSpeed; }
-                if (keysRef.current['KeyD']) { player.vx = climbSpeed; }
-                if (keysRef.current['Space']) {
+                if (keysRef.current[bindings.up]) player.vy = -climbSpeed;
+                if (keysRef.current[bindings.down]) player.vy = climbSpeed;
+                if (keysRef.current[bindings.left]) { player.vx = -climbSpeed; }
+                if (keysRef.current[bindings.right]) { player.vx = climbSpeed; }
+                if (keysRef.current[bindings.jump]) {
                     isClimbingRef.current = false;
                     player.vy = -JUMP_FORCE * 0.8;
                 }
@@ -3251,8 +3623,8 @@ export const GameCanvas: React.FC = () => {
                 player.highestY = player.y;
             } else if (blockingRef.current) {
                 if (Math.abs(player.vx) > speed) { player.vx *= 0.9; }
-                else if (keysRef.current['KeyA']) { player.vx = -speed * 0.3; } 
-                else if (keysRef.current['KeyD']) { player.vx = speed * 0.3; } 
+                else if (keysRef.current[bindings.left]) { player.vx = -speed * 0.3; } 
+                else if (keysRef.current[bindings.right]) { player.vx = speed * 0.3; } 
                 else { player.vx *= 0.8; }
             } else {
                 const isKnockedBack = player.lastDamageTime && Date.now() - player.lastDamageTime < 300;
@@ -3261,8 +3633,8 @@ export const GameCanvas: React.FC = () => {
                 } else if (Math.abs(player.vx) > speed) { 
                     player.vx *= 0.9; 
                 }
-                else if (keysRef.current['KeyA']) { player.vx = -speed; } 
-                else if (keysRef.current['KeyD']) { player.vx = speed; } 
+                else if (keysRef.current[bindings.left]) { player.vx = -speed; } 
+                else if (keysRef.current[bindings.right]) { player.vx = speed; } 
                 else { player.vx *= 0.8; }
             }
             
@@ -3271,7 +3643,7 @@ export const GameCanvas: React.FC = () => {
             player.facingRight = worldMouseX > (player.x + player.width/2);
             
             if (!isClimbingRef.current) {
-                if (adminFlags.noClip) { const flySpeed = speed * 1.5; player.vx = 0; player.vy = 0; if (keysRef.current['KeyW']) player.vy = -flySpeed; if (keysRef.current['KeyS']) player.vy = flySpeed; if (keysRef.current['KeyA']) { player.vx = -flySpeed; player.facingRight = false; } if (keysRef.current['KeyD']) { player.vx = flySpeed; player.facingRight = true; } player.x += player.vx; player.y += player.vy; player.grounded = false; player.highestY = player.y; } else { 
+                if (adminFlags.noClip) { const flySpeed = speed * 1.5; player.vx = 0; player.vy = 0; if (keysRef.current[bindings.up]) player.vy = -flySpeed; if (keysRef.current[bindings.down]) player.vy = flySpeed; if (keysRef.current[bindings.left]) { player.vx = -flySpeed; player.facingRight = false; } if (keysRef.current[bindings.right]) { player.vx = flySpeed; player.facingRight = true; } player.x += player.vx; player.y += player.vy; player.grounded = false; player.highestY = player.y; } else { 
                     const pCenterYWater = Math.floor((player.y + player.height/2) / BLOCK_SIZE);
                     const feetYWater = Math.floor((player.y + player.height - 4) / BLOCK_SIZE);
                     const headYWater = Math.floor((player.y + 4) / BLOCK_SIZE);
@@ -3280,7 +3652,7 @@ export const GameCanvas: React.FC = () => {
                     const inWaterHead = world.blocks[headYWater * WORLD_WIDTH + pCenterX] === BlockType.WATER || world.blocks[headYWater * WORLD_WIDTH + pCenterX] === BlockType.LAVA;
                     const inWater = inWaterCenter || inWaterFeet || inWaterHead;
                     
-                    if (inWater && sprintRef.current && (keysRef.current['KeyA'] || keysRef.current['KeyD'] || keysRef.current['KeyW'] || keysRef.current['KeyS'])) {
+                    if (inWater && sprintRef.current && (keysRef.current[bindings.left] || keysRef.current[bindings.right] || keysRef.current[bindings.up] || keysRef.current[bindings.down])) {
                         if (player.posture !== 'PRONE') {
                             player.posture = 'PRONE';
                             player.height = 24;
@@ -3307,7 +3679,7 @@ export const GameCanvas: React.FC = () => {
                         if (player.vy > 2) player.vy = 2; 
                         player.vx *= 0.8; 
                         player.vy *= 0.9; 
-                        if (keysRef.current['Space']) {
+                        if (keysRef.current[bindings.jump]) {
                             // Give a jump boost when at the surface to pop out of water
                             if (!inWaterHead && !inWaterCenter) {
                                 player.vy = -JUMP_FORCE * 0.95;
@@ -3318,11 +3690,11 @@ export const GameCanvas: React.FC = () => {
                         } 
                         if (sprintRef.current && player.posture === 'PRONE') { 
                             const swimSpeed = 4.5; 
-                            if (keysRef.current['KeyA']) player.vx = -swimSpeed; 
-                            else if (keysRef.current['KeyD']) player.vx = swimSpeed; 
+                            if (keysRef.current[bindings.left]) player.vx = -swimSpeed; 
+                            else if (keysRef.current[bindings.right]) player.vx = swimSpeed; 
                         } 
                     } else { 
-                        if ((keysRef.current['Space'] || keysRef.current['KeyW']) && player.grounded && player.posture !== 'PRONE') { player.vy = player.posture === 'CROUCH' ? -JUMP_FORCE * 0.6 : -JUMP_FORCE; player.grounded = false; } 
+                        if ((keysRef.current[bindings.jump] || keysRef.current[bindings.up]) && player.grounded && player.posture !== 'PRONE') { player.vy = player.posture === 'CROUCH' ? -JUMP_FORCE * 0.6 : -JUMP_FORCE; player.grounded = false; } 
                         player.vy += GRAVITY; if (player.vy > TERMINAL_VELOCITY) player.vy = TERMINAL_VELOCITY; 
                     } 
                 
@@ -5850,496 +6222,502 @@ export const GameCanvas: React.FC = () => {
             });
         }
 
+        
         // --- NEW PLAYER RENDERING ---
-        if (options.gameMode !== 'SPECTATOR') {
-        ctx.save();
-        ctx.translate(player.x + player.width/2, player.y + player.height/2);
-        if (!player.facingRight) ctx.scale(-1, 1);
-        
-        // Scale visually based on posture
-        if (player.posture === 'CROUCH') {
-            ctx.scale(1, 40/56);
-        } else if (player.posture === 'PRONE') {
-            if (!player.facingRight) {
-                ctx.rotate(-Math.PI / 2);
-            } else {
-                ctx.rotate(Math.PI / 2);
+        const drawCharacter = (charData: any, isLocal: boolean) => {
+            const playerContext = charData;
+            ctx.save();
+            ctx.translate(playerContext.x + playerContext.width/2, playerContext.y + playerContext.height/2);
+            if (!playerContext.facingRight) ctx.scale(-1, 1);
+            
+            // Scale visually based on posture
+            if (playerContext.posture === 'CROUCH') {
+                ctx.scale(1, 40/56);
+            } else if (playerContext.posture === 'PRONE') {
+                if (!playerContext.facingRight) {
+                    ctx.rotate(-Math.PI / 2);
+                } else {
+                    ctx.rotate(Math.PI / 2);
+                }
+                ctx.translate(10, 0); 
             }
-            ctx.translate(10, 0); // shift drawing so it aligns better inside the 1 block
-        }
 
-        const isMoving = Math.abs(player.vx) > 0.1;
-        const walkCycle = isMoving ? Math.sin(Date.now() / 100) * 5 : 0;
+            const isMoving = Math.abs(playerContext.vx) > 0.1;
+            const walkCycle = isMoving ? Math.sin(Date.now() / 100) * 5 : 0;
 
-        // Custom Skin Data (Fallback to default)
-        const accsStr = localStorage.getItem('zombiecraft_accounts');
-        const usrName = localStorage.getItem('zombiecraft_current_user');
-        let cSkin = null;
-        if (accsStr && usrName) {
-            const accs = JSON.parse(accsStr);
-            const usr = accs.find((a: any) => a.name === usrName);
-            if (usr && usr.skin) cSkin = usr.skin;
-        }
-
-        const skinColor = cSkin?.skinColor || '#ffcc80';
-        
-        // Clothes (1-10)
-        let shirtColor = skinColor;
-        switch(cSkin?.clothes) {
-            case '2': shirtColor = '#222'; break; // terno
-            case '3': shirtColor = '#1e3a8a'; break; // azul
-            case '4': shirtColor = '#b91c1c'; break; // vermelho
-            case '5': shirtColor = '#9ca3af'; break; // cinza
-            case '6': shirtColor = '#15803d'; break; // verde
-            case '7': shirtColor = '#ffffff'; break; // regata branca
-            case '8': shirtColor = '#451a03'; break; // jaqueta 
-            case '9': shirtColor = '#f59e0b'; break; // amarela/xadrez
-            case '10': shirtColor = '#facc15'; break; // amarela
-        }
-        
-        // Pants (1-10)
-        let pantsColor = skinColor;
-        switch(cSkin?.pants) {
-            case '2': pantsColor = '#222'; break; // terno
-            case '3': pantsColor = '#1d4ed8'; break; // jeans azul
-            case '4': pantsColor = '#1f2937'; break; // jeans preto
-            case '5': pantsColor = '#ffed4a'; break; // shorts
-            case '6': pantsColor = '#6b7280'; break; // moletom
-            case '7': pantsColor = '#a16207'; break; // cargo
-            case '8': pantsColor = '#78350f'; break; // couro
-            case '9': pantsColor = '#4d7c0f'; break; // camuflado
-            case '10': pantsColor = '#ef4444'; break; // shorts vermelho
-        }
-
-        const isBareChest = !cSkin?.clothes || cSkin?.clothes === '1';
-        const isBarePants = !cSkin?.pants || cSkin?.pants === '1';
-
-        // Legs
-        ctx.fillStyle = isBarePants ? skinColor : pantsColor;
-        ctx.fillRect(-6 + walkCycle, 12, 6, 16); // Back Leg
-        ctx.fillRect(-6 - walkCycle, 12, 6, 16); // Front Leg
-        
-        // Shoes (1-10)
-        if (cSkin?.shoes && cSkin?.shoes !== '1') {
-            let shoeCol = '#111';
-            switch(cSkin.shoes) {
-                case '2': shoeCol = '#000'; break;
-                case '3': shoeCol = '#fff'; break;
-                case '4': shoeCol = '#3f3f46'; break;
-                case '5': shoeCol = '#dc2626'; break;
-                case '6': shoeCol = '#78350f'; break; // sandálias/sapatilha
-                case '7': shoeCol = '#8b5cf6'; break;
-                case '8': shoeCol = '#92400e'; break;
-                case '9': shoeCol = '#fcd34d'; break;
-                case '10': shoeCol = '#c2410c'; break;
+            const cSkin = playerContext.skin || null;
+            const skinColor = cSkin?.skinColor || '#ffcc80';
+            
+            // Clothes (1-10)
+            let shirtColor = skinColor;
+            switch(cSkin?.clothes) {
+                case '2': shirtColor = '#222'; break; // terno
+                case '3': shirtColor = '#1e3a8a'; break; // azul
+                case '4': shirtColor = '#b91c1c'; break; // vermelho
+                case '5': shirtColor = '#9ca3af'; break; // cinza
+                case '6': shirtColor = '#15803d'; break; // verde
+                case '7': shirtColor = '#ffffff'; break; // regata branca
+                case '8': shirtColor = '#451a03'; break; // jaqueta 
+                case '9': shirtColor = '#f59e0b'; break; // amarela/xadrez
+                case '10': shirtColor = '#facc15'; break; // amarela
             }
-            ctx.fillStyle = shoeCol;
-            ctx.fillRect(-8 + walkCycle, 24, 10, 4);
-            ctx.fillRect(-8 - walkCycle, 24, 10, 4);
-        }
-
-        // Body
-        ctx.fillStyle = shirtColor; 
-        ctx.fillRect(-10, -16, 20, 28);
-        if (isBareChest) {
-            ctx.fillStyle = '#ccc';
-            ctx.fillRect(-10, 8, 20, 4); // Underwear band
-        } else if (cSkin?.clothes === '2') { // terno
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(-2, -16, 4, 28); // white shirt middle
-        }
-
-
-        // Armor: Leggings
-        if (equipment.leggings) {
-            let col = '#cfd8dc'; const id = (equipment.leggings?.id?.toString() || ''); 
-            if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
-            ctx.fillStyle = col;
-            ctx.fillRect(-7 + walkCycle, 12, 8, 12); // Back Leg
-            ctx.fillRect(-7 - walkCycle, 12, 8, 12); // Front Leg
-            ctx.fillRect(-11, 6, 22, 8); // Pelvis
-            if (id.includes('reinforced')) {
-                ctx.fillStyle = '#00bcd4';
-                ctx.fillRect(-7 + walkCycle, 20, 8, 2);
-                ctx.fillRect(-7 - walkCycle, 20, 8, 2);
-                ctx.fillRect(-11, 10, 22, 2);
+            
+            // Pants (1-10)
+            let pantsColor = skinColor;
+            switch(cSkin?.pants) {
+                case '2': pantsColor = '#222'; break; // terno
+                case '3': pantsColor = '#1d4ed8'; break; // jeans azul
+                case '4': pantsColor = '#1f2937'; break; // jeans preto
+                case '5': pantsColor = '#ffed4a'; break; // shorts
+                case '6': pantsColor = '#6b7280'; break; // moletom
+                case '7': pantsColor = '#a16207'; break; // cargo
+                case '8': pantsColor = '#78350f'; break; // couro
+                case '9': pantsColor = '#4d7c0f'; break; // camuflado
+                case '10': pantsColor = '#ef4444'; break; // shorts vermelho
             }
-            ctx.fillStyle = 'rgba(0,0,0,0.2)';
-            ctx.fillRect(-11, 12, 22, 2); // Belt shadow
-        }
 
-        // Armor: Boots
-        if (equipment.boots) {
-            let col = '#cfd8dc'; const id = (equipment.boots?.id?.toString() || ''); 
-            if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
-            ctx.fillStyle = col;
-            ctx.fillRect(-8 + walkCycle, 20, 10, 8); // Back Leg Boot
-            ctx.fillRect(-8 - walkCycle, 20, 10, 8); // Front Leg Boot
-            if (id.includes('reinforced')) {
-                ctx.fillStyle = '#00bcd4';
-                ctx.fillRect(-8 + walkCycle, 22, 10, 2);
-                ctx.fillRect(-8 - walkCycle, 22, 10, 2);
+            const isBareChest = !cSkin?.clothes || cSkin?.clothes === '1';
+            const isBarePants = !cSkin?.pants || cSkin?.pants === '1';
+
+            // Legs
+            ctx.fillStyle = isBarePants ? skinColor : pantsColor;
+            ctx.fillRect(-6 + walkCycle, 12, 6, 16); // Back Leg
+            ctx.fillRect(-6 - walkCycle, 12, 6, 16); // Front Leg
+            
+            // Shoes (1-10)
+            if (cSkin?.shoes && cSkin?.shoes !== '1') {
+                let shoeCol = '#111';
+                switch(cSkin.shoes) {
+                    case '2': shoeCol = '#000'; break;
+                    case '3': shoeCol = '#fff'; break;
+                    case '4': shoeCol = '#3f3f46'; break;
+                    case '5': shoeCol = '#dc2626'; break;
+                    case '6': shoeCol = '#78350f'; break; // sandálias/sapatilha
+                    case '7': shoeCol = '#8b5cf6'; break;
+                    case '8': shoeCol = '#92400e'; break;
+                    case '9': shoeCol = '#fcd34d'; break;
+                    case '10': shoeCol = '#c2410c'; break;
+                }
+                ctx.fillStyle = shoeCol;
+                ctx.fillRect(-8 + walkCycle, 24, 10, 4);
+                ctx.fillRect(-8 - walkCycle, 24, 10, 4);
             }
-            ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.fillRect(-8 + walkCycle, 20, 4, 8);
-            ctx.fillRect(-8 - walkCycle, 20, 4, 8);
-        }
 
-        // Head
-        ctx.fillStyle = '#ffcc80'; // Skin
-        ctx.fillRect(-8, -28, 16, 16);
-        
-        // Hair
-        if (cSkin?.hairVariant === 'normal' || !cSkin?.hairVariant) {
-             ctx.fillStyle = cSkin?.hairColor || '#ff9800';
-             ctx.fillRect(-8, -30, 16, 4); // Hair top
-             ctx.fillRect(-8, -26, 4, 4); // Hair side
-        } else if (cSkin?.hairVariant === 'calvo') {
-             // Bald is no hair
-        }
-
-        // Mustache
-        if (cSkin?.hasMustache) {
-             ctx.fillStyle = cSkin?.mustacheColor || '#111';
-             ctx.fillRect(-5, -16, 10, 2);
-        }
-
-        // Mouth (none, neutral, happy, sad, surprised)
-        const mouthType = cSkin?.mouthType || 'neutral';
-        if (mouthType !== 'none') {
-            ctx.fillStyle = '#6a1b9a'; // Inside mouth color
-            if (mouthType === 'neutral') ctx.fillRect(-3, -13, 6, 1);
-            else if (mouthType === 'happy') {
-                ctx.fillRect(-3, -13, 6, 1);
-                ctx.fillRect(-4, -14, 1, 2);
-                ctx.fillRect(3, -14, 1, 2);
-            }
-            else if (mouthType === 'sad') {
-                ctx.fillRect(-3, -14, 6, 1);
-                ctx.fillRect(-4, -13, 1, 2);
-                ctx.fillRect(3, -13, 1, 2);
-            }
-            else if (mouthType === 'surprised') {
-                ctx.fillRect(-2, -14, 4, 3);
-            }
-        }
-
-        // Eyes (Look at mouse/cursor)
-        // Ensure eyes correctly track direction relative to facingRight
-        const eyeXOffset = player.facingRight ? 4 : -4;
-        
-        // Calculate vertical and horizontal eye track direction based on mouse
-        const lookUp = worldMouseY < player.y - 16;
-        const lookDown = worldMouseY > player.y + 16;
-        const eyeY = -24 + (lookDown ? 2 : lookUp ? -2 : 0);
-        
-        ctx.fillStyle = 'white';
-        ctx.fillRect(-2 + eyeXOffset, eyeY, 4, 4);
-        
-        // Pupil
-        ctx.fillStyle = cSkin?.eyeColor || 'black';
-        
-        let pupilXDiff = 0;
-        if (player.facingRight) {
-             pupilXDiff = worldMouseX > player.x + 16 ? 1 : (worldMouseX < player.x - 16 ? -1 : 0);
-        } else {
-             pupilXDiff = worldMouseX < player.x - 16 ? -1 : (worldMouseX > player.x + 16 ? 1 : 0);
-        }
-
-        ctx.fillRect(-1 + eyeXOffset + pupilXDiff, eyeY + 1, 2, 2);
-
-        // Armor: Chestplate
-        if (equipment.chestplate) { 
-            let col = '#cfd8dc'; const id = (equipment.chestplate?.id?.toString() || ''); 
-            if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
-            ctx.fillStyle = col; 
-            ctx.fillRect(-12, -18, 24, 26); // Main body
-            if (id.includes('reinforced')) {
-                ctx.fillStyle = '#00bcd4';
-                ctx.fillRect(-6, -12, 12, 12); // Blue core
-                ctx.fillRect(-12, 4, 24, 2); // Blue belt line
-            }
-            ctx.fillStyle = 'rgba(255,255,255,0.2)'; // Highlight
-            ctx.fillRect(-10, -16, 6, 22);
-            ctx.fillStyle = 'rgba(0,0,0,0.2)'; // Shadow
-            ctx.fillRect(4, -16, 6, 22);
-            ctx.fillRect(-12, 4, 24, 4); // Belt area
-        }
-
-        // Armor: Helmet
-        if (equipment.helmet) { 
-            let col = '#cfd8dc'; const id = (equipment.helmet?.id?.toString() || ''); 
-            if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
-            ctx.fillStyle = col; 
-            ctx.fillRect(-10, -32, 20, 14); // Hat top
-            ctx.fillRect(-10, -32, 6, 20); // Side back
-            ctx.fillRect(6, -32, 4, 20); // Side front
-            ctx.fillRect(-12, -22, 24, 4); // Brim/visor
-            if (id.includes('reinforced')) {
-                ctx.fillStyle = '#00bcd4';
-                ctx.fillRect(-12, -22, 24, 2); // Blue visor line
-                ctx.fillRect(-4, -30, 8, 4); // Blue crest
-            }
-            ctx.fillStyle = 'rgba(255,255,255,0.3)'; // Highlight
-            ctx.fillRect(-6, -30, 8, 4);
-            ctx.fillStyle = 'rgba(0,0,0,0.2)'; // Shadow
-            ctx.fillRect(-10, -20, 20, 2);
-        }
-
-        // Held Item (Main Hand)
-        const heldItem = inventory[selectedSlot];
-        const heldItemId = heldItem ? (heldItem.id?.toString() || '') : '';
-        
-        ctx.save();
-        ctx.translate(6, 0); // Shoulder/Hand pivot
-        
-        let angle = 0;
-        let stabOffset = 0;
-        let swingProgress = 0;
-        
-        const dx = worldMouseX - (player.x + player.width/2);
-        const dy = worldMouseY - (player.y + player.height/2);
-        let rawAngle = Math.atan2(dy, dx);
-        if (!player.facingRight) rawAngle = Math.atan2(dy, -dx); 
-        
-        if ((player.attackCooldown || 0) > 0) {
-             let cooldownMax = 20;
-             if (heldItemId.includes('war_hammer')) cooldownMax = 300;
-             else if (heldItemId.includes('scythe')) cooldownMax = 240;
-             else if (heldItemId.includes('battle_axe')) cooldownMax = 100;
-             else if (heldItemId.includes('katana')) cooldownMax = 120;
-             else if (heldItemId.includes('knife')) cooldownMax = 10;
-             else if (heldItemId.includes('short_sword')) cooldownMax = 15;
-             else if (heldItemId.includes('crossbow')) cooldownMax = 187.5;
-             else if (heldItemId.includes('bow')) cooldownMax = 62.5;
-             
-             swingProgress = Math.min(1, (player.attackCooldown || 0) / cooldownMax); 
-             
-             if (heldItemId.includes('spear')) {
-                 stabOffset = Math.sin(swingProgress * Math.PI) * 15;
-                 angle = rawAngle;
-             } else if (heldItemId.includes('sword') || heldItemId.includes('katana') || heldItemId.includes('knife') || heldItemId.includes('scythe')) {
-                 angle = rawAngle - (Math.PI/2 * swingProgress) + (Math.sin(swingProgress * Math.PI) * Math.PI/1.5);
-             } else if (heldItemId.includes('pickaxe') || heldItemId.includes('axe') || heldItemId.includes('hammer') || heldItemId.includes('shovel') || heldItemId.includes('hoe')) {
-                 angle = rawAngle - (Math.PI/1.5 * swingProgress) + (Math.sin(swingProgress * Math.PI) * Math.PI);
-             } else if (heldItemId.includes('bow') || heldItemId.includes('crossbow')) {
-                 angle = rawAngle;
-             } else {
-                 angle = rawAngle - (Math.PI/2 * swingProgress) + (Math.sin(swingProgress * Math.PI) * Math.PI/2);
-             }
-        } else {
-             angle = rawAngle;
-        }
-        ctx.rotate(angle);
-        
-        // Arm
-        // Draw sleeve color
-        if (isBareChest) {
-            ctx.fillStyle = skinColor;
-            ctx.fillRect(0 + stabOffset, -2, 12, 4);
-        } else {
+            // Body
             ctx.fillStyle = shirtColor; 
-            ctx.fillRect(0 + stabOffset, -2, 8, 4); // Sleeve
-            ctx.fillStyle = skinColor; 
-            ctx.fillRect(8 + stabOffset, -2, 4, 4); // Hand
-            if (cSkin?.clothes === '2') {
-                // Terno detail
+            ctx.fillRect(-10, -16, 20, 28);
+            if (isBareChest) {
+                ctx.fillStyle = '#ccc';
+                ctx.fillRect(-10, 8, 20, 4); // Underwear band
+            } else if (cSkin?.clothes === '2') { // terno
                 ctx.fillStyle = '#fff';
-                ctx.fillRect(7 + stabOffset, -2, 1, 4); 
+                ctx.fillRect(-2, -16, 4, 28); // white shirt middle
             }
-        }
-        
-        if (equipment.chestplate) {
-            let col = '#cfd8dc'; const id = (equipment.chestplate?.id?.toString() || ''); 
-            if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
-            ctx.fillStyle = col; 
-            ctx.fillRect(-2 + stabOffset, -3, 10, 6); // Shoulder pad / sleeve
-            if (id.includes('reinforced')) {
-                ctx.fillStyle = '#00bcd4';
-                ctx.fillRect(4 + stabOffset, -3, 2, 6); // Blue arm band
-            }
-        }
-        ctx.fillStyle = '#ffcc80'; 
-        ctx.fillRect(12 + stabOffset, -2, 4, 4);
-        
-        if (heldItem) {
-            ctx.translate(14 + stabOffset, 0);
-            
-            if (heldItemId.includes('spear')) {
-                ctx.rotate(Math.PI/2); // Point forward (negative y points right)
-            } else if (heldItemId.includes('bow') || heldItemId.includes('crossbow')) {
-                ctx.rotate(0); // Point forward (positive x points right)
-            } else {
-                ctx.rotate(Math.PI/4); 
-            }
-            
-            if (heldItem.type === ItemType.BLOCK || heldItem.id === BlockType.GLASS) {
-                 const col = BLOCK_COLORS[heldItem.id] || '#fff';
-                 ctx.fillStyle = col;
-                 ctx.fillRect(-6, -6, 12, 12);
-                 ctx.fillStyle = 'rgba(0,0,0,0.2)';
-                 ctx.fillRect(-6, 4, 12, 2);
-                 ctx.fillRect(4, -6, 2, 12);
-            } else {
-                 const col = ITEM_COLORS[heldItemId] || '#888';
-                 
-                 if (heldItemId.includes('sword') || heldItemId.includes('katana') || heldItemId.includes('knife')) {
-                     const isKnife = heldItemId.includes('knife');
-                     const bladeLen = isKnife ? 12 : 32;
-                     const bladeY = isKnife ? -4 : -20;
-                     ctx.fillStyle = col;
-                     ctx.fillRect(-2, bladeY, 4, bladeLen); 
-                     ctx.beginPath();
-                     ctx.moveTo(-2, bladeY);
-                     ctx.lineTo(0, bladeY - 4);
-                     ctx.lineTo(2, bladeY);
-                     ctx.fill();
-                     ctx.fillStyle = '#8d6e63';
-                     ctx.fillRect(isKnife ? -4 : -6, 12, isKnife ? 8 : 12, 2); 
-                     ctx.fillRect(-2, 14, 4, 6); 
-                 } else if (heldItemId.includes('scythe')) {
-                     ctx.fillStyle = '#8d6e63';
-                     ctx.fillRect(-2, -10, 4, 30);
-                     ctx.fillStyle = col;
-                     ctx.fillRect(-14, -14, 16, 4);
-                     ctx.fillRect(-14, -10, 4, 8);
-                 } else if (heldItemId.includes('pickaxe')) {
-                     ctx.fillStyle = '#8d6e63';
-                     ctx.fillRect(-2, -4, 4, 20); 
-                     ctx.fillStyle = col; 
-                     ctx.fillRect(-12, -8, 24, 4); 
-                     ctx.fillRect(-14, -6, 4, 4);
-                     ctx.fillRect(10, -6, 4, 4);
-                 } else if (heldItemId.includes('axe')) {
-                     const isBattleAxe = heldItemId.includes('battle_axe');
-                     ctx.fillStyle = '#8d6e63';
-                     ctx.fillRect(-2, -4, 4, isBattleAxe ? 30 : 20); 
-                     ctx.fillStyle = col;
-                     ctx.fillRect(2, -8, 8, 10); 
-                     if (isBattleAxe) {
-                         ctx.fillRect(-10, -8, 8, 10);
-                     }
-                 } else if (heldItemId.includes('shovel')) {
-                     ctx.fillStyle = '#8d6e63';
-                     ctx.fillRect(-2, -4, 4, 20); 
-                     ctx.fillStyle = col;
-                     ctx.fillRect(-4, -12, 8, 8); 
-                 } else if (heldItemId.includes('hoe')) {
-                     ctx.fillStyle = '#8d6e63';
-                     ctx.fillRect(-2, -4, 4, 20); 
-                     ctx.fillStyle = col;
-                     ctx.fillRect(-8, -8, 12, 4); 
-                 } else if (heldItemId.includes('hammer')) {
-                     const isWarHammer = heldItemId.includes('war_hammer');
-                     ctx.fillStyle = '#8d6e63';
-                     ctx.fillRect(-2, -4, 4, isWarHammer ? 30 : 20); 
-                     ctx.fillStyle = col;
-                     ctx.fillRect(isWarHammer ? -12 : -8, -10, isWarHammer ? 24 : 16, isWarHammer ? 12 : 8); 
-                 } else if (heldItemId.includes('spear')) {
-                     ctx.fillStyle = '#8d6e63';
-                     ctx.fillRect(-2, -10, 4, 30); 
-                     ctx.fillStyle = col;
-                     ctx.fillRect(-3, -18, 6, 8); 
-                     ctx.fillRect(-1, -22, 2, 4); 
-                 } else if (heldItemId.includes('bow')) {
-                     ctx.strokeStyle = '#8d6e63';
-                     ctx.lineWidth = 3;
-                     ctx.beginPath();
-                     ctx.arc(-4, 0, 12, -Math.PI/2, Math.PI/2);
-                     ctx.stroke();
-                     ctx.strokeStyle = '#fff';
-                     ctx.lineWidth = 1;
-                     ctx.beginPath();
-                     ctx.moveTo(-4, -12);
-                     if (swingProgress > 0) {
-                         ctx.lineTo(-12, 0);
-                         // draw arrow
-                         ctx.fillStyle = '#ccc';
-                         ctx.fillRect(-12, -1, 16, 2);
-                     }
-                     ctx.lineTo(-4, 12);
-                     ctx.stroke();
-                 } else if (heldItemId.includes('crossbow')) {
-                     ctx.fillStyle = '#8d6e63';
-                     ctx.fillRect(-4, -2, 16, 4); // Stock (pointing right)
-                     ctx.fillStyle = '#5d4037';
-                     ctx.fillRect(4, -12, 4, 24); // Bow part (vertical)
-                     
-                     ctx.strokeStyle = '#fff';
-                     ctx.lineWidth = 1;
-                     ctx.beginPath();
-                     ctx.moveTo(4, -12);
-                     if (swingProgress > 0) {
-                         ctx.lineTo(-4, 0);
-                         ctx.fillStyle = '#ccc';
-                         ctx.fillRect(-4, -1, 16, 2); // Arrow
-                     } else {
-                         ctx.lineTo(8, 0);
-                     }
-                     ctx.lineTo(4, 12);
-                     ctx.stroke();
-                 } else {
-                     ctx.fillStyle = col;
-                     ctx.fillRect(-4, -4, 8, 8);
-                 }
-            }
-        }
-        ctx.restore();
 
-        // Offhand (Shield/Torch)
-        if (equipment.offHand) {
-             if (equipment.offHand.type === ItemType.SHIELD) {
-                 ctx.save();
-                 ctx.translate(-4, 4);
-                 if (blockingRef.current) ctx.translate(4, -2);
-                 const col = ITEM_COLORS[(equipment.offHand?.id?.toString() || '')] || '#888';
-                 ctx.fillStyle = col;
-                 ctx.fillRect(-6, -6, 12, 12);
-                 ctx.restore();
-             } else if (equipment.offHand.id === BlockType.TORCH) {
-                 ctx.fillStyle = '#ffeb3b';
-                 ctx.fillRect(-8, 4, 4, 10);
+            const charEquipment = playerContext.equipment || {};
+
+            // Armor: Leggings
+            if (charEquipment.leggings) {
+                let col = '#cfd8dc'; const id = (charEquipment.leggings?.id?.toString() || ''); 
+                if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
+                ctx.fillStyle = col;
+                ctx.fillRect(-7 + walkCycle, 12, 8, 12); // Back Leg
+                ctx.fillRect(-7 - walkCycle, 12, 8, 12); // Front Leg
+                ctx.fillRect(-11, 6, 22, 8); // Pelvis
+                if (id.includes('reinforced')) {
+                    ctx.fillStyle = '#00bcd4';
+                    ctx.fillRect(-7 + walkCycle, 20, 8, 2);
+                    ctx.fillRect(-7 - walkCycle, 20, 8, 2);
+                    ctx.fillRect(-11, 10, 22, 2);
+                }
+                ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                ctx.fillRect(-11, 12, 22, 2); // Belt shadow
+            }
+
+            // Armor: Boots
+            if (charEquipment.boots) {
+                let col = '#cfd8dc'; const id = (charEquipment.boots?.id?.toString() || ''); 
+                if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
+                ctx.fillStyle = col;
+                ctx.fillRect(-8 + walkCycle, 20, 10, 8); // Back Leg Boot
+                ctx.fillRect(-8 - walkCycle, 20, 10, 8); // Front Leg Boot
+                if (id.includes('reinforced')) {
+                    ctx.fillStyle = '#00bcd4';
+                    ctx.fillRect(-8 + walkCycle, 22, 10, 2);
+                    ctx.fillRect(-8 - walkCycle, 22, 10, 2);
+                }
+                ctx.fillStyle = 'rgba(255,255,255,0.2)';
+                ctx.fillRect(-8 + walkCycle, 20, 4, 8);
+                ctx.fillRect(-8 - walkCycle, 20, 4, 8);
+            }
+
+            // Head
+            ctx.fillStyle = '#ffcc80'; // Skin
+            ctx.fillRect(-8, -28, 16, 16);
+            
+            // Hair
+            if (cSkin?.hairVariant === 'normal' || !cSkin?.hairVariant) {
+                ctx.fillStyle = cSkin?.hairColor || '#ff9800';
+                ctx.fillRect(-8, -30, 16, 4); // Hair top
+                ctx.fillRect(-8, -26, 4, 4); // Hair side
+            } else if (cSkin?.hairVariant === 'calvo') {
+                // Bald is no hair
+            }
+
+            // Mustache
+            if (cSkin?.hasMustache) {
+                ctx.fillStyle = cSkin?.mustacheColor || '#111';
+                ctx.fillRect(-5, -16, 10, 2);
+            }
+
+            // Mouth (none, neutral, happy, sad, surprised)
+            const mouthType = cSkin?.mouthType || 'neutral';
+            if (mouthType !== 'none') {
+                ctx.fillStyle = '#6a1b9a'; // Inside mouth color
+                if (mouthType === 'neutral') ctx.fillRect(-3, -13, 6, 1);
+                else if (mouthType === 'happy') {
+                    ctx.fillRect(-3, -13, 6, 1);
+                    ctx.fillRect(-4, -14, 1, 2);
+                    ctx.fillRect(3, -14, 1, 2);
+                }
+                else if (mouthType === 'sad') {
+                    ctx.fillRect(-3, -14, 6, 1);
+                    ctx.fillRect(-4, -13, 1, 2);
+                    ctx.fillRect(3, -13, 1, 2);
+                }
+                else if (mouthType === 'surprised') {
+                    ctx.fillRect(-2, -14, 4, 3);
+                }
+            }
+
+            // Eyes (Look at mouse/cursor)
+            const eyeXOffset = playerContext.facingRight ? 4 : -4;
+            let targetMouseX = playerContext.mouseXY?.x || playerContext.x;
+            let targetMouseY = playerContext.mouseXY?.y || playerContext.y;
+
+            const lookUp = targetMouseY < playerContext.y - 16;
+            const lookDown = targetMouseY > playerContext.y + 16;
+            const eyeY = -24 + (lookDown ? 2 : lookUp ? -2 : 0);
+            
+            ctx.fillStyle = 'white';
+            ctx.fillRect(-2 + eyeXOffset, eyeY, 4, 4);
+            
+            // Pupil
+            ctx.fillStyle = cSkin?.eyeColor || 'black';
+            
+            let pupilXDiff = 0;
+            if (playerContext.facingRight) {
+                pupilXDiff = targetMouseX > playerContext.x + 16 ? 1 : (targetMouseX < playerContext.x - 16 ? -1 : 0);
+            } else {
+                pupilXDiff = targetMouseX < playerContext.x - 16 ? -1 : (targetMouseX > playerContext.x + 16 ? 1 : 0);
+            }
+
+            ctx.fillRect(-1 + eyeXOffset + pupilXDiff, eyeY + 1, 2, 2);
+
+            // Armor: Chestplate
+            if (charEquipment.chestplate) { 
+                let col = '#cfd8dc'; const id = (charEquipment.chestplate?.id?.toString() || ''); 
+                if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
+                ctx.fillStyle = col; 
+                ctx.fillRect(-12, -18, 24, 26); // Main body
+                if (id.includes('reinforced')) {
+                    ctx.fillStyle = '#00bcd4';
+                    ctx.fillRect(-6, -12, 12, 12); // Blue core
+                    ctx.fillRect(-12, 4, 24, 2); // Blue belt line
+                }
+                ctx.fillStyle = 'rgba(255,255,255,0.2)'; // Highlight
+                ctx.fillRect(-10, -16, 6, 22);
+                ctx.fillStyle = 'rgba(0,0,0,0.2)'; // Shadow
+                ctx.fillRect(4, -16, 6, 22);
+                ctx.fillRect(-12, 4, 24, 4); // Belt area
+            }
+
+            // Armor: Helmet
+            if (charEquipment.helmet) { 
+                let col = '#cfd8dc'; const id = (charEquipment.helmet?.id?.toString() || ''); 
+                if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
+                ctx.fillStyle = col; 
+                ctx.fillRect(-10, -32, 20, 14); // Hat top
+                ctx.fillRect(-10, -32, 6, 20); // Side back
+                ctx.fillRect(6, -32, 4, 20); // Side front
+                ctx.fillRect(-12, -22, 24, 4); // Brim/visor
+                if (id.includes('reinforced')) {
+                    ctx.fillStyle = '#00bcd4';
+                    ctx.fillRect(-12, -22, 24, 2); // Blue visor line
+                    ctx.fillRect(-4, -30, 8, 4); // Blue crest
+                }
+                ctx.fillStyle = 'rgba(255,255,255,0.3)'; // Highlight
+                ctx.fillRect(-6, -30, 8, 4);
+                ctx.fillStyle = 'rgba(0,0,0,0.2)'; // Shadow
+                ctx.fillRect(-10, -20, 20, 2);
+            }
+
+            // Held Item (Main Hand)
+            const heldItem = playerContext.heldItem || null;
+            const heldItemId = heldItem ? (heldItem.id?.toString() || '') : '';
+            
+            ctx.save();
+            ctx.translate(6, 0); // Shoulder/Hand pivot
+            
+            let angle = 0;
+            let stabOffset = 0;
+            let swingProgress = 0;
+            
+            const dx = targetMouseX - (playerContext.x + playerContext.width/2);
+            const dy = targetMouseY - (playerContext.y + playerContext.height/2);
+            let rawAngle = Math.atan2(dy, dx);
+            if (!playerContext.facingRight) rawAngle = Math.atan2(dy, -dx); 
+            
+            if ((playerContext.attackCooldown || 0) > 0) {
+                let cooldownMax = 20;
+                if (heldItemId.includes('war_hammer')) cooldownMax = 300;
+                else if (heldItemId.includes('scythe')) cooldownMax = 240;
+                else if (heldItemId.includes('battle_axe')) cooldownMax = 100;
+                else if (heldItemId.includes('katana')) cooldownMax = 120;
+                else if (heldItemId.includes('knife')) cooldownMax = 10;
+                else if (heldItemId.includes('short_sword')) cooldownMax = 15;
+                else if (heldItemId.includes('crossbow')) cooldownMax = 187.5;
+                else if (heldItemId.includes('bow')) cooldownMax = 62.5;
+                
+                swingProgress = Math.min(1, (playerContext.attackCooldown || 0) / cooldownMax); 
+                
+                if (heldItemId.includes('spear')) {
+                    stabOffset = Math.sin(swingProgress * Math.PI) * 15;
+                    angle = rawAngle;
+                } else if (heldItemId.includes('sword') || heldItemId.includes('katana') || heldItemId.includes('knife') || heldItemId.includes('scythe')) {
+                    angle = rawAngle - (Math.PI/2 * swingProgress) + (Math.sin(swingProgress * Math.PI) * Math.PI/1.5);
+                } else if (heldItemId.includes('pickaxe') || heldItemId.includes('axe') || heldItemId.includes('hammer') || heldItemId.includes('shovel') || heldItemId.includes('hoe')) {
+                    angle = rawAngle - (Math.PI/1.5 * swingProgress) + (Math.sin(swingProgress * Math.PI) * Math.PI);
+                } else if (heldItemId.includes('bow') || heldItemId.includes('crossbow')) {
+                    angle = rawAngle;
+                } else {
+                    angle = rawAngle - (Math.PI/2 * swingProgress) + (Math.sin(swingProgress * Math.PI) * Math.PI/2);
+                }
+            } else {
+                angle = rawAngle;
+            }
+            ctx.rotate(angle);
+            
+            // Arm
+            if (isBareChest) {
+                ctx.fillStyle = skinColor;
+                ctx.fillRect(0 + stabOffset, -2, 12, 4);
+            } else {
+                ctx.fillStyle = shirtColor; 
+                ctx.fillRect(0 + stabOffset, -2, 8, 4); // Sleeve
+                ctx.fillStyle = skinColor; 
+                ctx.fillRect(8 + stabOffset, -2, 4, 4); // Hand
+                if (cSkin?.clothes === '2') {
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(7 + stabOffset, -2, 1, 4); 
+                }
+            }
+            
+            if (charEquipment.chestplate) {
+                let col = '#cfd8dc'; const id = (charEquipment.chestplate?.id?.toString() || ''); 
+                if(id.includes('copper')) col='#e65100'; else if(id.includes('gold')) col='#fbc02d'; else if(id.includes('diamond')) col='#00bcd4'; else if(id.includes('titanium')) col='#0d47a1'; else if(id.includes('uranium')) col='#76ff03'; else if(id.includes('reinforced')) col='#9e9e9e'; else if(id.includes('hazmat')) col='#ffeb3b'; else if(id.includes('leather')) col='#3e2723';
+                ctx.fillStyle = col; 
+                ctx.fillRect(-2 + stabOffset, -3, 10, 6); // Shoulder pad / sleeve
+                if (id.includes('reinforced')) {
+                    ctx.fillStyle = '#00bcd4';
+                    ctx.fillRect(4 + stabOffset, -3, 2, 6); // Blue arm band
+                }
+            }
+            ctx.fillStyle = '#ffcc80'; 
+            ctx.fillRect(12 + stabOffset, -2, 4, 4);
+            
+            if (heldItem) {
+                ctx.translate(14 + stabOffset, 0);
+                
+                if (heldItemId.includes('spear')) {
+                    ctx.rotate(Math.PI/2); 
+                } else if (heldItemId.includes('bow') || heldItemId.includes('crossbow')) {
+                    ctx.rotate(0); 
+                } else {
+                    ctx.rotate(Math.PI/4); 
+                }
+                
+                // Note: Need ITEM_COLORS and BLOCK_COLORS accessible
+                if (heldItem.type === 'BLOCK' || heldItemId === 'GLASS') { // simplified check
+                    const col = typeof BLOCK_COLORS !== 'undefined' && BLOCK_COLORS[heldItem.id] ? BLOCK_COLORS[heldItem.id] : '#fff';
+                    ctx.fillStyle = col;
+                    ctx.fillRect(-6, -6, 12, 12);
+                    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                    ctx.fillRect(-6, 4, 12, 2);
+                    ctx.fillRect(4, -6, 2, 12);
+                } else {
+                    const col = typeof ITEM_COLORS !== 'undefined' && ITEM_COLORS[heldItemId] ? ITEM_COLORS[heldItemId] : '#888';
+                    
+                    if (heldItemId.includes('sword') || heldItemId.includes('katana') || heldItemId.includes('knife')) {
+                        const isKnife = heldItemId.includes('knife');
+                        const bladeLen = isKnife ? 12 : 32;
+                        const bladeY = isKnife ? -4 : -20;
+                        ctx.fillStyle = col;
+                        ctx.fillRect(-2, bladeY, 4, bladeLen); 
+                        ctx.beginPath();
+                        ctx.moveTo(-2, bladeY);
+                        ctx.lineTo(0, bladeY - 4);
+                        ctx.lineTo(2, bladeY);
+                        ctx.fill();
+                        ctx.fillStyle = '#8d6e63';
+                        ctx.fillRect(isKnife ? -4 : -6, 12, isKnife ? 8 : 12, 2); 
+                        ctx.fillRect(-2, 14, 4, 6); 
+                    } else if (heldItemId.includes('scythe')) {
+                        ctx.fillStyle = '#8d6e63';
+                        ctx.fillRect(-2, -10, 4, 30);
+                        ctx.fillStyle = col;
+                        ctx.fillRect(-14, -14, 16, 4);
+                        ctx.fillRect(-14, -10, 4, 8);
+                    } else if (heldItemId.includes('pickaxe')) {
+                        ctx.fillStyle = '#8d6e63';
+                        ctx.fillRect(-2, -4, 4, 20); 
+                        ctx.fillStyle = col; 
+                        ctx.fillRect(-12, -8, 24, 4); 
+                        ctx.fillRect(-14, -6, 4, 4);
+                        ctx.fillRect(10, -6, 4, 4);
+                    } else if (heldItemId.includes('axe')) {
+                        const isBattleAxe = heldItemId.includes('battle_axe');
+                        ctx.fillStyle = '#8d6e63';
+                        ctx.fillRect(-2, -4, 4, isBattleAxe ? 30 : 20); 
+                        ctx.fillStyle = col;
+                        ctx.fillRect(2, -8, 8, 10); 
+                        if (isBattleAxe) {
+                            ctx.fillRect(-10, -8, 8, 10);
+                        }
+                    } else if (heldItemId.includes('shovel')) {
+                        ctx.fillStyle = '#8d6e63';
+                        ctx.fillRect(-2, -4, 4, 20); 
+                        ctx.fillStyle = col;
+                        ctx.fillRect(-4, -12, 8, 8); 
+                    } else if (heldItemId.includes('hoe')) {
+                        ctx.fillStyle = '#8d6e63';
+                        ctx.fillRect(-2, -4, 4, 20); 
+                        ctx.fillStyle = col;
+                        ctx.fillRect(-8, -8, 12, 4); 
+                    } else if (heldItemId.includes('hammer')) {
+                        const isWarHammer = heldItemId.includes('war_hammer');
+                        ctx.fillStyle = '#8d6e63';
+                        ctx.fillRect(-2, -4, 4, isWarHammer ? 30 : 20); 
+                        ctx.fillStyle = col;
+                        ctx.fillRect(isWarHammer ? -12 : -8, -10, isWarHammer ? 24 : 16, isWarHammer ? 12 : 8); 
+                    } else if (heldItemId.includes('spear')) {
+                        ctx.fillStyle = '#8d6e63';
+                        ctx.fillRect(-2, -10, 4, 30); 
+                        ctx.fillStyle = col;
+                        ctx.fillRect(-3, -18, 6, 8); 
+                        ctx.fillRect(-1, -22, 2, 4); 
+                    } else if (heldItemId.includes('bow')) {
+                        ctx.strokeStyle = '#8d6e63';
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.arc(-4, 0, 12, -Math.PI/2, Math.PI/2);
+                        ctx.stroke();
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(-4, -12);
+                        if (swingProgress > 0) {
+                            ctx.lineTo(-12, 0);
+                            ctx.fillStyle = '#ccc';
+                            ctx.fillRect(-12, -1, 16, 2);
+                        }
+                        ctx.lineTo(-4, 12);
+                        ctx.stroke();
+                    } else if (heldItemId.includes('crossbow')) {
+                        ctx.fillStyle = '#8d6e63';
+                        ctx.fillRect(-4, -2, 16, 4); 
+                        ctx.fillStyle = '#5d4037';
+                        ctx.fillRect(4, -12, 4, 24); 
+                        
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(4, -12);
+                        if (swingProgress > 0) {
+                            ctx.lineTo(-4, 0);
+                            ctx.fillStyle = '#ccc';
+                            ctx.fillRect(-4, -1, 16, 2); 
+                        } else {
+                            ctx.lineTo(8, 0);
+                        }
+                        ctx.lineTo(4, 12);
+                        ctx.stroke();
+                    } else {
+                        ctx.fillStyle = col;
+                        ctx.fillRect(-4, -4, 8, 8);
+                    }
+                }
+            }
+            ctx.restore();
+
+            // Offhand (Shield/Torch)
+            if (charEquipment.offHand) {
+                if (charEquipment.offHand.type === 'SHIELD' || (charEquipment.offHand.id && charEquipment.offHand.id.toString().includes('shield'))) {
+                    ctx.save();
+                    ctx.translate(-4, 4);
+                    if (playerContext.isBlocking) ctx.translate(4, -2);
+                    const col = typeof ITEM_COLORS !== 'undefined' && ITEM_COLORS[(charEquipment.offHand?.id?.toString() || '')] ? ITEM_COLORS[(charEquipment.offHand?.id?.toString() || '')] : '#888';
+                    ctx.fillStyle = col;
+                    ctx.fillRect(-6, -6, 12, 12);
+                    ctx.restore();
+                } else if (charEquipment.offHand.id === 'TORCH' || charEquipment.offHand.id === 4) { // 4 is Torch ID usually
+                    ctx.fillStyle = '#ffeb3b';
+                    ctx.fillRect(-8, 4, 4, 10);
+                }
+            }
+
+            ctx.restore();
+        };
+
+        if (options.gameMode !== 'SPECTATOR') {
+             const accsStr = localStorage.getItem('zombiecraft_accounts');
+             const usrName = localStorage.getItem('zombiecraft_current_user');
+             let localSkin = null;
+             if (accsStr && usrName) {
+                 const accs = JSON.parse(accsStr);
+                 const usr = accs.find((a: any) => a.name === usrName);
+                 if (usr && usr.skin) localSkin = usr.skin;
              }
-        }
 
-        ctx.restore();
+             drawCharacter({
+                 ...player,
+                 skin: localSkin,
+                 equipment: equipment,
+                 heldItem: inventory[selectedSlot],
+                 mouseXY: { x: worldMouseX, y: worldMouseY },
+                 isBlocking: blockingRef.current
+             }, true);
         }
 
         otherPlayersRef.current.forEach(p => {
-            const isMoving = p.isMoving || false;
-            // Simple bounce animation based on time when moving
-            const bounce = isMoving ? Math.sin(Date.now() / 100) * 2 : 0;
-            
-            ctx.save();
-            ctx.translate(p.x + p.width/2, p.y + p.height/2 + bounce);
-            
-            // Body
-            ctx.fillStyle = '#7e57c2'; 
-            ctx.fillRect(-p.width/2, -p.height/2, p.width, p.height);
-            
-            // Eyes
-            ctx.fillStyle = 'white'; 
-            ctx.fillRect((p.facingRight ? 4 : -8) - p.width/2, 8 - p.height/2, 4, 4); 
-            
-            // Held Item Indicator
-            if (p.heldItemIcon) {
-                const heldCol = typeof p.heldItemIcon === 'number' ? BLOCK_COLORS[p.heldItemIcon] : (ITEM_COLORS[String(p.heldItemIcon)] || '#fff');
-                ctx.fillStyle = heldCol as string;
-                ctx.fillRect(p.facingRight ? 8 : -16, -4, 8, 8);
-            }
-            
-            ctx.restore();
+             // Decrement cooldown smoothly between network ticks
+             if (p.attackCooldown && p.attackCooldown > 0) {
+                 p.attackCooldown = Math.max(0, p.attackCooldown - 1);
+             }
 
-            if(p.playerName) { 
-                ctx.font = 'bold 12px monospace'; 
-                ctx.textAlign = 'center'; 
-                ctx.fillStyle = 'white'; 
-                ctx.strokeStyle = 'black'; 
-                ctx.lineWidth = 3; 
-                ctx.strokeText(p.playerName, p.x + p.width/2, p.y - 12); 
-                ctx.fillText(p.playerName, p.x + p.width/2, p.y - 12); 
-            }
+             // For missing properties, we provide defaults that will prevent crashes
+             drawCharacter({
+                 ...p, 
+                 isBlocking: (p as any).isBlocking || false, 
+                 mouseXY: (p as any).mouseXY || {x: p.x + (p.facingRight ? 50 : -50), y: p.y}, 
+                 heldItem: (p as any).heldItem, 
+                 equipment: (p as any).equipment,
+                 skin: (p as any).skin,
+                 posture: (p as any).posture || 'STAND'
+             }, false);
+             if(p.playerName) { 
+                 ctx.save();
+                 ctx.font = 'bold 12px monospace'; 
+                 ctx.textAlign = 'center'; 
+                 ctx.fillStyle = 'white'; 
+                 ctx.strokeStyle = 'black'; 
+                 ctx.lineWidth = 3; 
+                 ctx.strokeText(p.playerName, p.x + p.width/2, p.y - 12); 
+                 ctx.fillText(p.playerName, p.x + p.width/2, p.y - 12); 
+                 ctx.restore();
+             }
         });
+
 
         entitiesRef.current.forEach(ent => { 
             if(ent.type === 'DROP') { 
@@ -7224,6 +7602,16 @@ export const GameCanvas: React.FC = () => {
                     {isAdminMenuOpen && (<AdminPanel onClose={() => setIsAdminMenuOpen(false)} adminState={adminFlags} setAdminState={setAdminFlags} onGiveItem={handleAdminGiveItem} onSetTime={handleAdminSetTime} onChangeWeather={(w) => { if(worldRef.current) { if(!worldRef.current.weather) worldRef.current.weather = {type:'CLEAR', intensity:0, duration:0}; worldRef.current.weather.type = w; worldRef.current.weather.duration = w === 'CLEAR' ? 0 : 999999; worldRef.current.weather.intensity = w === 'HEAVY_RAIN' ? 1.0 : 0.5; } }} onChangeMoon={(m) => moonPhaseRef.current = m} onTeleportBiome={handleAdminTeleportBiome} lang={lang} />)}
                     {isSleepUIOpen && (<SleepUI onClose={() => setIsSleepUIOpen(false)} onSleep={handleSleep} lang={lang} />)}
                     {activeNpc && (<NpcUI npc={activeNpc} onClose={() => setActiveNpc(null)} onCompleteQuest={handleCompleteQuest} inventory={inventory} lang={lang} />)}
+                    
+                    {gamepadStateRef.current?.usingGamepad && (isInventoryOpen || isFurnaceOpen || isChestOpen || isHammerMenuOpen || isAdminMenuOpen || isArmorBenchOpen) && (
+                        <div 
+                           className="fixed w-4 h-4 rounded-full bg-white border-2 border-blue-500 shadow-xl pointer-events-none z-[99999]"
+                           style={{
+                              left: uiMousePos.x - 8,
+                              top: uiMousePos.y - 8
+                           }}
+                        />
+                    )}
                 </>
             )}
             {showDeathScreen && (

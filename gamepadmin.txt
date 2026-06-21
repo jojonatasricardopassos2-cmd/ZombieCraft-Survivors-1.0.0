@@ -1,0 +1,51 @@
+2149-    const inventoryRef = useRef(inventory);
+2150-    inventoryRef.current = inventory;
+2151-    const selectedSlotRef = useRef(selectedSlot);
+2152-    selectedSlotRef.current = selectedSlot;
+2153-    
+2154:    const gamepadStateRef = useRef<{ 
+2155-        usingGamepad: boolean, 
+2156-        buttons: boolean[], 
+2157-        virtualX: number, 
+2158-        virtualY: number,
+2159-        rtDown: boolean,
+--
+2880-            isPaused = true;
+2881-        }
+2882-        
+2883-        
+2884-            // --- GAMEPAD LOGIC START ---
+2885:            const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+2886:            const gp = gamepads[0];
+2887-            if (gp && gp.connected) {
+2888:                const gState = gamepadStateRef.current;
+2889-                gState.usingGamepad = true;
+2890-                
+2891-                // Mover: Left Stick Axes 0 & 1 or D-Pad
+2892-                const leftX = gp.axes[0] || 0;
+2893-                const leftY = gp.axes[1] || 0;
+--
+3087-                        }
+3088-                    }
+3089-                    mouseRef.current.right = false;
+3090-                }
+3091-            } else {
+3092:                 if (gamepadStateRef.current.usingGamepad) {
+3093:                     gamepadStateRef.current.usingGamepad = false;
+3094-                 }
+3095-            }
+3096-            // If UI is open, don't let W act as jump
+3097-            if (isPaused) {
+3098-                 keysRef.current['KeyW'] = false;
+--
+7511-                    {isFishing && (<FishingMinigame onSuccess={handleFishingSuccess} onFail={handleFishingFail} />)}
+7512-                    {isAdminMenuOpen && (<AdminPanel onClose={() => setIsAdminMenuOpen(false)} adminState={adminFlags} setAdminState={setAdminFlags} onGiveItem={handleAdminGiveItem} onSetTime={handleAdminSetTime} onChangeWeather={(w) => { if(worldRef.current) { if(!worldRef.current.weather) worldRef.current.weather = {type:'CLEAR', intensity:0, duration:0}; worldRef.current.weather.type = w; worldRef.current.weather.duration = w === 'CLEAR' ? 0 : 999999; worldRef.current.weather.intensity = w === 'HEAVY_RAIN' ? 1.0 : 0.5; } }} onChangeMoon={(m) => moonPhaseRef.current = m} onTeleportBiome={handleAdminTeleportBiome} lang={lang} />)}
+7513-                    {isSleepUIOpen && (<SleepUI onClose={() => setIsSleepUIOpen(false)} onSleep={handleSleep} lang={lang} />)}
+7514-                    {activeNpc && (<NpcUI npc={activeNpc} onClose={() => setActiveNpc(null)} onCompleteQuest={handleCompleteQuest} inventory={inventory} lang={lang} />)}
+7515-                    
+7516:                    {gamepadStateRef.current?.usingGamepad && (isInventoryOpen || isFurnaceOpen || isChestOpen || isHammerMenuOpen || isAdminMenuOpen || isArmorBenchOpen) && (
+7517-                        <div 
+7518-                           className="fixed w-4 h-4 rounded-full bg-white border-2 border-blue-500 shadow-xl pointer-events-none z-[99999]"
+7519-                           style={{
+7520-                              left: uiMousePos.x - 8,
+7521-                              top: uiMousePos.y - 8

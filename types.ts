@@ -274,6 +274,38 @@ export interface SavedAccount {
   friends?: string[];
 }
 
+export interface KeyBindings {
+    up: string;
+    down: string;
+    left: string;
+    right: string;
+    jump: string;
+    inventory: string;
+    interact: string;
+    sprint: string;
+    crouch: string;
+    drop: string;
+    chat: string;
+    attack: string;
+    place: string;
+}
+
+export const DEFAULT_BINDINGS: KeyBindings = {
+    up: 'KeyW',
+    down: 'KeyS',
+    left: 'KeyA',
+    right: 'KeyD',
+    jump: 'Space',
+    inventory: 'KeyE',
+    interact: 'KeyF',
+    sprint: 'ShiftLeft',
+    crouch: 'KeyC',
+    drop: 'KeyQ',
+    chat: 'KeyT',
+    attack: 'MouseLeft',
+    place: 'MouseRight'
+};
+
 export interface GameOptions {
     showCoordinates: boolean;
     showMinimap?: boolean;
@@ -291,6 +323,9 @@ export interface GameOptions {
     textureQuality?: 'medium' | 'ultra';
     renderDistance?: number;
     volume?: number;
+    bindings?: KeyBindings;
+    mouseSensitivity?: number;
+    gamepadSensitivity?: number;
     multiplayer?: {
         mode: 'HOST' | 'CLIENT';
         roomId: string;

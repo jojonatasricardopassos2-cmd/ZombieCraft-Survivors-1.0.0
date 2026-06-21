@@ -1,25 +1,25 @@
-114:    const [showAchievementsUI, setShowAchievementsUI] = useState(false);
-115:    const [isFishing, setIsFishing] = useState(false);
-164:    const [playerLevel, setPlayerLevel] = useState(1);
-165:    const [playerXP, setPlayerXP] = useState(0);
-166:    const [skillPoints, setSkillPoints] = useState(0);
-172:    const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(false);
-173:    const [adminFlags, setAdminFlags] = useState({ noClip: false, nightVision: false, showCreative: false, oneHitBreak: false, rainChance: 0.0001 });
-196:    const [isSleepUIOpen, setIsSleepUIOpen] = useState(false);
-199:    const [showDeathScreen, setShowDeathScreen] = useState(false);
-200:    const [tutorialStep, setTutorialStep] = useState(0);
-211:    const [selectedSlot, setSelectedSlot] = useState(0);
-212:    const [isInventoryOpen, setIsInventoryOpen] = useState(false);
-213:    const [isChatOpen, setIsChatOpen] = useState(false);
-214:    const [chatInput, setChatInput] = useState("");
-250:    const [cheatTimeMultiplier, setCheatTimeMultiplier] = useState(1); // 0, 1, -1, 2
-251:    const [isNoclip, setIsNoclip] = useState(false);
-253:    const [isFurnaceOpen, setIsFurnaceOpen] = useState(false);
-254:    const [isChestOpen, setIsChestOpen] = useState(false);
-255:    const [isHammerMenuOpen, setIsHammerMenuOpen] = useState(false);
-256:    const [isArmorBenchOpen, setIsArmorBenchOpen] = useState(false);
-262:    const [uiMousePos, setUiMousePos] = useState({ x: 0, y: 0 });
-265:    const [hearts, setHearts] = useState(10);
-266:    const [hunger, setHunger] = useState(10);
-267:    const [stamina, setStamina] = useState(MAX_STAMINA);
-269:    const [uiTick, setUiTick] = useState(0);
+2889-                gState.usingGamepad = true;
+2890-                
+2891-                // Mover: Left Stick Axes 0 & 1 or D-Pad
+2892-                const leftX = gp.axes[0] || 0;
+2893-                
+2894:                if (leftX < -0.3 || gp.buttons[14]?.pressed) { keysRef.current['a'] = true; keysRef.current['d'] = false; }
+2895:                else if (leftX > 0.3 || gp.buttons[15]?.pressed) { keysRef.current['d'] = true; keysRef.current['a'] = false; }
+2896:                else { keysRef.current['a'] = false; keysRef.current['d'] = false; }
+2897-                
+2898-                // Correr: Hold left stick past 0.8 or click L3 (button 10)
+2899-                if (Math.abs(leftX) > 0.8 || gp.buttons[10]?.pressed) { keysRef.current['shift'] = true; }
+2900-                else { keysRef.current['shift'] = false; }
+2901-
+--
+2943-                        // Menu/Inventory (X/Square is 2, Start is 9)
+2944-                        if (i === 2 || i === 9) {
+2945-                            if (!isInventoryOpen) setIsInventoryOpen(true);
+2946-                            else setIsInventoryOpen(false);
+2947-                            keysRef.current['w'] = false;
+2948:                            keysRef.current['a'] = false;
+2949-                            keysRef.current['d'] = false;
+2950-                        }
+2951-                        
+2952-                        // OffHand (Y/Triangle is 3)
+2953-                        if (i === 3) {

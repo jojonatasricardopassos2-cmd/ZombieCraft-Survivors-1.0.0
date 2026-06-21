@@ -1,0 +1,20 @@
+633:                    if (keysRef.current['KeyS'] && b === BlockType.CACTUS) {
+3013:                            keysRef.current['KeyW'] = false;
+3014:                            keysRef.current['KeyA'] = false;
+3015:                            keysRef.current['KeyD'] = false;
+3142:                 keysRef.current['KeyW'] = false;
+3563:                if (keysRef.current['KeyW']) player.vy = -climbSpeed;
+3564:                if (keysRef.current['KeyS']) player.vy = climbSpeed;
+3565:                if (keysRef.current['KeyA']) { player.vx = -climbSpeed; }
+3566:                if (keysRef.current['KeyD']) { player.vx = climbSpeed; }
+3580:                else if (keysRef.current['KeyA']) { player.vx = -speed * 0.3; } 
+3581:                else if (keysRef.current['KeyD']) { player.vx = speed * 0.3; } 
+3590:                else if (keysRef.current['KeyA']) { player.vx = -speed; } 
+3591:                else if (keysRef.current['KeyD']) { player.vx = speed; } 
+3600:                if (adminFlags.noClip) { const flySpeed = speed * 1.5; player.vx = 0; player.vy = 0; if (keysRef.current['KeyW']) player.vy = -flySpeed; if (keysRef.current['KeyS']) player.vy = flySpeed; if (keysRef.current['KeyA']) { player.vx = -flySpeed; player.facingRight = false; } if (keysRef.current['KeyD']) { player.vx = flySpeed; player.facingRight = true; } player.x += player.vx; player.y += player.vy; player.grounded = false; player.highestY = player.y; } else { 
+3609:                    if (inWater && sprintRef.current && (keysRef.current['KeyA'] || keysRef.current['KeyD'] || keysRef.current['KeyW'] || keysRef.current['KeyS'])) {
+3647:                            if (keysRef.current['KeyA']) player.vx = -swimSpeed; 
+3648:                            else if (keysRef.current['KeyD']) player.vx = swimSpeed; 
+3651:                        if ((keysRef.current['Space'] || keysRef.current['KeyW']) && player.grounded && player.posture !== 'PRONE') { player.vy = player.posture === 'CROUCH' ? -JUMP_FORCE * 0.6 : -JUMP_FORCE; player.grounded = false; } 
+4436:                            if (keysRef.current['KeyA']) { ent.vx = -speed; ent.facingRight = false; }
+4437:                            else if (keysRef.current['KeyD']) { ent.vx = speed; ent.facingRight = true; }
