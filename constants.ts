@@ -1,5 +1,7 @@
 
 import { BlockType, ItemType, CraftingRecipe, PlayerStats, ItemStack } from './types.ts';
+import { GUN_STATS, WEAPON_COMPONENTS, AMMO_TYPES, WEAPON_NAMES } from './weaponsData';
+
 
 export const BLOCK_SIZE = 32;
 export const WORLD_WIDTH = 5000;
@@ -161,10 +163,19 @@ export const BLOCK_COLORS: Record<number, string> = {
   [BlockType.DOOR_STONE_BOTTOM_CLOSED]: '#757575',
   [BlockType.DOOR_STONE_TOP_CLOSED]: '#757575',
   [BlockType.DOOR_STONE_BOTTOM_OPEN]: '#757575',
-  [BlockType.DOOR_STONE_TOP_OPEN]: '#757575'
+  [BlockType.DOOR_STONE_TOP_OPEN]: '#757575',
+  [BlockType.WALLPAPER]: '#f2dc80',
+  [BlockType.BR_KEY_BLOCK]: '#ffca28',
+  [BlockType.GENERATOR_OFF]: '#444444',
+  [BlockType.GENERATOR_ON]: '#44ff44',
+  [BlockType.WHITE_DOOR_CLOSED]: '#ffffff',
+  [BlockType.WHITE_DOOR_OPEN]: '#eeeeee',
+  [BlockType.POOL_TILE]: '#8fc7c5',
+  [BlockType.POOL_WATER]: '#298e89',
+  [BlockType.CUSHION]: '#5f6916'
 };
 
-export const HIDDEN_CREATIVE_BLOCKS = [
+export const HIDDEN_CREATIVE_BLOCKS = [ BlockType.WALLPAPER, BlockType.BR_KEY_BLOCK, BlockType.CUSHION, BlockType.MOSS, BlockType.GENERATOR_ON, BlockType.GENERATOR_OFF, BlockType.WHITE_DOOR_CLOSED, BlockType.WHITE_DOOR_OPEN,
     BlockType.AIR,
     BlockType.DOOR_TOP_CLOSED,
     BlockType.DOOR_BOTTOM_OPEN,
@@ -196,7 +207,9 @@ export const BLOCK_HARDNESS: Record<number, number> = {
     [BlockType.DIAMOND_ORE]: 500, [BlockType.TITANIUM_ORE]: 800, [BlockType.URANIUM_ORE]: 1200, [BlockType.FURNACE]: 300, [BlockType.TORCH]: 5,
     [BlockType.BED]: 100, [BlockType.BED_MEDIUM]: 150, [BlockType.BED_ADVANCED]: 200, [BlockType.ROOF_WOOD]: 150, [BlockType.ROOF_STONE]: 300,
     [BlockType.ROOF_WOOD_LEFT]: 150, [BlockType.ROOF_STONE_LEFT]: 300, [BlockType.WALL_WOOD]: 100, [BlockType.ARMOR_BENCH]: 350,
-    [BlockType.BEDROCK]: 99999999, [BlockType.WATER]: 99999999, [BlockType.CROP_WHEAT]: 1, [BlockType.CROP_CARROT]: 1, [BlockType.CROP_POTATO]: 1, [BlockType.LADDER]: 10
+    [BlockType.BEDROCK]: 99999999, [BlockType.WATER]: 99999999, [BlockType.CROP_WHEAT]: 1, [BlockType.CROP_CARROT]: 1, [BlockType.CROP_POTATO]: 1, [BlockType.LADDER]: 10,
+    [BlockType.CUSHION]: 20,
+    [BlockType.BR_KEY_BLOCK]: 50
 };
 
 export const MAX_DURABILITY: Record<string, number> = {
@@ -488,6 +501,7 @@ ITEM_COLORS['leather_leggings'] = '#3e2723'; ITEM_COLORS['leather_boots'] = '#3e
 
 
 export const ITEM_ICONS: Record<string, string> = {
+  'br_key': '🔑',
   'pickaxe': '⛏️', 'sword': '⚔️', 'axe': '🪓', 'shovel': '🥄', 'katana': '🗡️', 'spear': '🔱', 'hammer': '🔨', 'hoe': '👩‍🌾',
   'helmet': '🪖', 'chestplate': '👕', 'leggings': '👖', 'boots': '👢', 'shield': '🛡️',
   'battle_axe': '🪓', 'hunting_spear': '🍢', 'dagger': '🔪', 'war_hammer': '⚒️', 'club': '🏏', 'scythe': '🌾', 'short_sword': '🗡️', 'knife': '🔪',
@@ -1157,3 +1171,127 @@ export const QUESTS: Quest[] = [
   { id: 4, reqItem: 'zombie_meat', reqCount: 10, rewardItem: 'iron_sword', rewardCount: 1, descEN: "Bring 10 Zombie Meat.", descPT: "Resgate a vila! Mate zumbis e traga 10 Carnes de Zumbi." },
   { id: 5, reqItem: 'uranium', reqCount: 2, rewardItem: 'uranium_totem', rewardCount: 1, descEN: "Bring 2 Uranium.", descPT: "A missão final: traga 2 minérios de Urânio." }
 ];
+// Inject Weapons Data
+WEAPON_COMPONENTS.forEach(comp => {
+  ITEM_COLORS[comp.id] = '#888888';
+  ITEM_NAMES['EN'][comp.id] = comp.name_en;
+  ITEM_NAMES['PT'][comp.id] = comp.name_pt;
+  ITEM_NAMES['ES'][comp.id] = comp.name_en; // Fallback
+  ITEM_NAMES['JA'][comp.id] = comp.name_en; // Fallback
+  ITEM_ICONS[comp.id] = '⚙️';
+});
+
+AMMO_TYPES.forEach(ammo => {
+  ITEM_COLORS[ammo.id] = ammo.color;
+  ITEM_NAMES['EN'][ammo.id] = ammo.name_en;
+  ITEM_NAMES['PT'][ammo.id] = ammo.name_pt;
+  ITEM_NAMES['ES'][ammo.id] = ammo.name_en; // Fallback
+  ITEM_NAMES['JA'][ammo.id] = ammo.name_en; // Fallback
+  ITEM_ICONS[ammo.id] = '🍬'; // Bullet emoji doesn't exist, using something small, or box
+});
+
+Object.keys(GUN_STATS).forEach(gunId => {
+  ITEM_COLORS[gunId] = '#404040';
+  ITEM_NAMES['EN'][gunId] = WEAPON_NAMES[gunId].en;
+  ITEM_NAMES['PT'][gunId] = WEAPON_NAMES[gunId].pt;
+  ITEM_NAMES['ES'][gunId] = WEAPON_NAMES[gunId].en;
+  ITEM_NAMES['JA'][gunId] = WEAPON_NAMES[gunId].en;
+  ITEM_ICONS[gunId] = '🔫';
+  DAMAGE_VALUES[gunId] = GUN_STATS[gunId].damage;
+});
+
+// We need recipes
+// For components:
+const componentsRecipes: CraftingRecipe[] = [
+  { result: { id: 'metal_structure', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'iron_ingot', count: 2 }, { id: 'copper_ingot', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'COMPONENTS' },
+  { result: { id: 'reinforced_structure', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'iron_ingot', count: 3 }, { id: 'diamond', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'COMPONENTS' },
+  { result: { id: 'grip', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'coal', count: 2 }, { id: 'iron_ingot', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'COMPONENTS' },
+  { result: { id: 'mechanical_mechanism', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'iron_ingot', count: 2 }, { id: 'gold_ingot', count: 1 }, { id: 'copper_ingot', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'COMPONENTS' },
+  { result: { id: 'ammo_chamber', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'iron_ingot', count: 2 }, { id: 'copper_ingot', count: 2 }], station: BlockType.WEAPON_BENCH, category: 'COMPONENTS' },
+  { result: { id: 'simple_sight', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'iron_ingot', count: 1 }, { id: 'coal', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'COMPONENTS' },
+  { result: { id: 'advanced_sight', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'gold_ingot', count: 2 }, { id: 'diamond', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'COMPONENTS' },
+  { result: { id: 'energy_core', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'gold_ingot', count: 3 }, { id: 'diamond', count: 2 }, { id: 'coal', count: 5 }], station: BlockType.WEAPON_BENCH, category: 'COMPONENTS' },
+  { result: { id: 'reinforced_tube', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'iron_ingot', count: 3 }, { id: 'copper_ingot', count: 2 }], station: BlockType.WEAPON_BENCH, category: 'COMPONENTS' },
+  
+  // Custom materials that needed to be added
+  { result: { id: 'refined_iron', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'iron_ingot', count: 2 }, { id: 'coal', count: 1 }], station: BlockType.FURNACE, category: 'MATERIALS' },
+  { result: { id: 'refined_wood', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'planks', count: 4 }], station: BlockType.CRAFTING_TABLE, category: 'MATERIALS' },
+  { result: { id: 'energetic_coal', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'coal', count: 2 }, { id: 'blue_crystal', count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'MATERIALS' },
+  { result: { id: 'blue_crystal', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'diamond', count: 1 }], station: BlockType.SCIENCE_BENCH, category: 'MATERIALS' },
+  { result: { id: 'red_crystal', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: 'diamond', count: 1 }, { id: 'copper_ingot', count: 2 }], station: BlockType.SCIENCE_BENCH, category: 'MATERIALS' },
+  { result: { id: 'packed_ice', count: 1, type: ItemType.MATERIAL }, ingredients: [{ id: BlockType.ICE, count: 4 }], station: BlockType.CRAFTING_TABLE, category: 'MATERIALS' }
+];
+
+RECIPES.push(...componentsRecipes);
+
+// Add Ammo Recipes
+RECIPES.push(
+  { result: { id: 'common_ammo', count: 30, type: ItemType.AMMO }, ingredients: [{ id: 'iron_ingot', count: 2 }, { id: 'coal', count: 1 }], station: BlockType.AMMO_BENCH, category: 'AMMO' },
+  { result: { id: 'heavy_ammo', count: 20, type: ItemType.AMMO }, ingredients: [{ id: 'iron_ingot', count: 3 }, { id: 'copper_ingot', count: 1 }, { id: 'gold_ingot', count: 1 }], station: BlockType.AMMO_BENCH, category: 'AMMO' },
+  { result: { id: 'piercing_ammo', count: 15, type: ItemType.AMMO }, ingredients: [{ id: 'gold_ingot', count: 2 }, { id: 'diamond', count: 3 }], station: BlockType.AMMO_BENCH, category: 'AMMO' },
+  { result: { id: 'energy_ammo', count: 30, type: ItemType.AMMO }, ingredients: [{ id: 'blue_crystal', count: 1 }, { id: 'gold_ingot', count: 1 }], station: BlockType.AMMO_BENCH, category: 'AMMO' },
+  { result: { id: 'incendiary_ammo', count: 20, type: ItemType.AMMO }, ingredients: [{ id: 'red_crystal', count: 1 }, { id: 'energetic_coal', count: 1 }], station: BlockType.AMMO_BENCH, category: 'AMMO' },
+  { result: { id: 'freezing_ammo', count: 20, type: ItemType.AMMO }, ingredients: [{ id: 'blue_crystal', count: 1 }, { id: 'packed_ice', count: 1 }], station: BlockType.AMMO_BENCH, category: 'AMMO' }
+);
+
+// Add Benches Recipes
+RECIPES.push(
+  { result: { id: BlockType.WEAPON_BENCH, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'iron_ingot', count: 10 }, { id: 'planks', count: 10 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' },
+  { result: { id: BlockType.AMMO_BENCH, count: 1, type: ItemType.BLOCK }, ingredients: [{ id: 'copper_ingot', count: 8 }, { id: 'iron_ingot', count: 5 }], station: BlockType.CRAFTING_TABLE, category: 'DECOR' }
+);
+BLOCK_COLORS[BlockType.WEAPON_BENCH] = '#444444';
+BLOCK_COLORS[BlockType.AMMO_BENCH] = '#555544';
+ITEM_NAMES['EN'][BlockType.WALLPAPER] = 'Wallpaper';
+ITEM_NAMES['EN'][BlockType.BR_KEY_BLOCK] = 'Key Block';
+ITEM_NAMES['PT'][BlockType.BR_KEY_BLOCK] = 'Bloco Chave';
+ITEM_NAMES['ES'][BlockType.BR_KEY_BLOCK] = 'Bloque Llave';
+ITEM_NAMES['JA'][BlockType.BR_KEY_BLOCK] = '鍵ブロック';
+ITEM_NAMES['EN']['br_key'] = 'Exit Key';
+ITEM_NAMES['PT']['br_key'] = 'Chave da Saída';
+ITEM_NAMES['ES']['br_key'] = 'Llave de Salida';
+ITEM_NAMES['JA']['br_key'] = '出口の鍵';
+ITEM_NAMES['PT'][BlockType.WALLPAPER] = 'Papel de Parede';
+ITEM_NAMES['ES'][BlockType.WALLPAPER] = 'Papel pintado';
+ITEM_NAMES['JA'][BlockType.WALLPAPER] = '壁紙';
+
+ITEM_NAMES['EN'][BlockType.CUSHION] = 'Cushion Block';
+ITEM_NAMES['PT'][BlockType.CUSHION] = 'Bloco Almofada';
+ITEM_NAMES['ES'][BlockType.CUSHION] = 'Bloque Cojín';
+ITEM_NAMES['JA'][BlockType.CUSHION] = 'クッションブロック';
+
+ITEM_NAMES['EN'][BlockType.WEAPON_BENCH] = 'Weapon Workbench';
+ITEM_NAMES['PT'][BlockType.WEAPON_BENCH] = 'Bancada de Armas';
+ITEM_NAMES['ES'][BlockType.WEAPON_BENCH] = 'Banco de Armas';
+ITEM_NAMES['JA'][BlockType.WEAPON_BENCH] = 'Weapon Workbench';
+ITEM_NAMES['EN'][BlockType.AMMO_BENCH] = 'Ammo Workbench';
+ITEM_NAMES['PT'][BlockType.AMMO_BENCH] = 'Bancada de Munição';
+ITEM_NAMES['ES'][BlockType.AMMO_BENCH] = 'Banco de Munición';
+ITEM_NAMES['JA'][BlockType.AMMO_BENCH] = 'Ammo Workbench';
+
+// Weapon Recipes
+const weaponRecipes: CraftingRecipe[] = [
+    { result: { id: 'glock_19', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'metal_structure', count: 1 }, { id: 'grip', count: 1 }, { id: 'ammo_chamber', count: 1 }, { id: 'simple_sight', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'SMALL_ARMS' },
+    { result: { id: 'ak_47', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'reinforced_structure', count: 1 }, { id: 'reinforced_tube', count: 1 }, { id: 'ammo_chamber', count: 2 }, { id: 'simple_sight', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'LARGE_ARMS' },
+    { result: { id: 'desert_eagle', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'reinforced_structure', count: 1 }, { id: 'grip', count: 1 }, { id: 'ammo_chamber', count: 2 }], station: BlockType.WEAPON_BENCH, category: 'SMALL_ARMS' },
+    { result: { id: 'beretta_m9', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'metal_structure', count: 1 }, { id: 'grip', count: 1 }, { id: 'ammo_chamber', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'SMALL_ARMS' },
+    { result: { id: 'usp', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'metal_structure', count: 1 }, { id: 'grip', count: 1 }, { id: 'ammo_chamber', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'SMALL_ARMS' },
+    { result: { id: 'five_seven', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'metal_structure', count: 1 }, { id: 'grip', count: 1 }, { id: 'ammo_chamber', count: 1 }, { id: 'advanced_sight', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'SMALL_ARMS' },
+    { result: { id: 'p250', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'metal_structure', count: 1 }, { id: 'grip', count: 1 }, { id: 'ammo_chamber', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'SMALL_ARMS' },
+    { result: { id: 'cz75', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'metal_structure', count: 1 }, { id: 'grip', count: 1 }, { id: 'mechanical_mechanism', count: 1 }, { id: 'ammo_chamber', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'SMALL_ARMS' },
+    { result: { id: 'm1911', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'reinforced_structure', count: 1 }, { id: 'grip', count: 1 }, { id: 'ammo_chamber', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'SMALL_ARMS' },
+    { result: { id: 'revolver_357', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'reinforced_structure', count: 1 }, { id: 'grip', count: 1 }, { id: 'ammo_chamber', count: 2 }], station: BlockType.WEAPON_BENCH, category: 'SMALL_ARMS' },
+    { result: { id: 'tec_9', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'metal_structure', count: 1 }, { id: 'grip', count: 1 }, { id: 'mechanical_mechanism', count: 1 }, { id: 'ammo_chamber', count: 2 }], station: BlockType.WEAPON_BENCH, category: 'SMALL_ARMS' },
+    
+    { result: { id: 'm4a1', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'reinforced_structure', count: 1 }, { id: 'reinforced_tube', count: 1 }, { id: 'ammo_chamber', count: 2 }, { id: 'advanced_sight', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'LARGE_ARMS' },
+    { result: { id: 'scar_h', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'reinforced_structure', count: 2 }, { id: 'reinforced_tube', count: 1 }, { id: 'ammo_chamber', count: 2 }, { id: 'advanced_sight', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'LARGE_ARMS' },
+    { result: { id: 'famas', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'reinforced_structure', count: 1 }, { id: 'reinforced_tube', count: 1 }, { id: 'ammo_chamber', count: 1 }, { id: 'advanced_sight', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'LARGE_ARMS' },
+    { result: { id: 'g36', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'reinforced_structure', count: 1 }, { id: 'reinforced_tube', count: 1 }, { id: 'mechanical_mechanism', count: 1 }, { id: 'advanced_sight', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'LARGE_ARMS' },
+    { result: { id: 'aug', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'reinforced_structure', count: 1 }, { id: 'reinforced_tube', count: 1 }, { id: 'ammo_chamber', count: 1 }, { id: 'advanced_sight', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'LARGE_ARMS' },
+    { result: { id: 'awp', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'reinforced_structure', count: 2 }, { id: 'reinforced_tube', count: 2 }, { id: 'ammo_chamber', count: 2 }, { id: 'advanced_sight', count: 2 }], station: BlockType.WEAPON_BENCH, category: 'LARGE_ARMS' },
+    { result: { id: 'barrett_m82', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'reinforced_structure', count: 3 }, { id: 'reinforced_tube', count: 2 }, { id: 'ammo_chamber', count: 3 }, { id: 'advanced_sight', count: 2 }], station: BlockType.WEAPON_BENCH, category: 'LARGE_ARMS' },
+    { result: { id: 'mp5', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'metal_structure', count: 1 }, { id: 'reinforced_tube', count: 1 }, { id: 'mechanical_mechanism', count: 1 } ], station: BlockType.WEAPON_BENCH, category: 'LARGE_ARMS' },
+    { result: { id: 'p90', count: 1, type: ItemType.WEAPON }, ingredients: [{ id: 'reinforced_structure', count: 1 }, { id: 'reinforced_tube', count: 1 }, { id: 'ammo_chamber', count: 2 }, { id: 'advanced_sight', count: 1 }], station: BlockType.WEAPON_BENCH, category: 'LARGE_ARMS' }
+];
+
+RECIPES.push(...weaponRecipes);
+

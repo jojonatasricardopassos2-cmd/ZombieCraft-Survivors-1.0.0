@@ -338,6 +338,61 @@ export class AudioEngine {
             this.menuMusicInterval = null;
         }
     }
+
+    playBackroomsHum() {
+        if (!this.ctx || !this.masterGain) return;
+        this.resume();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(60, this.ctx.currentTime);
+        // Low hum
+        gain.gain.setValueAtTime(0, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.05, this.ctx.currentTime + 1);
+        gain.gain.setValueAtTime(0.05, this.ctx.currentTime + 10);
+        gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 12);
+        
+        // Add a bit of detune for unsettling effect
+        const lfo = this.ctx.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 5; // 5Hz wobble
+        const lfoGain = this.ctx.createGain();
+        lfoGain.gain.value = 5;
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc.frequency);
+        lfo.start();
+        lfo.stop(this.ctx.currentTime + 12);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 12);
+    }
+    
+    playSmilerScream() { if (!this.ctx || !this.masterGain) return; const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain(); osc.type = 'sawtooth'; osc.frequency.setValueAtTime(800, this.ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 1); gain.gain.setValueAtTime(0.8, this.ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 1); osc.connect(gain); gain.connect(this.masterGain); osc.start(); osc.stop(this.ctx.currentTime + 1); }
+    playJumpscare() { if (!this.ctx || !this.masterGain) return; const osc = this.ctx.createOscillator(); const osc2 = this.ctx.createOscillator(); const gain = this.ctx.createGain(); osc.type = 'square'; osc2.type = 'sawtooth'; osc.frequency.setValueAtTime(200, this.ctx.currentTime); osc.frequency.linearRampToValueAtTime(1500, this.ctx.currentTime + 0.1); osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 1.5); osc2.frequency.setValueAtTime(400, this.ctx.currentTime); osc2.frequency.exponentialRampToValueAtTime(80, this.ctx.currentTime + 1.5); gain.gain.setValueAtTime(1, this.ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 1.5); osc.connect(gain); osc2.connect(gain); gain.connect(this.masterGain); osc.start(); osc2.start(); osc.stop(this.ctx.currentTime + 1.5); osc2.stop(this.ctx.currentTime + 1.5); }
+    
+    private staticNode: AudioBufferSourceNode | null = null;
+    private staticGain: GainNode | null = null;
+    startStatic(vol: number) { if (!this.ctx || !this.masterGain) return; if (!this.staticGain) { this.staticGain = this.ctx.createGain(); this.staticGain.connect(this.masterGain); const bufferSize = this.ctx.sampleRate * 2; const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate); const output = buffer.getChannelData(0); for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1; this.staticNode = this.ctx.createBufferSource(); this.staticNode.buffer = buffer; this.staticNode.loop = true; this.staticNode.connect(this.staticGain); this.staticNode.start(); } this.staticGain.gain.setValueAtTime(vol, this.ctx.currentTime); }
+    stopStatic() { if (this.staticGain && this.ctx) this.staticGain.gain.setValueAtTime(0, this.ctx.currentTime); }
+    playBackroomsDrop() {
+        if (!this.ctx || !this.masterGain) return;
+        this.resume();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(100, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + 8);
+        gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 8);
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 8);
+    }
+    
+    playSeeYou() { if (!this.ctx || !this.masterGain) return; const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain(); osc.type = 'sine'; osc.frequency.setValueAtTime(300, this.ctx.currentTime); osc.frequency.linearRampToValueAtTime(350, this.ctx.currentTime + 0.3); osc.frequency.linearRampToValueAtTime(250, this.ctx.currentTime + 0.6); gain.gain.setValueAtTime(0.3, this.ctx.currentTime); gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.6); osc.connect(gain); gain.connect(this.masterGain); osc.start(); osc.stop(this.ctx.currentTime + 0.6); }
 }
 
 export const audio = new AudioEngine();

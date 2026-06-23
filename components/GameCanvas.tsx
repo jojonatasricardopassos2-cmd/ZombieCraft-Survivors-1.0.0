@@ -13,6 +13,7 @@ import { BlockType, Entity, ItemStack, ItemType, WorldData, CraftingRecipe, Furn
 import { generateWorld, getBiome } from '../utils/world.ts';
 import { saveWorldToDB, deleteWorldFromDB } from '../utils/storage.ts';
 import { Inventory } from './UI/Inventory.tsx';
+import { GUN_STATS, AMMO_TYPES } from '../weaponsData.ts';
 import { FurnaceUI } from './UI/FurnaceUI.tsx';
 import { ChestUI } from './UI/ChestUI.tsx';
 import { HammerBuildUI } from './UI/HammerBuildUI.tsx';
@@ -91,6 +92,7 @@ const LIGHT_TRANSPARENT_BLOCKS = new Set([
     BlockType.FLOWER_RED, BlockType.FLOWER_GREEN, BlockType.FLOWER_BLUE,
     BlockType.CRAFTING_TABLE, BlockType.FURNACE, BlockType.ARMOR_BENCH,
     BlockType.TABLE, BlockType.CABINET, BlockType.CAMPFIRE,
+    BlockType.SCIENCE_BENCH, BlockType.MEDICAL_BENCH, BlockType.WEAPON_BENCH, BlockType.AMMO_BENCH,
     // Chests also let light pass usually in 2D to avoid dark spots behind them
     BlockType.CHEST, BlockType.CHEST_MEDIUM, BlockType.CHEST_LARGE, BlockType.STONE_CHEST 
 ]);
@@ -110,7 +112,7 @@ const NON_COLLIDABLE_BLOCKS = new Set([BlockType.FLOWER_RED, BlockType.FLOWER_BL
     BlockType.TABLE, BlockType.CABINET, BlockType.CAMPFIRE,
     BlockType.CHEST, BlockType.CHEST_MEDIUM, BlockType.CHEST_LARGE, BlockType.STONE_CHEST,
     BlockType.LADDER, BlockType.MOSS, BlockType.VINES,
-    BlockType.SCIENCE_BENCH, BlockType.MEDICAL_BENCH,
+    BlockType.SCIENCE_BENCH, BlockType.MEDICAL_BENCH, BlockType.WEAPON_BENCH, BlockType.AMMO_BENCH,
     BlockType.CABLE, BlockType.CABLE_ON, BlockType.LAMP, BlockType.LAMP_ON, BlockType.BUTTON, BlockType.BUTTON_ON, BlockType.LEVER, BlockType.LEVER_ON
 ]);
 
@@ -153,6 +155,9 @@ export const GameCanvas: React.FC = () => {
     const treePassRef = useRef<boolean>(false); // Allows walking through trees
     const eatingStartRef = useRef<number | null>(null); // Timestamp when eating started
     const clickStartTimeRef = useRef<number>(0);
+    const lastFiredClickRef = useRef<number>(0);
+    const recoilOffsetRef = useRef<{x: number, y: number, recX: number, recY: number}>({x: 0, y: 0, recX: 0, recY: 0});
+    const multiFiredTickRef = useRef<number>(0);
 
     // Multiplayer Support
     // We add a 'lastSeen' property to track active players
@@ -286,6 +291,16 @@ export const GameCanvas: React.FC = () => {
     const [interactionPrompt, setInteractionPrompt] = useState<{ msg: string, x: number, y: number } | null>(null);
     const isClimbingRef = useRef(false);
 
+    // --- BACKROOMS STATE ---
+    const [backroomsPhase, setBackroomsPhase] = useState<'NONE' | 'FALLING' | 'WAKING_UP' | 'EXPLORING' | 'ESCAPING' | 'JUMPSCARE'>('NONE');
+    const [smilerStatic, setSmilerStatic] = useState(0);
+    const overworldRef = useRef<WorldData | null>(null);
+    const overworldEntitiesRef = useRef<Entity[]>([]);
+    const backroomsGeneratorsFound = useRef(0);
+    const sanityLevelRef = useRef(100);
+    const safeZoneBoundsRef = useRef<{sx: number, ex: number, sy: number, ey: number} | null>(null);
+    const wasInSafeZoneRef = useRef(true);
+
     const [currentWorldId, setCurrentWorldId] = useState<string>('');
     const [currentWorldName, setCurrentWorldName] = useState<string>('');
     const [currentSeed, setCurrentSeed] = useState<number>(0);
@@ -358,7 +373,7 @@ export const GameCanvas: React.FC = () => {
     const canDamageBlock = (block: BlockType, tool: ItemStack | null): boolean => {
         const handBreakable = new Set([
             BlockType.AIR, BlockType.WATER,
-            BlockType.DIRT, BlockType.GRASS, BlockType.DARK_GRASS, BlockType.SAND, BlockType.GOLDEN_GRASS,
+            BlockType.DIRT, BlockType.GRASS, BlockType.DARK_GRASS, BlockType.SAND, BlockType.MOSS, BlockType.WALLPAPER, BlockType.CUSHION, BlockType.BR_KEY_BLOCK, BlockType.GOLDEN_GRASS,
             BlockType.LEAVES, BlockType.DARK_LEAVES, BlockType.APPLE_LEAVES, BlockType.SNOWY_LEAVES, BlockType.GOLDEN_LEAVES,
             BlockType.BUSH, BlockType.BERRY_BUSH, BlockType.SEED_BUSH,
             BlockType.FLOWER_RED, BlockType.FLOWER_GREEN, BlockType.FLOWER_BLUE,
@@ -606,6 +621,7 @@ export const GameCanvas: React.FC = () => {
 
     const setBlockAt = (x: number, y: number, type: BlockType, shouldBroadcast: boolean = true) => {
         if (!worldRef.current) return;
+        if (backroomsPhase !== 'NONE') { const currentBlock = worldRef.current.blocks[y * WORLD_WIDTH + x]; if (currentBlock !== BlockType.BR_KEY_BLOCK && type !== BlockType.BR_KEY_BLOCK) return; }
         if (x < 0 || x >= WORLD_WIDTH || y < 0 || y >= WORLD_HEIGHT) return;
         
         // Don't update if block is same
@@ -799,9 +815,9 @@ export const GameCanvas: React.FC = () => {
         }
         
         if (spawnY > 0 || (x !== undefined && y !== undefined)) {
-             const getWidth = (t: string) => t === 'SHARK' ? 120 : t === 'BIRD' ? 12 : t === 'PIG' ? 28 : t === 'COW' ? 32 : t === 'SHEEP' ? 30 : t === 'SCORPION' ? 24 : t === 'CAMEL' ? 50 : t === 'SNAKE' ? 20 : t === 'RABBIT' ? 16 : t === 'POLAR_BEAR' ? 40 : t === 'DOG' ? 20 : t === 'ZOMBIE_TANK' ? 30 : t === 'ZOMBIE_KING' ? 28 : t === 'GOLDEN_DEER' ? 32 : t === 'LUNAR_FOX' ? 22 : 20;
-             const getHeight = (t: string) => t === 'SHARK' ? 60 : t === 'BIRD' ? 12 : t.includes('ZOMBIE') ? (t === 'ZOMBIE_TANK' ? 64 : t === 'ZOMBIE_KING' ? 64 : 56) : t === 'COW' ? 24 : t === 'SCORPION' ? 16 : t === 'CAMEL' ? 45 : t === 'SNAKE' ? 10 : t === 'RABBIT' ? 16 : t === 'POLAR_BEAR' ? 30 : t === 'DOG' ? 16 : t === 'GOLDEN_DEER' ? 32 : t === 'LUNAR_FOX' ? 18 : 20;
-             const getHealth = (t: string) => t === 'SHARK' ? 40 : t === 'BIRD' ? 5 : t === 'ZOMBIE' ? 20 : t === 'ZOMBIE_RUNNER' ? 10 : t === 'ZOMBIE_TANK' ? 100 : t === 'ZOMBIE_EXPLOSIVE' ? 10 : t === 'ZOMBIE_TOXIC' ? 20 : t === 'ZOMBIE_SKELETON' ? 10 : t === 'ZOMBIE_INFECTOR' ? 20 : t === 'ZOMBIE_DARK' ? 25 : t === 'ZOMBIE_FROZEN' ? 20 : t === 'ZOMBIE_KING' ? 150 : t === 'SCORPION' ? 15 : t === 'CAMEL' ? 40 : t === 'SNAKE' ? 10 : t === 'RABBIT' ? 6 : t === 'POLAR_BEAR' ? 30 : t === 'DOG' ? 15 : t === 'GOLDEN_DEER' ? 20 : t === 'LUNAR_FOX' ? 15 : 10;
+             const getWidth = (t: string) => t === 'BACKROOMS_SMILER' ? 32 : t === 'SHARK' ? 120 : t === 'BIRD' ? 12 : t === 'PIG' ? 28 : t === 'COW' ? 32 : t === 'SHEEP' ? 30 : t === 'SCORPION' ? 24 : t === 'CAMEL' ? 50 : t === 'SNAKE' ? 20 : t === 'RABBIT' ? 16 : t === 'POLAR_BEAR' ? 40 : t === 'DOG' ? 20 : t === 'ZOMBIE_TANK' ? 30 : t === 'ZOMBIE_KING' ? 28 : t === 'GOLDEN_DEER' ? 32 : t === 'LUNAR_FOX' ? 22 : 20;
+             const getHeight = (t: string) => t === 'BACKROOMS_SMILER' ? 32 : t === 'SHARK' ? 60 : t === 'BIRD' ? 12 : t.includes('ZOMBIE') ? (t === 'ZOMBIE_TANK' ? 64 : t === 'ZOMBIE_KING' ? 64 : 56) : t === 'COW' ? 24 : t === 'SCORPION' ? 16 : t === 'CAMEL' ? 45 : t === 'SNAKE' ? 10 : t === 'RABBIT' ? 16 : t === 'POLAR_BEAR' ? 30 : t === 'DOG' ? 16 : t === 'GOLDEN_DEER' ? 32 : t === 'LUNAR_FOX' ? 18 : 20;
+             const getHealth = (t: string) => t === 'BACKROOMS_SMILER' ? 100 : t === 'SHARK' ? 40 : t === 'BIRD' ? 5 : t === 'ZOMBIE' ? 20 : t === 'ZOMBIE_RUNNER' ? 10 : t === 'ZOMBIE_TANK' ? 100 : t === 'ZOMBIE_EXPLOSIVE' ? 10 : t === 'ZOMBIE_TOXIC' ? 20 : t === 'ZOMBIE_SKELETON' ? 10 : t === 'ZOMBIE_INFECTOR' ? 20 : t === 'ZOMBIE_DARK' ? 25 : t === 'ZOMBIE_FROZEN' ? 20 : t === 'ZOMBIE_KING' ? 150 : t === 'SCORPION' ? 15 : t === 'CAMEL' ? 40 : t === 'SNAKE' ? 10 : t === 'RABBIT' ? 6 : t === 'POLAR_BEAR' ? 30 : t === 'DOG' ? 15 : t === 'GOLDEN_DEER' ? 20 : t === 'LUNAR_FOX' ? 15 : 10;
 
              const mob: Entity = {
                  id: generateEntityId(),
@@ -889,6 +905,11 @@ export const GameCanvas: React.FC = () => {
         if (isPickaxe && isStone) speed *= multiplier;
         if (isAxe && isWood) speed *= multiplier;
         if (isShovel && isDirt) speed *= multiplier;
+        
+        if (block === BlockType.BEDROCK) {
+            if (isPickaxe && multiplier >= 16) speed = 0.5; // Very slow to break Bedrock even with good pickaxes
+            else speed = 0; // Unbreakable without good pickaxe
+        }
         
         speed += playerStats.strength * 0.5;
         return speed;
@@ -993,6 +1014,62 @@ export const GameCanvas: React.FC = () => {
         addNotification(t.SLEEP_SUCCESS);
     };
 
+    const handleReload = () => {
+        if (isInventoryOpen || isChestOpen || isFurnaceOpen || isArmorBenchOpen) return;
+        const heldItem = inventory[selectedSlot];
+        if (!heldItem || heldItem.type !== ItemType.WEAPON || !GUN_STATS[heldItem.id]) return;
+        
+        const stats = GUN_STATS[heldItem.id];
+        const gunName = heldItem.id.toString().toLowerCase();
+        const isSmall = ['glock', 'beretta', 'usp', 'five_seven', 'p250', 'cz75', 'tec_9', 'desert_eagle', 'm1911', 'revolver'].some(n => gunName.includes(n));
+        const allowedAmmoIds = isSmall ? ['common_ammo', 'piercing_ammo'] : ['heavy_ammo', 'piercing_ammo'];
+        
+        const currentAmmo = heldItem.meta?.ammo || 0;
+        const ammoNeeded = stats.mag - currentAmmo;
+        if (ammoNeeded <= 0) return; // Clip is full
+        
+        if (options.gameMode === 'CREATIVE' || options.gameMode === 'GOD') {
+            setInventory(prev => {
+                const n = [...prev];
+                if (n[selectedSlot]) {
+                    n[selectedSlot] = { ...n[selectedSlot]!, meta: { ...n[selectedSlot]!.meta, ammo: stats.mag, loadedAmmoId: allowedAmmoIds[0] } };
+                }
+                return n;
+            });
+            audio.playPlace(); // Temporary reload sound
+            return;
+        }
+
+        setInventory(prev => {
+            const n = [...prev];
+            let countToReload = 0;
+            let ammoIdUsed = heldItem.meta?.loadedAmmoId || null;
+            
+            for(let i = 0; i < n.length; i++) {
+                if (n[i] && allowedAmmoIds.includes(n[i]!.id.toString()) && n[i]!.count > 0) {
+                    if (!ammoIdUsed) ammoIdUsed = n[i]!.id;
+                    // If we already started reloading with one ammo type, we shouldn't mix types in the same reload action for simplicity
+                    if (n[i]!.id !== ammoIdUsed && countToReload > 0) continue; 
+                    
+                    const take = Math.min(n[i]!.count, ammoNeeded - countToReload);
+                    n[i]!.count -= take;
+                    countToReload += take;
+                    ammoIdUsed = n[i]!.id;
+                    if (n[i]!.count <= 0) n[i] = null;
+                    if (countToReload === ammoNeeded) break;
+                }
+            }
+            
+            if (countToReload > 0) {
+                if (n[selectedSlot]) {
+                    n[selectedSlot] = { ...n[selectedSlot]!, meta: { ...n[selectedSlot]!.meta, ammo: currentAmmo + countToReload, loadedAmmoId: ammoIdUsed } };
+                }
+                audio.playPlace(); // Reload sound
+            }
+            return n;
+        });
+    };
+
     const handleInteraction = () => {
         if (worldRef.current) {
             const pStartX = Math.floor(playerRef.current.x / BLOCK_SIZE);
@@ -1027,7 +1104,7 @@ export const GameCanvas: React.FC = () => {
                     const b = worldRef.current.blocks[idx];
                     const key = `${x},${y}`;
 
-                    if (b === BlockType.CRAFTING_TABLE || b === BlockType.SCIENCE_BENCH || b === BlockType.MEDICAL_BENCH) {
+                    if (b === BlockType.CRAFTING_TABLE || b === BlockType.SCIENCE_BENCH || b === BlockType.MEDICAL_BENCH || b === BlockType.WEAPON_BENCH || b === BlockType.AMMO_BENCH) {
                         setNearbyStation(b);
                         setIsInventoryOpen(true);
                         return;
@@ -1087,7 +1164,7 @@ export const GameCanvas: React.FC = () => {
                             setIsSleepUIOpen(true);
                         }
                         return;
-                    } else if (b === BlockType.DOOR_BOTTOM_CLOSED || b === BlockType.DOOR_TOP_CLOSED || b === BlockType.DOOR_STONE_BOTTOM_CLOSED || b === BlockType.DOOR_STONE_TOP_CLOSED) {
+                    } else if (b === BlockType.WHITE_DOOR_CLOSED || b === BlockType.WHITE_DOOR_OPEN) { const heldItem = inventory[selectedSlot]; if (heldItem && (heldItem.id === 'br_key' || heldItem.id === BlockType.BR_KEY_BLOCK)) { setBackroomsPhase('ESCAPING'); setTimeout(() => { setBackroomsPhase('NONE'); if (overworldRef.current) { worldRef.current = overworldRef.current; entitiesRef.current = overworldEntitiesRef.current; overworldRef.current = null; } respawnPlayer(worldRef.current!); }, 3000); setInventory(inventory.map(item => item && (item.id === 'br_key' || item.id === BlockType.BR_KEY_BLOCK) ? null : item)); } else { addNotification(lang === 'PT' ? 'Você precisa da Chave da Saída!' : 'You need the Exit Key!'); } return; } else if (b === BlockType.DOOR_BOTTOM_CLOSED || b === BlockType.DOOR_TOP_CLOSED || b === BlockType.DOOR_STONE_BOTTOM_CLOSED || b === BlockType.DOOR_STONE_TOP_CLOSED) {
                         const isStone = b === BlockType.DOOR_STONE_BOTTOM_CLOSED || b === BlockType.DOOR_STONE_TOP_CLOSED;
                         if (b === BlockType.DOOR_BOTTOM_CLOSED || b === BlockType.DOOR_STONE_BOTTOM_CLOSED) {
                             setBlockAt(x, y, isStone ? BlockType.DOOR_STONE_BOTTOM_OPEN : BlockType.DOOR_BOTTOM_OPEN);
@@ -1484,7 +1561,7 @@ export const GameCanvas: React.FC = () => {
                 ctx.fillRect(36, -4, 4, 4); // Nose
             }
         }
-        else if (ent.type === 'SHARK') {
+        else if (ent.type === 'BACKROOMS_SMILER') { ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(-16, -16, 32, 32); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-6, -6, 2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(6, -6, 2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(0, 4, 8, 0, Math.PI); ctx.stroke(); ctx.restore(); return; } if (ent.type === 'SHARK') {
             const isFlop = ent.grounded && ent.vy < -2;
             ctx.save();
             if (isFlop) {
@@ -1534,6 +1611,44 @@ export const GameCanvas: React.FC = () => {
             ctx.fillStyle = '#fff';
             ctx.fillRect(12, 2, 4, 2);
             ctx.restore();
+        }
+        else if (ent.type === 'BACKROOMS_WANDERER') {
+            // Shadowy tall figure
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(-6, -16, 12, 32);
+            // Long thin arms
+            ctx.fillRect(-8, -12, 2, 16);
+            ctx.fillRect(6, -12, 2, 16);
+        }
+        else if (ent.type === 'BACKROOMS_HOUND') {
+            // Emaciated four-legged
+            ctx.fillStyle = '#8d6e63'; // Dirty skin
+            ctx.fillRect(-12, -4, 24, 12);
+            // Head
+            ctx.fillRect(12, -8, 8, 8);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(16, -6, 2, 2);
+            // Legs
+            ctx.fillStyle = '#5d4037';
+            ctx.fillRect(-10, 8, 4, 8 + legOffset);
+            ctx.fillRect(6, 8, 4, 8 - legOffset);
+        }
+        else if (ent.type === 'BACKROOMS_SMILER') {
+            // Only glowing face in darkness
+            ctx.fillStyle = '#000'; // Dark aura
+            ctx.beginPath(); ctx.arc(0, -8, 16, 0, Math.PI * 2); ctx.fill();
+            
+            // Glowing white smile and eyes
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(-6, -14, 4, 4);
+            ctx.fillRect(2, -14, 4, 4);
+            // Smile
+            ctx.beginPath();
+            ctx.moveTo(-8, -4);
+            ctx.quadraticCurveTo(0, 4, 8, -4);
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#fff';
+            ctx.stroke();
         }
         else if (ent.type === 'DOG') {
             const isTamed = ent.isTamed;
@@ -2023,7 +2138,7 @@ export const GameCanvas: React.FC = () => {
     const handleAdminTeleportBiome = (biomeName: string) => {
         if (biomeName.includes('beach')) {
             playerRef.current.x = (WORLD_WIDTH - 200) * BLOCK_SIZE;
-            playerRef.current.y = 0;
+            playerRef.current.x = 0; playerRef.current.y = 0;
             return;
         }
         let found = false;
@@ -2032,12 +2147,12 @@ export const GameCanvas: React.FC = () => {
         for(let i=1; i<150; i++) {
             if (getBiome((chunkStart + i)*500, currentSeed) === biomeName) {
                 playerRef.current.x = (chunkStart + i)*500 * BLOCK_SIZE;
-                playerRef.current.y = 0;
+                playerRef.current.x = 0; playerRef.current.y = 0;
                 found = true; break;
             }
             if (chunkStart - i > 0 && getBiome((chunkStart - i)*500, currentSeed) === biomeName) {
                 playerRef.current.x = (chunkStart - i)*500 * BLOCK_SIZE;
-                playerRef.current.y = 0;
+                playerRef.current.x = 0; playerRef.current.y = 0;
                 found = true; break;
             }
         }
@@ -2336,6 +2451,14 @@ const activeChestPosRef = useRef(activeChestPos);
                             creationTime: Date.now()
                         });
                     }
+                } else if (type === 'SPAWN_PROJECTILE') {
+                    if (!entitiesRef.current.find(e => e.id === payload.id)) {
+                        entitiesRef.current.push({
+                            ...payload,
+                            id: payload.id, 
+                            type: 'PROJECTILE'
+                        });
+                    }
                 } else if (type === 'REMOVE_DROP') {
                     entitiesRef.current = entitiesRef.current.filter(e => e.id !== payload.id);
                 } else if (type === 'SYNC_ENTITIES_AND_WORLD') {
@@ -2445,6 +2568,10 @@ const activeChestPosRef = useRef(activeChestPos);
 
     const saveGame = async () => {
         if (!worldRef.current) return;
+        if (backroomsPhase !== 'NONE') {
+            addNotification(lang === 'PT' ? 'Você não pode salvar aqui.' : 'You cannot save here.');
+            return;
+        }
         const save: SavedWorld = { id: currentWorldId, name: currentWorldName, seed: currentSeed, version: 2, worldData: worldRef.current, player: playerRef.current, inventory: inventory, equipment: equipment, furnaces: Array.from(furnacesRef.current.entries()), chests: Array.from(chestsRef.current.entries()), crops: Array.from(cropsRef.current.entries()), time: timeRef.current, totalDays: totalDaysRef.current, lastPlayed: Date.now(), xp: playerXP, level: playerLevel, skillPoints: skillPoints, stats: playerStats, stamina: staminaRef.current, hunger: hungerRef.current, options: options };
         try { await saveWorldToDB(save); console.log("Game Saved to IndexedDB!"); } catch (e) { console.error("Save failed", e); alert("Failed to save game! Database error."); }
     };
@@ -2551,6 +2678,7 @@ const activeChestPosRef = useRef(activeChestPos);
             if (e.code === bindings.inventory) { const heldItem = inventory[selectedSlot]; if (heldItem && (heldItem.id?.toString() || '').includes('hammer')) { setIsHammerMenuOpen(true); return; } if (isFurnaceOpen || isChestOpen || isSleepUIOpen || isArmorBenchOpen) { setIsFurnaceOpen(false); setIsChestOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); if (cursorItem) setCursorItem(null); } else { if (isInventoryOpen) { setIsInventoryOpen(false); setNearbyStation('NONE'); } else { setIsInventoryOpen(true); setNearbyStation('NONE'); } } }
             if (e.code === bindings.interact) handleInteraction();
             if (e.code === 'KeyL') setShowAchievementsUI(p => !p);
+            if (e.code === 'ControlLeft' || e.code === 'ControlRight') handleReload();
             if (e.code === bindings.drop) dropItem(selectedSlot, e.ctrlKey ? 64 : 1);
             if (e.code === 'KeyX' && !isInventoryOpen && !isChestOpen && !isFurnaceOpen) {
                 treePassRef.current = !treePassRef.current;
@@ -2860,12 +2988,19 @@ const activeChestPosRef = useRef(activeChestPos);
         // Touch handler for aiming on canvas
         const handleTouchStart = (e: TouchEvent) => {
             if (options.isMobile && gameState === 'PLAYING' && canvasRef.current) {
+                // Ignore touches on UI controls
+                if ((e.target as HTMLElement).closest && (e.target as HTMLElement).closest('.pointer-events-auto')) return;
+                
                 const rect = canvasRef.current.getBoundingClientRect();
-                const touch = e.touches[0];
-                const x = touch.clientX - rect.left;
-                const y = touch.clientY - rect.top;
-                mouseRef.current.x = x;
-                mouseRef.current.y = y;
+                // Find a touch that is not on the controls by checking clientX/Y, but since UI touches might be filtered, we can just use touches[0] if the target was canvas
+                if (e.target === canvasRef.current) {
+                    const touch = e.touches[e.touches.length - 1]; // Use latest touch
+                    const x = touch.clientX - rect.left;
+                    const y = touch.clientY - rect.top;
+                    mouseRef.current.x = x;
+                    mouseRef.current.y = y;
+                    mouseRef.current.isAimingTouch = true; // Mark that user actually aimed
+                }
             }
         };
 
@@ -2884,7 +3019,7 @@ const activeChestPosRef = useRef(activeChestPos);
                 window.removeEventListener('touchmove', handleTouchStart);
             }
         };
-    }, [gameState, cursorItem, isFurnaceOpen, isChestOpen, isInventoryOpen, inventory, selectedSlot, playerStats, equipment, isHammerMenuOpen, activeBuildBlock, options.adminMode, isSleepUIOpen, options.isMobile, isArmorBenchOpen, isChatOpen]); 
+    }, [gameState, cursorItem, isFurnaceOpen, isChestOpen, isInventoryOpen, inventory, selectedSlot, playerStats, equipment, isHammerMenuOpen, activeBuildBlock, options.adminMode, isSleepUIOpen, options.isMobile, isArmorBenchOpen, isChatOpen, backroomsPhase]); 
 
     useEffect(() => {
         if (gameState !== 'PLAYING' || options.tutorialEnabled === false || unlockedAchievements.includes(0)) return;
@@ -2918,6 +3053,77 @@ const activeChestPosRef = useRef(activeChestPos);
             isPaused = true;
         }
         
+        if (backroomsPhase !== 'EXPLORING') { if (smilerStatic > 0) { audio.stopStatic(); setSmilerStatic(0); } } if (backroomsPhase === 'EXPLORING' && !isPaused) {
+            if (Math.random() < 0.02 && entitiesRef.current.length < 30) {
+                // Spawn a backrooms monster
+                const rx = Math.floor(Math.random() * world.width);
+                const ry = Math.floor(Math.random() * world.height);
+                if (world.blocks[ry * world.width + rx] === BlockType.AIR && ry > 30) { // Not in Safe Zone (ry > 30 means below floor 0 roof)
+                    spawnMob('BACKROOMS_SMILER', rx * BLOCK_SIZE, ry * BLOCK_SIZE);
+                }
+            }
+
+            if (safeZoneBoundsRef.current) { const { sx, ex, sy, ey } = safeZoneBoundsRef.current; const px = player.x + player.width / 2; const py = player.y + player.height / 2; const isInSafeZone = px >= sx && px <= ex && py >= sy && py <= ey; if (isInSafeZone) { sanityLevelRef.current = 100; wasInSafeZoneRef.current = true; } else if (wasInSafeZoneRef.current) { wasInSafeZoneRef.current = false; addNotification('Você saiu da zona segura!'); } }
+            let closestSmiler = Infinity; entitiesRef.current.forEach(e => { if (e.type === 'BACKROOMS_SMILER') { const d = Math.hypot(e.x - player.x, e.y - player.y); if (d < closestSmiler) closestSmiler = d; } }); if (closestSmiler < 640) { const intensity = 1 - (closestSmiler / 640); audio.startStatic(intensity * 0.5); setSmilerStatic(intensity); } else { audio.stopStatic(); setSmilerStatic(0); } sanityLevelRef.current -= 0.01;
+            if (sanityLevelRef.current < 0) {
+                sanityLevelRef.current = 0;
+                if (timeRef.current % 30 === 0) { // Every 0.5s
+                    player.health -= 1;
+                    audio.playHit();
+                    setHearts(player.health);
+                }
+            }
+            if (Math.random() < 0.0005) { // Small chance each frame
+                audio.playSeeYou();
+            }
+        } else if (backroomsPhase === 'NONE') {
+            sanityLevelRef.current = 100;
+        }
+        
+        const enterBackrooms = () => {
+            if (backroomsPhase !== 'NONE') return;
+            setBackroomsPhase('FALLING');
+            audio.stopAllAmbients();
+            audio.stopMenuMusic();
+            setTimeout(() => audio.playBackroomsDrop(), 3000);
+            
+            setTimeout(() => {
+                setBackroomsPhase('WAKING_UP');
+                
+                // Generate Backrooms
+                const brWidth = WORLD_WIDTH;
+const brHeight = WORLD_HEIGHT;
+const brBlocks = new Array(brWidth * brHeight).fill(BlockType.AIR);
+const brLight = new Array(brWidth * brHeight).fill(0);
+const ROOM_WIDTH = 25;
+const ROOM_HEIGHT = 12;
+const NUM_FLOORS = 3;
+const NUM_ROOMS_X = 15;
+const startX = Math.floor((brWidth - (NUM_ROOMS_X * ROOM_WIDTH)) / 2);
+const startY = Math.floor((brHeight - (NUM_FLOORS * ROOM_HEIGHT)) / 2);
+const centerRoomX = Math.floor(NUM_ROOMS_X / 2);
+const centerRoomY = 1;
+const safeZoneStartX = startX + centerRoomX * ROOM_WIDTH;
+const safeZoneEndX = safeZoneStartX + ROOM_WIDTH;
+const safeZoneStartY = startY + centerRoomY * ROOM_HEIGHT;
+const safeZoneEndY = safeZoneStartY + ROOM_HEIGHT;
+for (let floor = 0; floor < NUM_FLOORS; floor++) { const y = startY + floor * ROOM_HEIGHT; for (let rx = 0; rx < NUM_ROOMS_X; rx++) { const x = startX + rx * ROOM_WIDTH; for (let ix = 0; ix < ROOM_WIDTH; ix++) { brBlocks[(y + ROOM_HEIGHT - 1) * brWidth + x + ix] = BlockType.MOSS; if (floor === NUM_FLOORS - 1) brBlocks[(y + ROOM_HEIGHT) * brWidth + x + ix] = BlockType.DEEP_STONE; } for (let ix = 0; ix < ROOM_WIDTH; ix++) brBlocks[y * brWidth + x + ix] = BlockType.WALLPAPER; for (let iy = 0; iy < ROOM_HEIGHT - 1; iy++) { if (rx > 0 || rx === 0) brBlocks[(y + iy) * brWidth + x] = BlockType.WALLPAPER; if (rx === NUM_ROOMS_X - 1) brBlocks[(y + iy) * brWidth + x + ROOM_WIDTH - 1] = BlockType.WALLPAPER; } if (rx > 0) { brBlocks[(y + ROOM_HEIGHT - 2) * brWidth + x] = BlockType.DOOR_BOTTOM_CLOSED; brBlocks[(y + ROOM_HEIGHT - 3) * brWidth + x] = BlockType.DOOR_TOP_CLOSED; } const midX = x + Math.floor(ROOM_WIDTH / 2); if (floor < NUM_FLOORS - 1) { brBlocks[(y + ROOM_HEIGHT - 1) * brWidth + midX] = BlockType.AIR; brBlocks[(y + ROOM_HEIGHT - 1) * brWidth + midX + 1] = BlockType.AIR; for(let ly = 1; ly < ROOM_HEIGHT; ly++) brBlocks[(y + ly) * brWidth + midX] = BlockType.LADDER; } if (Math.random() < 0.5) brBlocks[(y + 1) * brWidth + x + Math.floor(ROOM_WIDTH/4)] = BlockType.GENERATOR_OFF; } } const spawnX = startX + centerRoomX * ROOM_WIDTH + Math.floor(ROOM_WIDTH / 2); (window as any).brSpawnX = spawnX * BLOCK_SIZE; (window as any).brSpawnY = (startY + ROOM_HEIGHT - 2) * BLOCK_SIZE;
+const spawnY = startY + centerRoomY * ROOM_HEIGHT + ROOM_HEIGHT - 2;
+brBlocks[spawnY * brWidth + spawnX - 3] = BlockType.WHITE_DOOR_CLOSED;
+brBlocks[(spawnY - 1) * brWidth + spawnX - 3] = BlockType.WHITE_DOOR_CLOSED;
+let kx = centerRoomX, ky = centerRoomY;
+while(kx === centerRoomX && ky === centerRoomY) { kx = Math.floor(Math.random() * NUM_ROOMS_X); ky = Math.floor(Math.random() * NUM_FLOORS); }
+brBlocks[(startY + ky * ROOM_HEIGHT + ROOM_HEIGHT - 2) * brWidth + startX + kx * ROOM_WIDTH + Math.floor(ROOM_WIDTH/2) + 3] = BlockType.BR_KEY_BLOCK;
+playerRef.current.x = spawnX * BLOCK_SIZE;
+playerRef.current.y = spawnY * BLOCK_SIZE;
+playerRef.current.vy = 0;
+safeZoneBoundsRef.current = { sx: safeZoneStartX * BLOCK_SIZE, ex: safeZoneEndX * BLOCK_SIZE, sy: safeZoneStartY * BLOCK_SIZE, ey: safeZoneEndY * BLOCK_SIZE };
+overworldRef.current = worldRef.current;
+overworldEntitiesRef.current = entitiesRef.current;
+worldRef.current = { width: brWidth, height: brHeight, blocks: brBlocks, light: brLight, weather: { type: 'CLEAR', intensity: 0, duration: 0 }, npcSpawns: [], initialChests: [], structures: [] };
+setTimeout(() => { setBackroomsPhase('EXPLORING'); }, 3000);
+            }, 5000);
+        };
         
             // --- GAMEPAD LOGIC START ---
             const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -3170,7 +3376,14 @@ const activeChestPosRef = useRef(activeChestPos);
                                 } 
                             } else {
                                 const bx = Math.floor((mouseRef.current.x + cameraRef.current.x) / BLOCK_SIZE); const by = Math.floor((mouseRef.current.y + cameraRef.current.y) / BLOCK_SIZE);
-                                if (worldRef.current && mouseRef.current && cameraRef.current) { const idx = by * WORLD_WIDTH + bx; const b = worldRef.current.blocks[idx]; if (b === BlockType.DOOR_BOTTOM_CLOSED) { setBlockAt(bx, by, BlockType.DOOR_BOTTOM_OPEN); setBlockAt(bx, by - 1, BlockType.DOOR_TOP_OPEN); } else if (b === BlockType.DOOR_BOTTOM_OPEN) { setBlockAt(bx, by, BlockType.DOOR_BOTTOM_CLOSED); setBlockAt(bx, by - 1, BlockType.DOOR_TOP_CLOSED); } else if (b === BlockType.DOOR_TOP_CLOSED) { setBlockAt(bx, by, BlockType.DOOR_TOP_OPEN); setBlockAt(bx, by + 1, BlockType.DOOR_BOTTOM_OPEN); } else if (b === BlockType.DOOR_TOP_OPEN) { setBlockAt(bx, by, BlockType.DOOR_TOP_CLOSED); setBlockAt(bx, by + 1, BlockType.DOOR_BOTTOM_CLOSED); } }
+                                if (worldRef.current && mouseRef.current && cameraRef.current) {
+                                    const idx = by * WORLD_WIDTH + bx;
+                                    const b = worldRef.current.blocks[idx];
+                                    if (b === BlockType.DOOR_BOTTOM_CLOSED) { setBlockAt(bx, by, BlockType.DOOR_BOTTOM_OPEN); setBlockAt(bx, by - 1, BlockType.DOOR_TOP_OPEN); }
+                                    else if (b === BlockType.DOOR_BOTTOM_OPEN) { setBlockAt(bx, by, BlockType.DOOR_BOTTOM_CLOSED); setBlockAt(bx, by - 1, BlockType.DOOR_TOP_CLOSED); }
+                                    else if (b === BlockType.DOOR_TOP_CLOSED) { setBlockAt(bx, by, BlockType.DOOR_TOP_OPEN); setBlockAt(bx, by + 1, BlockType.DOOR_BOTTOM_OPEN); }
+                                    else if (b === BlockType.DOOR_TOP_OPEN) { setBlockAt(bx, by, BlockType.DOOR_TOP_CLOSED); setBlockAt(bx, by + 1, BlockType.DOOR_BOTTOM_CLOSED); }
+                                    }
                             }
                         }
                     }
@@ -3246,9 +3459,16 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 const isRaining = wx === 'RAIN' || wx === 'HEAVY_RAIN';
                 const px = Math.floor(player.x / BLOCK_SIZE);
                 const py = Math.floor(player.y / BLOCK_SIZE);
-                const inWater = world.blocks[py * WORLD_WIDTH + px] === BlockType.WATER || world.blocks[(py+1) * WORLD_WIDTH + px] === BlockType.WATER;
-                const isGolden = getBiome(px, currentSeed) === 'golden_forest';
-                audio.updateAmbient(isRaining, false, isDay, inWater, isGolden);
+                if (backroomsPhase !== 'NONE') {
+                    audio.stopAllAmbients();
+                    if (timeRef.current % 720 === 0) {
+                        audio.playBackroomsHum();
+                    }
+                } else {
+                    const inWater = world.blocks[py * WORLD_WIDTH + px] === BlockType.WATER || world.blocks[(py+1) * WORLD_WIDTH + px] === BlockType.WATER;
+                    const isGolden = getBiome(px, currentSeed) === 'golden_forest';
+                    audio.updateAmbient(isRaining, false, isDay, inWater, isGolden);
+                }
             }
             
             if (timeRef.current === DUSK_START) {
@@ -3475,7 +3695,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                     }
                 }
                 
-                if (isDay && r < 0.3) {
+                if (backroomsPhase !== 'NONE') { } else if (isDay && r < 0.3) {
                     // Added GOLDEN_DEER multiple times to increase spawn rate
                     const types: any[] = ['PIG', 'SHEEP', 'COW', 'CAMEL', 'SNAKE', 'RABBIT', 'POLAR_BEAR', 'DOG', 'BIRD', 'GOLDEN_DEER', 'GOLDEN_DEER', 'GOLDEN_DEER', 'SHARK'];
                     spawnMob(types[Math.floor(Math.random() * types.length)]);
@@ -3499,7 +3719,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 } 
             }
 
-            if (Math.random() < 0.05 && entitiesRef.current.length < 50) { 
+            if (backroomsPhase === 'NONE' && Math.random() < 0.05 && entitiesRef.current.length < 50) { 
                 const playerBlockY = Math.floor(player.y / BLOCK_SIZE);
                 if (playerBlockY > 30) {
                      const spawnDistX = 20 + Math.floor(Math.random() * 20);
@@ -3776,7 +3996,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                     const ftB = world.blocks[Math.floor((player.y + player.height + 2) / BLOCK_SIZE) * WORLD_WIDTH + Math.floor((player.x + player.width/2)/BLOCK_SIZE)];
                     let mat = 'grass';
                     if (ftB === BlockType.STONE || ftB === BlockType.COAL_ORE || ftB === BlockType.IRON_ORE || ftB === BlockType.GOLD_ORE || ftB === BlockType.DIAMOND_ORE || ftB === BlockType.TITANIUM_ORE || ftB === BlockType.URANIUM_ORE || ftB === BlockType.BEDROCK) mat = 'stone';
-                    else if (ftB === BlockType.PLANKS || ftB === BlockType.DARK_PLANKS || ftB === BlockType.GOLDEN_PLANKS || ftB === BlockType.WOOD || ftB === BlockType.CRAFTING_TABLE || ftB === BlockType.DOOR_BOTTOM_CLOSED || ftB === BlockType.DOOR_BOTTOM_OPEN || ftB === BlockType.CHEST) mat = 'wood';
+                    else if (ftB === BlockType.PLANKS || ftB === BlockType.DARK_PLANKS || ftB === BlockType.GOLDEN_PLANKS || ftB === BlockType.WOOD || ftB === BlockType.CRAFTING_TABLE || ftB === BlockType.DOOR_BOTTOM_CLOSED || ftB === BlockType.DOOR_BOTTOM_OPEN || ftB === BlockType.CHEST || ftB === BlockType.WEAPON_BENCH) mat = 'wood';
                     else if (ftB === BlockType.SNOW_BLOCK || ftB === BlockType.ICE) mat = 'snow';
                     audio.playStep(mat);
 
@@ -3808,17 +4028,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 }
             }
 
-            if (player.y > WORLD_HEIGHT * BLOCK_SIZE || player.health <= 0) {
-                if (['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) {
-                    player.health = player.maxHealth;
-                    if (player.y > WORLD_HEIGHT * BLOCK_SIZE) { player.y = 0; player.vy = 0; player.highestY = 0; }
-                } else {
-                     if (!checkTotemRevive()) {
-                         setShowDeathScreen(true);
-                         setGameState('PAUSED');
-                     }
-                }
-            }
+            if ((player.y > WORLD_HEIGHT * BLOCK_SIZE || player.health <= 0) && backroomsPhase !== 'FALLING' && backroomsPhase !== 'WAKING_UP') { if (player.y > WORLD_HEIGHT * BLOCK_SIZE && backroomsPhase === 'NONE') { enterBackrooms(); } else if (player.y > WORLD_HEIGHT * BLOCK_SIZE && backroomsPhase === 'EXPLORING') { player.x = (window as any).brSpawnX || player.x; player.y = (window as any).brSpawnY || player.y - 1000; player.vy = 0; player.highestY = player.y; } else if (['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) { player.health = player.maxHealth; if (player.y > WORLD_HEIGHT * BLOCK_SIZE) { player.y = 0; player.vy = 0; player.highestY = 0; } } else { if (!checkTotemRevive()) { if (backroomsPhase === 'EXPLORING') { setBackroomsPhase('JUMPSCARE'); audio.playJumpscare(); setTimeout(() => { setBackroomsPhase('NONE'); if (overworldRef.current) { worldRef.current = overworldRef.current; entitiesRef.current = overworldEntitiesRef.current; overworldRef.current = null; } respawnPlayer(worldRef.current!); }, 3000); } else { setShowDeathScreen(true); setGameState('PAUSED'); } } } }
             
             // --- POTION TICK LOGIC ---
             if (timeRef.current % 60 === 0) {
@@ -3898,7 +4108,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                         for (let x = pCenterX - 1; x <= pCenterX + 1; x++) {
                             const b = world.blocks[y * WORLD_WIDTH + x];
                             let msg = '';
-                            if (b === BlockType.CRAFTING_TABLE || b === BlockType.SCIENCE_BENCH || b === BlockType.MEDICAL_BENCH) msg = t.PROMPT_OPEN_WORKBENCH;
+                            if (b === BlockType.CRAFTING_TABLE || b === BlockType.SCIENCE_BENCH || b === BlockType.MEDICAL_BENCH || b === BlockType.WEAPON_BENCH || b === BlockType.AMMO_BENCH) msg = t.PROMPT_OPEN_WORKBENCH;
                             else if (b === BlockType.FURNACE) msg = t.PROMPT_OPEN_FURNACE;
                             else if (b === BlockType.CHEST || b === BlockType.CHEST_MEDIUM || b === BlockType.CHEST_LARGE || b === BlockType.STONE_CHEST) msg = t.PROMPT_OPEN_CHEST;
                             else if (b === BlockType.BED || b === BlockType.BED_MEDIUM || b === BlockType.BED_ADVANCED) msg = t.PROMPT_SLEEP;
@@ -3906,6 +4116,8 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                             else if (b === BlockType.LEVER || b === BlockType.LEVER_ON || b === BlockType.BUTTON) msg = t.PROMPT_OPEN;
                             else if (b === BlockType.DOOR_BOTTOM_CLOSED || b === BlockType.DOOR_TOP_CLOSED || b === BlockType.DOOR_STONE_BOTTOM_CLOSED || b === BlockType.DOOR_STONE_TOP_CLOSED) msg = t.PROMPT_OPEN;
                             else if (b === BlockType.DOOR_BOTTOM_OPEN || b === BlockType.DOOR_TOP_OPEN || b === BlockType.DOOR_STONE_BOTTOM_OPEN || b === BlockType.DOOR_STONE_TOP_OPEN) msg = t.PROMPT_CLOSE;
+                            else if (b === BlockType.GENERATOR_OFF) msg = "Ativar Gerador";
+                            else if (b === BlockType.WHITE_DOOR_CLOSED) msg = "Abrir Saída";
                             
                             if (msg) {
                                 promptMsg = msg;
@@ -4078,10 +4290,10 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                     }
 
                     if (inWater) {
-                        ent.vy += (GRAVITY * 0.1); // floaty gravity
+                        if (ent.itemId !== 'bullet') ent.vy += (GRAVITY * 0.1); // floaty gravity
                         if (ent.vy > 2) ent.vy = 2; // terminal velocity in water
                     } else {
-                        ent.vy += GRAVITY; 
+                        if (ent.itemId !== 'bullet') ent.vy += GRAVITY; 
                     }
                     
                     ent.y += ent.vy; 
@@ -4130,12 +4342,78 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 else if (ent.type === 'PROJECTILE') { 
                     // [Projectile logic remains unchanged]
                     if (ent.projectileState === 'FLYING') { 
-                        ent.vy += 0.2; ent.x += ent.vx; ent.y += ent.vy; ent.rotation = Math.atan2(ent.vy, ent.vx); 
+                        if (ent.itemId !== 'bullet') ent.vy += 0.2; 
+                        ent.x += ent.vx; ent.y += ent.vy; ent.rotation = Math.atan2(ent.vy, ent.vx); 
                         if (ent.returnTime && ent.creationTime) { if (Date.now() - ent.creationTime > ent.returnTime) { ent.projectileState = 'RETURNING'; } }
-                        let projectileDestroyed = false; for (let j = entitiesRef.current.length - 1; j >= 0; j--) { const mob = entitiesRef.current[j]; if (mob.type === 'PLAYER' || mob.type === 'DROP' || mob.type === 'PROJECTILE') continue; if (ent.x < mob.x + mob.width && ent.x + ent.width > mob.x && ent.y < mob.y + mob.height && ent.y + ent.height > mob.y) { const heldItemId = ent.itemId ? (ent.itemId?.toString() || '') : 'wood_spear'; const isArrow = heldItemId === 'arrow'; const isRadioactive = heldItemId === 'uranium'; const damage = isRadioactive ? 5 : (isArrow ? 4 : (DAMAGE_VALUES[heldItemId] || 1)); mob.health -= damage; mob.lastDamageTime = Date.now(); mob.vx = ent.vx * 0.5; if (mob.health <= 0) { gainXP(XP_PER_MOB); entitiesRef.current.splice(j, 1); if (mob.type === 'COW') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 1); } if (mob.type === 'GOLDEN_DEER') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 2); } if (mob.type === 'SHARK') spawnDrop(mob.x, mob.y, 'raw_beef', 2); if (mob.type === 'PIG') spawnDrop(mob.x, mob.y, 'raw_porkchop', 2); if (mob.type === 'SHEEP') spawnDrop(mob.x, mob.y, BlockType.WOOL, 1); if (mob.type === 'LUNAR_FOX') { spawnDrop(mob.x, mob.y, 'raw_diamond', 2); spawnDrop(mob.x, mob.y, 'raw_gold', 3); } if (mob.type === 'ZOMBIE') spawnDrop(mob.x, mob.y, 'raw_beef', 1); if (mob.type === 'MUTANT_ZOMBIE') { spawnDrop(mob.x, mob.y, 'uranium_totem', 1); spawnDrop(mob.x, mob.y, 'uranium', 5); } } if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(!isArrow && !isRadioactive) spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); } projectileDestroyed = true; break; } } 
-                        if (!projectileDestroyed && (ent.itemId === 'uranium' || ent.itemId === 'spike' || ent.itemId === 'arrow')) { const p = playerRef.current; if (ent.x < p.x + p.width && ent.x + ent.width > p.x && ent.y < p.y + p.height && ent.y + ent.height > p.y) { p.health -= (ent.itemId === 'spike' ? 8 : ent.itemId === 'arrow' ? 5 : 5); p.vx = ent.vx * 0.5; audio.playHit(); entitiesRef.current.splice(i, 1); projectileDestroyed = true; } }
+                        let projectileDestroyed = false; 
+                        for (let j = entitiesRef.current.length - 1; j >= 0; j--) { 
+                            const mob = entitiesRef.current[j]; 
+                            if (mob.type === 'PLAYER' || mob.type === 'DROP' || mob.type === 'PROJECTILE') continue; 
+                            if (ent.x < mob.x + mob.width && ent.x + ent.width > mob.x && ent.y < mob.y + mob.height && ent.y + ent.height > mob.y) { 
+                                const heldItemId = ent.itemId ? (ent.itemId?.toString() || '') : 'wood_spear'; 
+                                const isArrow = heldItemId === 'arrow'; 
+                                const isBullet = heldItemId === 'bullet'; 
+                                const isRadioactive = heldItemId === 'uranium'; 
+                                const isSpike = heldItemId === 'spike'; 
+                                const flyTime = Date.now() - (ent.creationTime || Date.now());
+                                const distMultiplier = isBullet ? Math.max(0.4, 1 - flyTime / 2000) : 1; 
+                                const damage = isRadioactive ? 5 : (isArrow ? 4 : (isBullet ? 5 : (DAMAGE_VALUES[heldItemId] || 1))); 
+                                
+                                mob.health -= damage; 
+                                mob.lastDamageTime = Date.now(); 
+                                mob.vx = ent.vx * 0.5; 
+                                
+                                audio.playHit();
+                                if (mob.type === 'COW') audio.playCowHurt();
+                                else if (mob.type.includes('ZOMBIE')) audio.playZombieHurt();
+                                else if (['PIG', 'SHEEP', 'DOG', 'WOLF', 'HORSE'].includes(mob.type)) audio.playAnimalHurt();
+
+                                if (mob.health <= 0) { 
+                                    gainXP(XP_PER_MOB); 
+                                    if (mob.type === 'COW') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 1); } 
+                                    if (mob.type === 'GOLDEN_DEER') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 2); } 
+                                    if (mob.type === 'SHARK') spawnDrop(mob.x, mob.y, 'raw_beef', 2); 
+                                    if (mob.type === 'PIG') spawnDrop(mob.x, mob.y, 'raw_porkchop', 2); 
+                                    if (mob.type === 'SHEEP') spawnDrop(mob.x, mob.y, BlockType.WOOL, 1); 
+                                    if (mob.type === 'LUNAR_FOX') { spawnDrop(mob.x, mob.y, 'raw_diamond', 2); spawnDrop(mob.x, mob.y, 'raw_gold', 3); } 
+                                    if (mob.type === 'ZOMBIE') spawnDrop(mob.x, mob.y, 'raw_beef', 1); 
+                                    if (mob.type === 'MUTANT_ZOMBIE') { spawnDrop(mob.x, mob.y, 'uranium_totem', 1); spawnDrop(mob.x, mob.y, 'uranium', 5); } 
+                                    // Remove mob carefully considering shifting indices
+                                    entitiesRef.current.splice(j, 1); 
+                                } 
+                                
+                                if (ent.loyalty || ent.returnTime) { ent.projectileState = 'RETURNING'; } 
+                                else { 
+                                    if(!isArrow && !isRadioactive && !isBullet && !isSpike) spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); 
+                                    // Because we might have removed 'j' and j < i, i could have shifted.
+                                    const currentProjectileIndex = (mob.health <= 0 && j < i) ? i - 1 : i;
+                                    entitiesRef.current.splice(currentProjectileIndex, 1); 
+                                    // To keep the outer loop clean, we must adjust i if it shifted. 
+                                    // But since we break out of inner loop and 'continue' outer loop, i gets decremented correctly.
+                                    // Actually wait, outer loop just does i--. That's fine! 
+                                } 
+                                projectileDestroyed = true; 
+                                break; 
+                            } 
+                        } 
+                        if (!projectileDestroyed && (ent.itemId === 'uranium' || ent.itemId === 'spike' || ent.itemId === 'arrow' || ent.itemId === 'bullet')) { const p = playerRef.current; if (ent.ownerId !== p.id && ent.x < p.x + p.width && ent.x + ent.width > p.x && ent.y < p.y + p.height && ent.y + ent.height > p.y) { const flyTime = Date.now() - (ent.creationTime || Date.now()); const dMult = ent.itemId === 'bullet' ? Math.max(0.4, 1 - flyTime / 2000) : 1; const dmg = (ent.itemId === 'spike' ? 8 : ent.itemId === 'arrow' ? 5 : ent.itemId === 'bullet' ? ((ent.itemMeta?.damage || 20) * dMult) : 5); if (!['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL')) p.health -= dmg; p.vx = ent.vx * 0.5; audio.playHit(); entitiesRef.current.splice(i, 1); projectileDestroyed = true; } }
                         if (projectileDestroyed) continue; 
-                        if (checkCollision(ent, world)) { if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(ent.itemId !== 'arrow' && ent.itemId !== 'uranium' && ent.itemId !== 'spike') spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); continue; } } 
+                        
+                        const curBlockX = Math.floor((ent.x + ent.width/2)/BLOCK_SIZE);
+                        const curBlockY = Math.floor((ent.y + ent.height/2)/BLOCK_SIZE);
+                        const curBlock = world.blocks[curBlockY*WORLD_WIDTH + curBlockX];
+                        if (curBlock === BlockType.WATER || curBlock === BlockType.LAVA) {
+                            ent.vx *= 0.6; ent.vy *= 0.6;
+                            if (Math.abs(ent.vx) < 1 && Math.abs(ent.vy) < 1) { entitiesRef.current.splice(i, 1); continue; }
+                        }
+
+                        if (checkCollision(ent, world)) { 
+                            if (ent.itemId === 'bullet') {
+                                for(let p=0; p<3; p++){ entitiesRef.current.push({ id: generateEntityId(), type: 'DROP', x: ent.x, y: ent.y, width: 2, height: 2, vx: (Math.random()-0.5)*5, vy: (Math.random()-0.5)*5, grounded: false, health: 1, maxHealth: 1, facingRight: true, itemId: 'bullet_spark', isParticle: true, creationTime: Date.now() }); }
+                                entitiesRef.current.push({ id: generateEntityId(), type: 'DROP', x: ent.x, y: ent.y, width: 2, height: 2, vx: 0, vy: 0, grounded: false, health: 1, maxHealth: 1, facingRight: true, itemId: 'bullet_hole', isParticle: true, creationTime: Date.now() });
+                            }
+                            if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(ent.itemId !== 'arrow' && ent.itemId !== 'uranium' && ent.itemId !== 'spike' && ent.itemId !== 'bullet') spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); continue; } 
+                        } 
                     } else if (ent.projectileState === 'RETURNING') { 
                         const dx = player.x - ent.x; const dy = player.y - ent.y; const dist = Math.sqrt(dx*dx + dy*dy); const speed = 15; ent.vx = (dx / dist) * speed; ent.vy = (dy / dist) * speed; ent.x += ent.vx; ent.y += ent.vy; ent.rotation = Math.atan2(ent.vy, ent.vx) + Math.PI; 
                         if (dist < 30) { entitiesRef.current.splice(i, 1); setInventory(prev => { const newInv = [...prev]; let added = false; for(let j=0; j<36; j++) { if(newInv[j] && newInv[j]!.id == ent.itemId && newInv[j]!.count < 64) { newInv[j]!.count++; added = true; break; } } if(!added) { for(let j=0; j<36; j++) { if(!newInv[j]) { newInv[j] = { id: !isNaN(Number(ent.itemId)) ? Number(ent.itemId) : ent.itemId!, count: 1, type: !isNaN(Number(ent.itemId)) ? ItemType.BLOCK : (FOOD_VALUES[ent.itemId as string] ? ItemType.FOOD : ItemType.TOOL), meta: ent.itemMeta }; if (ent.loyalty) { if(!newInv[j]!.meta) newInv[j]!.meta = {}; newInv[j]!.meta!.loyalty = true; } break; } } } return newInv; }); continue; } 
@@ -4184,8 +4462,29 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                     isPanic = true;
                 }
 
-                if ((ent.type?.toString() || '').includes('ZOMBIE') || ent.type === 'PLAGUE_KING' || ent.type === 'MUTANT_ZOMBIE' || (ent.type === 'SCORPION' && isPanic) || ent.type === 'SNAKE' || ent.type === 'SHARK' || (ent.type === 'SPIDER' && (player as any).spiderAggro) || (ent.type === 'BUSH_MOB' && !ent.isSleeping)) { 
+                if ((ent.type?.toString() || '').includes('ZOMBIE') || (ent.type?.toString() || '').includes('BACKROOMS') || ent.type === 'PLAGUE_KING' || ent.type === 'MUTANT_ZOMBIE' || (ent.type === 'SCORPION' && isPanic) || ent.type === 'SNAKE' || ent.type === 'SHARK' || (ent.type === 'SPIDER' && (player as any).spiderAggro) || (ent.type === 'BUSH_MOB' && !ent.isSleeping)) { 
                     if ((ent.type === 'ZOMBIE' || ent.type === 'LUNAR_FOX') && isDay) { entitiesRef.current.splice(i, 1); continue; } 
+                    
+                    // BACKROOMS ENTITIES LOGIC
+                    if ((ent.type?.toString() || '').includes('BACKROOMS')) {
+                        if (ent.type === 'BACKROOMS_WANDERER') {
+                            if (Math.abs(distToPlayer) < 300) {
+                                ent.facingRight = distToPlayer > 0;
+                                ent.vx = ent.facingRight ? 3 : -3;
+                                if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE;
+                            } else {
+                                if (Math.random() < 0.05) ent.vx = (Math.random() - 0.5) * 4;
+                            }
+                        } else if (ent.type === 'BACKROOMS_HOUND') {
+                            if (Math.abs(distToPlayer) < 400 && Math.abs(distY) < 100) {
+                                ent.facingRight = distToPlayer > 0;
+                                ent.vx = ent.facingRight ? 5.5 : -5.5; // Fast
+                                if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE;
+                            } else {
+                                if (Math.random() < 0.05) ent.vx = (Math.random() - 0.5) * 6;
+                            }
+                        } else if (ent.type === 'BACKROOMS_SMILER') { if (Math.abs(distToPlayer) < 640) { if (!ent.aggro) { ent.aggro = true; audio.playSmilerScream(); } ent.facingRight = distToPlayer > 0; ent.vx = ent.facingRight ? 4 : -4; if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; const ecx = Math.floor(ent.x / BLOCK_SIZE); const ecy = Math.floor(ent.y / BLOCK_SIZE); const bAtFeet = world.blocks[ecy * WORLD_WIDTH + ecx]; if (bAtFeet === BlockType.LADDER || bAtFeet === BlockType.VINES) { if (targetY < ent.y - 10) ent.vy = -3.5; else if (targetY > ent.y + 10) ent.vy = 3.5; else ent.vy = 0; } const bx = Math.floor((ent.x + (ent.facingRight ? ent.width + 2 : -2)) / BLOCK_SIZE); const by = Math.floor((ent.y + ent.height / 2) / BLOCK_SIZE); const frontBlock = world.blocks[by * WORLD_WIDTH + bx]; if (frontBlock === BlockType.DOOR_BOTTOM_CLOSED || frontBlock === BlockType.DOOR_TOP_CLOSED || frontBlock === BlockType.WHITE_DOOR_CLOSED) { setBlockAt(bx, by, frontBlock === BlockType.DOOR_BOTTOM_CLOSED ? BlockType.DOOR_BOTTOM_OPEN : frontBlock === BlockType.DOOR_TOP_CLOSED ? BlockType.DOOR_TOP_OPEN : BlockType.WHITE_DOOR_OPEN); } } else { ent.aggro = false; ent.vx = 0; } }
+                    }
                     
                     // SHARK LOGIC
                     if (ent.type === 'SHARK') {
@@ -4394,6 +4693,9 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                 else if (ent.type === 'ZOMBIE_KING') rawDamage = 10;
                                 else if (ent.type === 'PLAGUE_KING') rawDamage = 20;
                                 else if (ent.type === 'ZOMBIE_RUNNER') rawDamage = 3;
+                                else if (ent.type === 'BACKROOMS_WANDERER') rawDamage = 3;
+                                else if (ent.type === 'BACKROOMS_HOUND') rawDamage = 6;
+                                else if (ent.type === 'BACKROOMS_SMILER') rawDamage = 15;
                                 
                                 let reduction = 0; 
                                 if(equipment.helmet) reduction += ARMOR_PROTECTION[(equipment.helmet?.id?.toString() || '')] || 0; 
@@ -4654,14 +4956,151 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
         const worldMouseX = mouseRef.current.x + cameraRef.current.x;
         const worldMouseY = mouseRef.current.y + cameraRef.current.y;
         const dist = Math.sqrt(Math.pow(worldMouseX - cx, 2) + Math.pow(worldMouseY - cy, 2));
-        const reach = REACH_DISTANCE + (playerStats.reach * BLOCK_SIZE);
+        
+        let targetAngleRaw = Math.atan2(worldMouseY - (player.y + player.height/2), worldMouseX - (player.x + player.width/2));
+        
+        // If on mobile and user hasn't actively touched the canvas to aim, fire straight horizontally
+        if (options.isMobile && !(mouseRef.current as any).isAimingTouch) {
+            targetAngleRaw = player.facingRight ? 0 : Math.PI;
+        }
+        if (!isPaused && !isFurnaceOpen && !isChestOpen && !isAdminMenuOpen && !isSleepUIOpen && !isArmorBenchOpen && !isInventoryOpen) {
+            if (mouseRef.current.left) {
+                const heldItem = inventory[selectedSlot];
+                const isGun = heldItem && heldItem.type === ItemType.WEAPON && GUN_STATS[heldItem.id];
 
-        if (dist < reach && !isPaused && !isFurnaceOpen && !isChestOpen && !isAdminMenuOpen && !isSleepUIOpen && !isArmorBenchOpen) {
+                if (isGun && (player.attackCooldown || 0) <= 0) {
+                    const stats = GUN_STATS[heldItem.id];
+                    // Verify if it can fire (auto vs single fire)
+                    let canFire = false;
+                    if (stats.auto) {
+                        canFire = true;
+                    } else {
+                        // Single fire: only fire if this is a new click
+                        if (lastFiredClickRef.current !== clickStartTimeRef.current) {
+                            canFire = true;
+                        }
+                    }
+
+                    if (canFire) {
+                        lastFiredClickRef.current = clickStartTimeRef.current;
+                        
+                        // Ammo check
+                        let hasAmmo = false;
+                        let usedAmmoId: string | undefined = heldItem.meta?.loadedAmmoId;
+                        let usedAmmoMeta: any;
+                        
+                        const gunNameForDmg = heldItem.id.toString().toLowerCase();
+                        const isSmallForDmg = ['glock', 'beretta', 'usp', 'five_seven', 'p250', 'cz75', 'tec_9', 'desert_eagle', 'm1911', 'revolver'].some(n => gunNameForDmg.includes(n));
+                        const baseDmg = isSmallForDmg ? 5 : 8;
+
+                        if (stats.ammoType === 'NONE' || options.gameMode === 'CREATIVE' || options.gameMode === 'GOD') {
+                            hasAmmo = true;
+                            if (!usedAmmoId) {
+                                usedAmmoId = isSmallForDmg ? 'common_ammo' : 'heavy_ammo';
+                            }
+                            const isPiercing = usedAmmoId === 'piercing_ammo';
+                            usedAmmoMeta = { damage: baseDmg * (isPiercing ? 1.6 : 1), color: isPiercing ? '#33ccff' : (usedAmmoId === 'heavy_ammo' ? '#ff6600' : '#ffcc00') };
+                        } else {
+                            if (heldItem.meta && heldItem.meta.ammo > 0) {
+                                hasAmmo = true;
+                                if (!usedAmmoId) usedAmmoId = 'common_ammo';
+                                const isPiercing = usedAmmoId === 'piercing_ammo';
+                                usedAmmoMeta = { damage: baseDmg * (isPiercing ? 1.6 : 1), color: isPiercing ? '#33ccff' : (usedAmmoId === 'heavy_ammo' ? '#ff6600' : '#ffcc00') };
+                                
+                                // Consume ammo from clip
+                                setInventory(prev => {
+                                    const n = [...prev];
+                                    if (n[selectedSlot] && n[selectedSlot]?.meta) {
+                                        n[selectedSlot] = { ...n[selectedSlot]!, meta: { ...n[selectedSlot]!.meta, ammo: n[selectedSlot]!.meta!.ammo - 1 } };
+                                    }
+                                    return n;
+                                });
+                            }
+                        }
+
+                        if (hasAmmo) {
+                            player.attackCooldown = Math.floor(60 / stats.fireRate);
+                            
+                            // Audio
+                            audio.playHit(); // TODO: add playGunshot
+                            
+                            // Player movement affects accuracy!
+                            let currentSpread = stats.spread;
+                            if (Math.abs(player.vx) > 1) { currentSpread *= 2.0; } // Moving = worse accuracy
+                            if (keysRef.current['ShiftLeft']) { currentSpread *= 1.5; } // Sprinting = even worse
+                            if (!player.grounded) { currentSpread *= 3.0; } // Jumping/falling = terrible accuracy
+                            if (keysRef.current['KeyS']) { currentSpread *= 0.5; } // Crouching = better accuracy
+                            
+                            const spread = (Math.random() - 0.5) * currentSpread * 0.1;
+
+                            // Screen Shake & Recoil
+                            recoilOffsetRef.current.recY -= stats.recoil * 5;
+                            
+                            // Aggro/Panic nearby mobs from loud shot
+                            const shotNoiseRadius = stats.recoil * 200; // Big guns make more noise
+                            entitiesRef.current.forEach(e => {
+                                if (e.type !== 'PROJECTILE' && e.type !== 'DROP' && e.type !== 'PLAYER') {
+                                    const d = Math.sqrt(Math.pow(e.x - player.x, 2) + Math.pow(e.y - player.y, 2));
+                                    if (d < shotNoiseRadius) {
+                                        // Hostile mobs aggro to player
+                                        if (['ZOMBIE', 'MUTANT_ZOMBIE', 'SPIDER', 'SCORPION'].includes(e.type)) {
+                                            e.targetId = player.id;
+                                        } 
+                                        // Passive mobs panic
+                                        else if (['COW', 'PIG', 'SHEEP', 'RABBIT', 'BIRD'].includes(e.type)) {
+                                            e.lastDamageTime = Date.now(); // Triggers flee behavior indirectly
+                                        }
+                                    }
+                                }
+                            });
+
+                            // Spawn bullet
+                            const bulletSpeed = 25;
+                            const targetAngle = targetAngleRaw + spread;
+                            
+                            const newProj = {
+                                id: generateEntityId(),
+                                type: 'PROJECTILE' as const,
+                                x: player.x + player.width/2 + Math.cos(targetAngleRaw) * 20,
+                                y: player.y + player.height/2 + Math.sin(targetAngleRaw) * 20,
+                                width: 4, height: 4,
+                                vx: Math.cos(targetAngle) * bulletSpeed,
+                                vy: Math.sin(targetAngle) * bulletSpeed,
+                                grounded: false,
+                                health: 1, maxHealth: 1,
+                                facingRight: player.facingRight,
+                                itemId: 'bullet',
+                                itemMeta: usedAmmoMeta,
+                                projectileState: 'FLYING' as const,
+                                ownerId: player.id,
+                                creationTime: Date.now()
+                            };
+
+                            entitiesRef.current.push(newProj);
+                            
+                            // Muzzle flash
+                            for (let p=0; p<4; p++) {
+                                entitiesRef.current.push({ id: generateEntityId(), type: 'DROP', x: newProj.x, y: newProj.y, width: 2, height: 2, vx: (Math.random()-0.5)*4 + newProj.vx*0.2, vy: (Math.random()-0.5)*4 + newProj.vy*0.2, grounded: false, health: 1, maxHealth: 1, facingRight: true, itemId: 'bullet_spark', isParticle: true, creationTime: Date.now() });
+                            }
+                            
+                            if (options.multiplayer?.mode === 'CLIENT') {
+                                broadcast('SPAWN_PROJECTILE', newProj);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        const reach = REACH_DISTANCE + (playerStats.reach * BLOCK_SIZE);
+        if (dist < reach && !isPaused && !isFurnaceOpen && !isChestOpen && !isAdminMenuOpen && !isSleepUIOpen && !isArmorBenchOpen && !isInventoryOpen) {
             const bx = Math.floor(worldMouseX / BLOCK_SIZE); const by = Math.floor(worldMouseY / BLOCK_SIZE);
             if (mouseRef.current.left) {
-                // ... (Existing attack/break logic remains identical) ...
                 const heldItem = inventory[selectedSlot];
-                let hitEntity = false;
+                const isGun = heldItem && heldItem.type === ItemType.WEAPON && GUN_STATS[heldItem.id];
+                
+                if (!isGun) {
+                    let hitEntity = false;
                 if ((player.attackCooldown || 0) <= 0) {
                      const isKatana = heldItem && (heldItem.id?.toString() || '').includes('katana'); const isScythe = heldItem && (heldItem.id?.toString() || '').includes('scythe');
                      const targets = entitiesRef.current.filter(ent => { if (ent.type === 'DROP' || ent.type === 'PROJECTILE') return false; return (worldMouseX >= ent.x && worldMouseX <= ent.x + ent.width && worldMouseY >= ent.y && worldMouseY <= ent.y + ent.height) || ((isKatana || isScythe) && Math.abs(ent.x - worldMouseX) < 60 && Math.abs(ent.y - worldMouseY) < 60); });
@@ -4697,7 +5136,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 if (!hitEntity) { 
                     if (bx >= 0 && bx < WORLD_WIDTH && by >= 0 && by < WORLD_HEIGHT) { 
                         const bType = world.blocks[by * WORLD_WIDTH + bx]; 
-                        if (bType !== BlockType.AIR && bType !== BlockType.BEDROCK && bType !== BlockType.WATER) { 
+                        if (bType !== BlockType.AIR && (bType !== BlockType.BEDROCK || adminFlags.oneHitBreak) && bType !== BlockType.WATER) { 
                             if (breakingRef.current.x !== bx || breakingRef.current.y !== by) breakingRef.current = { x: bx, y: by, progress: 0 }; 
                             if (canDamageBlock(bType, heldItem) || adminFlags.oneHitBreak) { 
                                 const speed = getBreakSpeed(bType, heldItem); 
@@ -4767,7 +5206,8 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                         }
                                         audio.playBreak();
                                     } else {
-                                        setBlockAt(bx, by, BlockType.AIR); 
+                                        setBlockAt(bx, by, BlockType.AIR);
+                                        
                                         audio.playBreak();
                                     }
                                     if (canHarvest(bType, heldItem)) { 
@@ -4780,6 +5220,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                             setBlockAt(bx, by, BlockType.DIRT);
                                             spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.SNOW_BLOCK, 1);
                                         }
+                                        else if (bType === BlockType.BR_KEY_BLOCK) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'br_key', 1); }
                                         else if (bType === BlockType.BERRY_BUSH) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'cherry', 1 + Math.floor(Math.random() * 2)); } 
                                         else if (bType === BlockType.APPLE_LEAVES) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'apple', 1); }
                                         else if (bType === BlockType.SEED_BUSH) { const rand = Math.random(); if (rand < 0.33) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'wheat_seeds', 1); else if (rand < 0.66) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'carrot', 1); else spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'potato', 1); } 
@@ -4799,7 +5240,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             
             // REMOVED LEVEL LOGIC FOR PICKAXE DROP CHANCE
 
-            } breakingRef.current = { x: -1, y: -1, progress: 0 }; damageTool(selectedSlot); } } else { breakingRef.current = { x: -1, y: -1, progress: 0 }; } } else breakingRef.current = { x: -1, y: -1, progress: 0 }; } }
+            } breakingRef.current = { x: -1, y: -1, progress: 0 }; damageTool(selectedSlot); } } else { breakingRef.current = { x: -1, y: -1, progress: 0 }; } } else breakingRef.current = { x: -1, y: -1, progress: 0 }; } } }
             } else breakingRef.current = { x: -1, y: -1, progress: 0 };
             
             // ... (rest of mouse handlers) ...
@@ -4934,7 +5375,29 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             }
         }
 
-        cameraRef.current.x = player.x - cvs.width / 2; cameraRef.current.y = player.y - cvs.height / 2;
+        // Target camera values including recoil and aiming
+        let shakeX = 0; let shakeY = 0;
+        if (recoilOffsetRef.current.recY < -0.1) {
+             shakeX = (Math.random() - 0.5) * -recoilOffsetRef.current.recY;
+             shakeY = (Math.random() - 0.5) * -recoilOffsetRef.current.recY;
+             recoilOffsetRef.current.recY *= 0.8;
+             if (Math.abs(recoilOffsetRef.current.recY) < 0.1) recoilOffsetRef.current.recY = 0;
+        }
+        
+        let targetCamX = player.x - cvs.width / 2;
+        let targetCamY = player.y - cvs.height / 2;
+        
+        const heldItem = inventory[selectedSlot];
+        const isGun = heldItem && heldItem.type === ItemType.WEAPON && GUN_STATS[heldItem.id];
+        if (isGun && mouseRef.current.right) {
+            // Aiming gives mouse offset
+            targetCamX += (mouseRef.current.x - (cvs.width/2)) * 0.4;
+            targetCamY += (mouseRef.current.y - (cvs.height/2)) * 0.4;
+        }
+        
+        cameraRef.current.x += (targetCamX - cameraRef.current.x) * 0.2 + shakeX;
+        cameraRef.current.y += (targetCamY - cameraRef.current.y) * 0.2 + shakeY;
+
         if (cameraRef.current.x < 0) cameraRef.current.x = 0; if (cameraRef.current.x > WORLD_WIDTH * BLOCK_SIZE - cvs.width) cameraRef.current.x = WORLD_WIDTH * BLOCK_SIZE - cvs.width; if (cameraRef.current.y < 0) cameraRef.current.y = 0; if (cameraRef.current.y > WORLD_HEIGHT * BLOCK_SIZE - cvs.height) cameraRef.current.y = WORLD_HEIGHT * BLOCK_SIZE - cvs.height;
 
         // --- DYNAMIC SKY ---
@@ -4995,130 +5458,137 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
         }
 
         // Realistic Sky Gradient
-        const skyGrad = ctx.createLinearGradient(0, 0, 0, cvs.height);
-        skyGrad.addColorStop(0, skyColor);
-        // Slightly lighter towards the horizon
-        skyGrad.addColorStop(1, moonPhaseRef.current === 'BLOOD' ? '#200000' : (time >= DUSK_START || time < DAWN_START ? '#0a0a1a' : '#b3e5fc'));
-        
-        ctx.fillStyle = skyGrad;
-        ctx.fillRect(0, 0, cvs.width, cvs.height);
-        
-        // Stars
-        if (time < DAWN_START || time > DUSK_START) {
-             const opacity = time < 5400 ? 1 : (time > 20000 ? 1 : (time > DUSK_START ? (time - DUSK_START) / 2000 : (DAWN_START - time) / 2000));
-             if (opacity > 0) {
-                 ctx.save();
-                 ctx.globalAlpha = opacity;
-                 ctx.fillStyle = 'white';
-                 // Pseudo random stars based on seed to not flicker
-                 for(let i=0; i<150; i++) {
-                     const sx = Math.abs(Math.sin(currentSeed * i * 3.14)) * cvs.width;
-                     const sy = Math.abs(Math.cos(currentSeed * i * 2.71)) * (cvs.height / 2);
-                     const r = Math.abs(Math.sin(i * 1.5)) * 1.5;
-                     ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+        if (backroomsPhase !== 'NONE') {
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, cvs.width, cvs.height);
+        } else {
+            const skyGrad = ctx.createLinearGradient(0, 0, 0, cvs.height);
+            skyGrad.addColorStop(0, skyColor);
+            // Slightly lighter towards the horizon
+            skyGrad.addColorStop(1, moonPhaseRef.current === 'BLOOD' ? '#200000' : (time >= DUSK_START || time < DAWN_START ? '#0a0a1a' : '#b3e5fc'));
+            
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, cvs.width, cvs.height);
+            
+            // Stars
+            if (time < DAWN_START || time > DUSK_START) {
+                 const opacity = time < 5400 ? 1 : (time > 20000 ? 1 : (time > DUSK_START ? (time - DUSK_START) / 2000 : (DAWN_START - time) / 2000));
+                 if (opacity > 0) {
+                     ctx.save();
+                     ctx.globalAlpha = opacity;
+                     ctx.fillStyle = 'white';
+                     // Pseudo random stars based on seed to not flicker
+                     for(let i=0; i<150; i++) {
+                         const sx = Math.abs(Math.sin(currentSeed * i * 3.14)) * cvs.width;
+                         const sy = Math.abs(Math.cos(currentSeed * i * 2.71)) * (cvs.height / 2);
+                         const r = Math.abs(Math.sin(i * 1.5)) * 1.5;
+                         ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+                     }
+                     
+                     // Shooting star
+                     if (Math.random() < 0.005) {
+                         const shX = Math.random() * cvs.width;
+                         const shY = Math.random() * cvs.height / 3;
+                         ctx.strokeStyle = 'white';
+                         ctx.lineWidth = 1;
+                         ctx.beginPath();
+                         ctx.moveTo(shX, shY);
+                         ctx.lineTo(shX - 40, shY + 30);
+                         ctx.stroke();
+                     }
+                     ctx.restore();
                  }
-                 
-                 // Shooting star
-                 if (Math.random() < 0.005) {
-                     const shX = Math.random() * cvs.width;
-                     const shY = Math.random() * cvs.height / 3;
-                     ctx.strokeStyle = 'white';
-                     ctx.lineWidth = 1;
-                     ctx.beginPath();
-                     ctx.moveTo(shX, shY);
-                     ctx.lineTo(shX - 40, shY + 30);
-                     ctx.stroke();
-                 }
-                 ctx.restore();
-             }
+            }
         }
 
-        // Draw Sun
-        if (sunY > -50 && sunY < cvs.height && !isPrecipitating) {
-            const sunGrad = ctx.createRadialGradient(sunX, sunY, 15, sunX, sunY, 80);
-            sunGrad.addColorStop(0, '#FFFFFF');
-            sunGrad.addColorStop(0.2, '#FFD700');
-            sunGrad.addColorStop(0.5, 'rgba(255, 165, 0, 0.4)');
-            sunGrad.addColorStop(1, 'rgba(255, 165, 0, 0)');
-            
-            ctx.globalCompositeOperation = 'screen';
-            ctx.fillStyle = sunGrad;
-            ctx.beginPath();
-            ctx.arc(sunX, sunY, 80, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.globalCompositeOperation = 'source-over';
-        }
-        
-        // Draw Moon
-        if (moonY > -50 && moonY < cvs.height && !isPrecipitating) {
-            ctx.fillStyle = '#F4F6F0';
-            ctx.beginPath();
-            ctx.arc(moonX, moonY, 25, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#E0E0E0';
-            ctx.beginPath(); ctx.arc(moonX - 5, moonY - 5, 4, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(moonX + 8, moonY + 2, 6, 0, Math.PI * 2); ctx.fill();
-            ctx.beginPath(); ctx.arc(moonX - 2, moonY + 8, 3, 0, Math.PI * 2); ctx.fill();
-            ctx.fillStyle = 'rgba(244, 246, 240, 0.1)';
-            ctx.beginPath();
-            ctx.arc(moonX, moonY, 45, 0, Math.PI * 2);
-            ctx.fill();
-        }
-        
-        // Draw Clouds
-        if (cloudsRef.current.length === 0) {
-            for (let i = 0; i < 15; i++) {
-                cloudsRef.current.push({
-                    x: Math.random() * WORLD_WIDTH * BLOCK_SIZE,
-                    y: 20 + Math.random() * 150,
-                    speed: 0.1 + Math.random() * 0.3,
-                    size: 1 + Math.random() * 1.5,
-                    layer: Math.floor(Math.random() * 3)
-                });
+        if (backroomsPhase === 'NONE') {
+            // Draw Sun
+            if (sunY > -50 && sunY < cvs.height && !isPrecipitating) {
+                const sunGrad = ctx.createRadialGradient(sunX, sunY, 15, sunX, sunY, 80);
+                sunGrad.addColorStop(0, '#FFFFFF');
+                sunGrad.addColorStop(0.2, '#FFD700');
+                sunGrad.addColorStop(0.5, 'rgba(255, 165, 0, 0.4)');
+                sunGrad.addColorStop(1, 'rgba(255, 165, 0, 0)');
+                
+                ctx.globalCompositeOperation = 'screen';
+                ctx.fillStyle = sunGrad;
+                ctx.beginPath();
+                ctx.arc(sunX, sunY, 80, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalCompositeOperation = 'source-over';
             }
-        }
-        
-        ctx.fillStyle = cloudColor;
-        cloudsRef.current.forEach(cloud => {
-            cloud.x += cloud.speed;
-            if (cloud.x > WORLD_WIDTH * BLOCK_SIZE) cloud.x = -200;
             
-            const parallax = 0.2 + (cloud.layer * 0.1);
-            let cx = (cloud.x - cameraRef.current.x * parallax) % (cvs.width + 400);
-            if (cx < -200) cx += cvs.width + 400;
-            
-            ctx.beginPath();
-            ctx.arc(cx, cloud.y, 20 * cloud.size, 0, Math.PI * 2);
-            ctx.arc(cx + 25 * cloud.size, cloud.y - 10 * cloud.size, 25 * cloud.size, 0, Math.PI * 2);
-            ctx.arc(cx + 50 * cloud.size, cloud.y, 20 * cloud.size, 0, Math.PI * 2);
-            ctx.fill();
-        });
-        
-        // --- SHADERS BACKGROUND BLOOM (God Rays) ---
-        // Draw this before the blocks so blocks occlude the rays!
-        if (options.graphicsQuality === 'ULTRA') {
-            const t2 = timeRef.current;
-            const isPrecip2 = isPrecipitating;
-            ctx.globalCompositeOperation = 'screen';
-            if (t2 < NIGHT_START && !isPrecip2) {
-                const grad = ctx.createRadialGradient(sunX, sunY, 10, sunX, sunY, Math.max(cvs.width, cvs.height) * 1.5);
-                grad.addColorStop(0, 'rgba(255, 255, 230, 0.8)');
-                grad.addColorStop(0.1, 'rgba(255, 240, 180, 0.4)');
-                grad.addColorStop(0.3, 'rgba(255, 200, 100, 0.15)');
-                grad.addColorStop(0.7, 'rgba(255, 120, 50, 0.05)');
-                grad.addColorStop(1, 'rgba(255, 100, 20, 0)');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, cvs.width, cvs.height);
-            } else if (!isPrecip2) {
-                const grad = ctx.createRadialGradient(moonX, moonY, 10, moonX, moonY, Math.max(cvs.width, cvs.height) * 1.2);
-                grad.addColorStop(0, 'rgba(220, 240, 255, 0.5)');
-                grad.addColorStop(0.2, 'rgba(180, 210, 255, 0.15)');
-                grad.addColorStop(0.5, 'rgba(100, 150, 255, 0.05)');
-                grad.addColorStop(1, 'rgba(50, 100, 255, 0)');
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, cvs.width, cvs.height);
+            // Draw Moon
+            if (moonY > -50 && moonY < cvs.height && !isPrecipitating) {
+                ctx.fillStyle = '#F4F6F0';
+                ctx.beginPath();
+                ctx.arc(moonX, moonY, 25, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#E0E0E0';
+                ctx.beginPath(); ctx.arc(moonX - 5, moonY - 5, 4, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(moonX + 8, moonY + 2, 6, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(moonX - 2, moonY + 8, 3, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(244, 246, 240, 0.1)';
+                ctx.beginPath();
+                ctx.arc(moonX, moonY, 45, 0, Math.PI * 2);
+                ctx.fill();
             }
-            ctx.globalCompositeOperation = 'source-over';
+            
+            // Draw Clouds
+            if (cloudsRef.current.length === 0) {
+                for (let i = 0; i < 15; i++) {
+                    cloudsRef.current.push({
+                        x: Math.random() * WORLD_WIDTH * BLOCK_SIZE,
+                        y: 20 + Math.random() * 150,
+                        speed: 0.1 + Math.random() * 0.3,
+                        size: 1 + Math.random() * 1.5,
+                        layer: Math.floor(Math.random() * 3)
+                    });
+                }
+            }
+            
+            ctx.fillStyle = cloudColor;
+            cloudsRef.current.forEach(cloud => {
+                cloud.x += cloud.speed;
+                if (cloud.x > WORLD_WIDTH * BLOCK_SIZE) cloud.x = -200;
+                
+                const parallax = 0.2 + (cloud.layer * 0.1);
+                let cx = (cloud.x - cameraRef.current.x * parallax) % (cvs.width + 400);
+                if (cx < -200) cx += cvs.width + 400;
+                
+                ctx.beginPath();
+                ctx.arc(cx, cloud.y, 20 * cloud.size, 0, Math.PI * 2);
+                ctx.arc(cx + 25 * cloud.size, cloud.y - 10 * cloud.size, 25 * cloud.size, 0, Math.PI * 2);
+                ctx.arc(cx + 50 * cloud.size, cloud.y, 20 * cloud.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // --- SHADERS BACKGROUND BLOOM (God Rays) ---
+            // Draw this before the blocks so blocks occlude the rays!
+            if (options.shaderLevel >= 4) {
+                const t2 = timeRef.current;
+                const isPrecip2 = isPrecipitating;
+                ctx.globalCompositeOperation = 'screen';
+                if (t2 < NIGHT_START && !isPrecip2) {
+                    const grad = ctx.createRadialGradient(sunX, sunY, 10, sunX, sunY, Math.max(cvs.width, cvs.height) * 1.5);
+                    grad.addColorStop(0, 'rgba(255, 255, 230, 0.8)');
+                    grad.addColorStop(0.1, 'rgba(255, 240, 180, 0.4)');
+                    grad.addColorStop(0.3, 'rgba(255, 200, 100, 0.15)');
+                    grad.addColorStop(0.7, 'rgba(255, 120, 50, 0.05)');
+                    grad.addColorStop(1, 'rgba(255, 100, 20, 0)');
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(0, 0, cvs.width, cvs.height);
+                } else if (!isPrecip2) {
+                    const grad = ctx.createRadialGradient(moonX, moonY, 10, moonX, moonY, Math.max(cvs.width, cvs.height) * 1.2);
+                    grad.addColorStop(0, 'rgba(220, 240, 255, 0.5)');
+                    grad.addColorStop(0.2, 'rgba(180, 210, 255, 0.15)');
+                    grad.addColorStop(0.5, 'rgba(100, 150, 255, 0.05)');
+                    grad.addColorStop(1, 'rgba(50, 100, 255, 0)');
+                    ctx.fillStyle = grad;
+                    ctx.fillRect(0, 0, cvs.width, cvs.height);
+                }
+                ctx.globalCompositeOperation = 'source-over';
+            }
         }
 
         ctx.save();
@@ -5150,7 +5620,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             seasonDirt = '#795548'; // Dirt stays mostly same for now, but we could lerp
         }
 
-        if (options.shaderLevel >= 2) {
+        if (options.shaderLevel >= 4) {
             const shadowPath = new Path2D();
             for (let y = startRow; y <= endRow; y++) {
                 for (let x = startCol; x <= endCol; x++) {
@@ -5162,10 +5632,14 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 }
             }
             ctx.save();
-            const isDayLight = time < 14000 || time > 22000;
-            const sunAngle = (time / 24000) * Math.PI * 2;
-            const shadowX = -Math.sin(sunAngle) * 30; // wider shadow angle
-            const shadowY = Math.max(3, Math.abs(Math.cos(sunAngle) * 15)); 
+            const isDayLight = time < 18000;
+            const timeAngle = isDayLight ? (time / 18000) * Math.PI : ((time - 18000) / 18000) * Math.PI;
+            
+            // Comprimento das Sombras: Manhã/Tarde = longas, Meio-dia = curtas
+            const shadowLengthX = isDayLight ? 5 + Math.abs(Math.cos(timeAngle)) * 45 : 2 + Math.abs(Math.cos(timeAngle)) * 20;
+            const shadowX = Math.cos(timeAngle) * shadowLengthX;
+            // No meio-dia (timeAngle = PI/2), a sombra aponta mais para baixo
+            const shadowY = Math.max(2, Math.sin(timeAngle) * (isDayLight ? 12 : 5)); 
             
             ctx.translate(shadowX, shadowY);
             ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
@@ -5181,7 +5655,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
 
                 if (block !== BlockType.AIR) {
                     const isOre = (block === BlockType.COAL_ORE || block === BlockType.IRON_ORE || block === BlockType.GOLD_ORE || block === BlockType.DIAMOND_ORE || block === BlockType.COPPER_ORE || block === BlockType.TITANIUM_ORE || block === BlockType.URANIUM_ORE);
-                    if (block === BlockType.WATER || block === BlockType.LAVA) { 
+                    if (block === BlockType.WATER || block === BlockType.LAVA) { if(options.shaderLevel >= 1) { ctx.globalAlpha = 1.0; continue; } 
                         // Realistic Fluid
                         const isLava = block === BlockType.LAVA;
                         const wave1 = Math.sin(timeRef.current * 0.05 + x * 0.2) * 0.1;
@@ -5572,7 +6046,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                         BlockType.LEAVES, BlockType.APPLE_LEAVES, BlockType.DARK_LEAVES, BlockType.SNOWY_LEAVES,
                         BlockType.PLANKS, BlockType.DARK_PLANKS, BlockType.GOLDEN_PLANKS,
                         BlockType.STONE, BlockType.DEEP_STONE,
-                        BlockType.SAND,
+                        BlockType.SAND, BlockType.MOSS, BlockType.WALLPAPER, BlockType.CUSHION, BlockType.BR_KEY_BLOCK,
                         BlockType.COAL_ORE, BlockType.IRON_ORE, BlockType.GOLD_ORE, BlockType.DIAMOND_ORE, BlockType.URANIUM_ORE, BlockType.TITANIUM_ORE
                     ].includes(block)) {
                         let c = BLOCK_COLORS[block] || '#ff00ff';
@@ -5965,7 +6439,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                             ctx.shadowColor = '#FFF59D';
                             ctx.shadowBlur = 10;
                         } else {
-                            ctx.fillStyle = BLOCK_COLORS[block] || '#ff00ff'; // petals
+                            if (!BLOCK_COLORS[block]) console.log('Missing color for block:', block); ctx.fillStyle = BLOCK_COLORS[block] || '#ff00ff'; // petals
                         }
                         
                         ctx.fillRect(x*BLOCK_SIZE + 8, y*BLOCK_SIZE + 4, 16, 16);
@@ -5974,8 +6448,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                         ctx.fillStyle = block === BlockType.GOLDEN_FLOWER ? '#FBC02D' : '#fff9c4'; // center
                         ctx.fillRect(x*BLOCK_SIZE + 12, y*BLOCK_SIZE + 8, 8, 8);
                     }
-                    else {
-                        ctx.fillStyle = BLOCK_COLORS[block] || '#f0f';
+                    else { if (!BLOCK_COLORS[block]) console.log('Missing in else:', block); ctx.fillStyle = BLOCK_COLORS[block] || '#f0f';
                         if (block === BlockType.BED || block === BlockType.BED_MEDIUM || block === BlockType.BED_ADVANCED) { ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 16); ctx.fillStyle = '#fff'; ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE + 18, 8, 6); }
                         else if (block === BlockType.CHEST || block === BlockType.CHEST_MEDIUM || block === BlockType.CHEST_LARGE || block === BlockType.STONE_CHEST) { ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE + 10, 28, 22); ctx.fillStyle = block === BlockType.STONE_CHEST ? '#bdbdbd' : '#ffecb3'; ctx.fillRect(x * BLOCK_SIZE + 14, y * BLOCK_SIZE + 18, 4, 6); }
                         else if (block === BlockType.BEDROCK) {
@@ -5992,6 +6465,23 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                             ctx.fillStyle = '#9e9e9e'; ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 2, 6, 4);
                             ctx.fillStyle = '#ff9800'; ctx.fillRect(x * BLOCK_SIZE + 20, y * BLOCK_SIZE + 2, 8, 2);
                             ctx.fillStyle = '#757575'; ctx.fillRect(x * BLOCK_SIZE + 20, y * BLOCK_SIZE + 1, 4, 4);
+                        }
+                        else if (block === BlockType.WEAPON_BENCH) {
+                            ctx.fillStyle = '#424242'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                            ctx.fillStyle = '#616161'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, 8);
+                            ctx.fillStyle = '#212121'; ctx.fillRect(x * BLOCK_SIZE + 2, y * BLOCK_SIZE + 10, 6, 22); ctx.fillRect(x * BLOCK_SIZE + 24, y * BLOCK_SIZE + 10, 6, 22);
+                            ctx.fillStyle = '#37474f'; ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 14, 16, 10);
+                            ctx.fillStyle = '#9e9e9e'; ctx.fillRect(x * BLOCK_SIZE + 6, y * BLOCK_SIZE + 2, 8, 3);
+                            ctx.fillStyle = '#f44336'; ctx.fillRect(x * BLOCK_SIZE + 22, y * BLOCK_SIZE + 2, 4, 4);
+                        }
+                        else if (block === BlockType.AMMO_BENCH) {
+                            ctx.fillStyle = '#5d4037'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                            ctx.fillStyle = '#ffb300'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, 6);
+                            ctx.fillStyle = '#3e2723'; ctx.fillRect(x * BLOCK_SIZE + 4, y * BLOCK_SIZE + 10, 4, 22); ctx.fillRect(x * BLOCK_SIZE + 24, y * BLOCK_SIZE + 10, 4, 22);
+                            ctx.fillStyle = '#ff8f00'; ctx.fillRect(x * BLOCK_SIZE + 10, y * BLOCK_SIZE + 12, 12, 12);
+                            ctx.fillStyle = '#000'; ctx.fillRect(x * BLOCK_SIZE + 14, y * BLOCK_SIZE + 16, 4, 4);
+                            ctx.fillStyle = '#ffeb3b'; ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE + 1, 4, 2);
+                            ctx.fillStyle = '#ffeb3b'; ctx.fillRect(x * BLOCK_SIZE + 20, y * BLOCK_SIZE + 1, 4, 2);
                         }
                         else if (block === BlockType.SCIENCE_BENCH) {
                             ctx.fillStyle = '#b2dfdb'; ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
@@ -6152,6 +6642,58 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                 ctx.fillStyle = '#bdc3c7'; // Concrete default
                                 ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + 16, BLOCK_SIZE, 16);
                             }
+                        }
+                        else if (block === BlockType.CUSHION) {
+                            ctx.fillStyle = '#6b7a2d';
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                            ctx.fillStyle = '#4f5922';
+                            // Fixed deterministic texture so it does not flicker
+                            for(let py = 0; py < 4; py++) {
+                                for(let px = 0; px < 4; px++) {
+                                    if ((px + py) % 2 === 0) {
+                                        ctx.fillRect(x * BLOCK_SIZE + px * 8 + 2, y * BLOCK_SIZE + py * 8 + 2, 2, 2);
+                                    } else {
+                                        ctx.fillStyle = '#839637';
+                                        ctx.fillRect(x * BLOCK_SIZE + px * 8 + 4, y * BLOCK_SIZE + py * 8 + 4, 3, 3);
+                                        ctx.fillStyle = '#4f5922';
+                                    }
+                                }
+                            }
+                            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, 4);
+                            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE + BLOCK_SIZE - 4, BLOCK_SIZE, 4);
+                            ctx.fillRect(x * BLOCK_SIZE + BLOCK_SIZE - 4, y * BLOCK_SIZE, 4, BLOCK_SIZE);
+                        }
+                        else if (block === BlockType.BR_KEY_BLOCK) {
+                            ctx.fillStyle = '#ffca28';
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                            ctx.fillStyle = '#c5b55e';
+                            ctx.beginPath(); ctx.arc(x*BLOCK_SIZE+16, y*BLOCK_SIZE+12, 4, 0, Math.PI*2); ctx.fill();
+                            ctx.fillRect(x*BLOCK_SIZE+14, y*BLOCK_SIZE+16, 4, 10);
+                            ctx.fillRect(x*BLOCK_SIZE+18, y*BLOCK_SIZE+22, 4, 3);
+                        }
+                        else if (block === BlockType.WALLPAPER) {
+                            ctx.fillStyle = '#f2dc80';
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                            ctx.fillStyle = '#c5b55e';
+                            for (let py = 0; py < 2; py++) {
+                                for (let px = 0; px < 2; px++) {
+                                    const ox = x * BLOCK_SIZE + px * 16 + 8;
+                                    const oy = y * BLOCK_SIZE + py * 16 + 8;
+                                    ctx.beginPath();
+                                    ctx.moveTo(ox, oy - 4);
+                                    ctx.lineTo(ox + 4, oy + 4);
+                                    ctx.lineTo(ox - 4, oy + 4);
+                                    ctx.fill();
+                                    ctx.fillStyle = '#a69747';
+                                    ctx.fillRect(ox - 1, oy + 6, 2, 2);
+                                    ctx.fillStyle = '#c5b55e';
+                                }
+                            }
+                            ctx.fillStyle = 'rgba(197, 181, 94, 0.3)';
+                            ctx.fillRect(x * BLOCK_SIZE + 8, y * BLOCK_SIZE, 2, BLOCK_SIZE);
+                            ctx.fillRect(x * BLOCK_SIZE + 24, y * BLOCK_SIZE, 2, BLOCK_SIZE);
                         }
                         else if (block === BlockType.CONCRETE_BLUE) {
                             ctx.fillStyle = BLOCK_COLORS[block];
@@ -6478,6 +7020,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 else if (heldItemId.includes('short_sword')) cooldownMax = 15;
                 else if (heldItemId.includes('crossbow')) cooldownMax = 187.5;
                 else if (heldItemId.includes('bow')) cooldownMax = 62.5;
+                else if (GUN_STATS[heldItemId]) cooldownMax = Math.floor(60 / GUN_STATS[heldItemId].fireRate);
                 
                 swingProgress = Math.min(1, (playerContext.attackCooldown || 0) / cooldownMax); 
                 
@@ -6488,8 +7031,14 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                     angle = rawAngle - (Math.PI/2 * swingProgress) + (Math.sin(swingProgress * Math.PI) * Math.PI/1.5);
                 } else if (heldItemId.includes('pickaxe') || heldItemId.includes('axe') || heldItemId.includes('hammer') || heldItemId.includes('shovel') || heldItemId.includes('hoe')) {
                     angle = rawAngle - (Math.PI/1.5 * swingProgress) + (Math.sin(swingProgress * Math.PI) * Math.PI);
-                } else if (heldItemId.includes('bow') || heldItemId.includes('crossbow')) {
-                    angle = rawAngle;
+                } else if (heldItemId.includes('bow') || heldItemId.includes('crossbow') || GUN_STATS[heldItemId]) {
+                    if (GUN_STATS[heldItemId]) {
+                        // Gun Recoil visual implementation (kickback)
+                        stabOffset = -Math.sin(swingProgress * Math.PI) * 4;
+                        angle = rawAngle - Math.sin(swingProgress * Math.PI) * 0.1;
+                    } else {
+                        angle = rawAngle;
+                    }
                 } else {
                     angle = rawAngle - (Math.PI/2 * swingProgress) + (Math.sin(swingProgress * Math.PI) * Math.PI/2);
                 }
@@ -6642,6 +7191,22 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                         }
                         ctx.lineTo(4, 12);
                         ctx.stroke();
+                    } else if (GUN_STATS[heldItemId]) {
+                        const stats = GUN_STATS[heldItemId];
+                        ctx.fillStyle = '#212121'; // Dark metal
+                        if (stats.type === 'SMALL_ARMS') {
+                            ctx.fillRect(-2, -3, 14, 6); // Slide
+                            ctx.fillStyle = '#424242';
+                            ctx.fillRect(0, 3, 4, 6);   // Grip
+                        } else {
+                            ctx.fillRect(2, -3, 22, 6); // Receiver/Barrel
+                            ctx.fillStyle = '#424242';
+                            ctx.fillRect(6, 3, 5, 8);   // Grip
+                            ctx.fillStyle = '#5d4037'; // Stock
+                            ctx.fillRect(-8, -2, 10, 6);
+                            ctx.fillStyle = '#212121';
+                            ctx.fillRect(14, 4, 2, 4); // Magazine
+                        }
                     } else {
                         ctx.fillStyle = col;
                         ctx.fillRect(-4, -4, 8, 8);
@@ -6721,8 +7286,18 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
 
         entitiesRef.current.forEach(ent => { 
             if(ent.type === 'DROP') { 
-                const col = ent.itemId && isNaN(Number(ent.itemId)) && ITEM_COLORS[ent.itemId as string] ? ITEM_COLORS[ent.itemId as string] : (ent.itemId && !isNaN(Number(ent.itemId)) ? BLOCK_COLORS[Number(ent.itemId)] : '#fff'); 
-                ctx.fillStyle = col; ctx.fillRect(ent.x, ent.y, ent.width, ent.height); 
+                if (ent.itemId === 'bullet_hole') {
+                    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                    ctx.beginPath();
+                    ctx.arc(ent.x + ent.width/2, ent.y + ent.height/2, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (ent.itemId === 'bullet_spark') {
+                    ctx.fillStyle = 'rgba(255, 200, 50, 0.8)';
+                    ctx.fillRect(ent.x, ent.y, ent.width, ent.height);
+                } else {
+                    const col = ent.itemId && isNaN(Number(ent.itemId)) && ITEM_COLORS[ent.itemId as string] ? ITEM_COLORS[ent.itemId as string] : (ent.itemId && !isNaN(Number(ent.itemId)) ? BLOCK_COLORS[Number(ent.itemId)] : '#fff'); 
+                    ctx.fillStyle = col; ctx.fillRect(ent.x, ent.y, ent.width, ent.height); 
+                }
             } else if (ent.type === 'PROJECTILE') {
                 if (ent.itemId === 'uranium') { ctx.fillStyle = '#76ff03'; ctx.beginPath(); ctx.arc(ent.x + ent.width/2, ent.y + ent.height/2, 6, 0, Math.PI * 2); ctx.fill(); } 
                 else if (ent.itemId === 'uranium_totem') { ctx.fillStyle = Math.random() < 0.5 ? '#76ff03' : '#ffd600'; ctx.beginPath(); ctx.arc(ent.x + ent.width/2, ent.y + ent.height/2, 4, 0, Math.PI * 2); ctx.fill(); } 
@@ -6737,6 +7312,14 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                     ctx.beginPath(); ctx.moveTo(4, -2); ctx.lineTo(8, 0); ctx.lineTo(4, 2); ctx.fill();
                     ctx.fillStyle = '#fff'; // feathers
                     ctx.fillRect(-10, -2, 2, 4);
+                    ctx.restore();
+                }
+                else if (ent.itemId === 'bullet') {
+                    ctx.save();
+                    ctx.translate(ent.x + ent.width/2, ent.y + ent.height/2);
+                    ctx.rotate(ent.rotation || 0);
+                    ctx.fillStyle = ent.itemMeta?.color || '#ffcc00';
+                    ctx.fillRect(-4, -1, 8, 2);
                     ctx.restore();
                 }
                 else { drawMob(ctx, ent); }
@@ -6819,13 +7402,12 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
         
         // Target ambient count based on biome and season
         let targetAmbientCount = (playerBiome === 'forest' || playerBiome === 'plains') ? 20 : 0;
-        
-        // 0=SPRING, 1=SUMMER, 2=AUTUMN, 3=WINTER
-        if (currentSeasonPart === 0) targetAmbientCount = 60; // Borboletas na primavera
-        if (currentSeasonPart === 1) targetAmbientCount = 50; // Vagalumes no verão (increase count)
-        if (currentSeasonPart === 2) targetAmbientCount = 60; // Chuva de folhas no outono
-        if (currentSeasonPart === 3) targetAmbientCount = 5;  // Neblina no inverno (few particles)
+        if (currentSeasonPart === 0) targetAmbientCount = 60;
+        if (currentSeasonPart === 1) targetAmbientCount = 50;
+        if (currentSeasonPart === 2) targetAmbientCount = 60;
+        if (currentSeasonPart === 3) targetAmbientCount = 5;
         if (playerBiome === 'golden_forest') targetAmbientCount = 60;
+        if (backroomsPhase !== 'NONE') targetAmbientCount = 0;
         
         const currentAmbientCount = weatherParticlesRef.current.filter(p => p.type === 'LEAF' || p.type === 'FIREFLY' || p.type === 'BUTTERFLY' || p.type === 'GOLDEN_LEAF').length;
         
@@ -7062,10 +7644,123 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
         
         ctx.restore();
 
+        
+        // --- REALISTIC WATER REFLECTIONS PASS ---
+        if (options.shaderLevel >= 1) {
+            let hasWater = false;
+            for (let y = startRow; y <= endRow; y++) {
+                for (let x = startCol; x <= endCol; x++) {
+                    if (y < 0 || y >= WORLD_HEIGHT || x < 0 || x >= WORLD_WIDTH) continue;
+                    if (world.blocks[y * WORLD_WIDTH + x] === BlockType.WATER || world.blocks[y * WORLD_WIDTH + x] === BlockType.LAVA) {
+                        hasWater = true; break;
+                    }
+                }
+                if (hasWater) break;
+            }
+
+            if (hasWater) {
+                ctx.restore(); // Temp restore to screen space to snapshot
+                
+                if (!(window as any)._reflectionCanvas) {
+                    (window as any)._reflectionCanvas = document.createElement('canvas');
+                }
+                const rCvs = (window as any)._reflectionCanvas;
+                if (rCvs.width !== cvs.width) rCvs.width = cvs.width;
+                if (rCvs.height !== cvs.height) rCvs.height = cvs.height;
+                
+                const refCtx = rCvs.getContext('2d');
+                if (refCtx) {
+                    refCtx.drawImage(cvs, 0, 0);
+                }
+                
+                ctx.save(); // Re-apply camera
+                ctx.translate(-Math.floor(cameraRef.current.x), -Math.floor(cameraRef.current.y));
+                
+                for (let y = startRow; y <= endRow; y++) {
+                    for (let x = startCol; x <= endCol; x++) {
+                        if (y < 0 || y >= WORLD_HEIGHT || x < 0 || x >= WORLD_WIDTH) continue;
+                        const idx = y * WORLD_WIDTH + x; 
+                        const block = world.blocks[idx];
+                        
+                        if (block === BlockType.WATER || block === BlockType.LAVA) {
+                            const isLava = block === BlockType.LAVA;
+                            const wave1 = Math.sin(timeRef.current * 0.05 + x * 0.2) * 0.1;
+                            const wave2 = Math.cos(timeRef.current * 0.03 + y * 0.1) * 0.1;
+                            const waterLevel = y * BLOCK_SIZE;
+                            
+                            // Check if surface water (no water above)
+                            const isSurface = y > 0 && world.blocks[(y - 1) * WORLD_WIDTH + x] !== block;
+
+                                                        if (!isLava && isSurface && refCtx) {
+                                ctx.save();
+                                ctx.beginPath();
+                                ctx.rect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                                ctx.clip();
+                                
+                                ctx.translate(0, waterLevel * 2);
+                                ctx.scale(1, -1);
+                                
+                                const distortionX = Math.sin(timeRef.current * 0.02 + y * 0.1) * 6;
+                                const distortionY = Math.cos(timeRef.current * 0.02 + x * 0.1) * 4;
+                                ctx.translate(distortionX, distortionY);
+                                
+                                ctx.globalAlpha = 0.5 + Math.max(0, wave1) * 0.3;
+                                ctx.drawImage(rCvs, cameraRef.current.x, cameraRef.current.y);
+                                ctx.restore();
+                            }
+                            
+                            ctx.globalAlpha = (isLava ? 0.9 : 0.45) + Math.max(0, wave1 + wave2);
+                            const grad = ctx.createLinearGradient(x * BLOCK_SIZE, y * BLOCK_SIZE, x * BLOCK_SIZE, (y + 1) * BLOCK_SIZE);
+                            if (isLava) {
+                                grad.addColorStop(0, 'rgba(255, 152, 0, 0.8)'); 
+                                grad.addColorStop(1, 'rgba(216, 67, 21, 1)');
+                            } else {
+                                grad.addColorStop(0, 'rgba(33, 150, 243, 0.5)'); 
+                                grad.addColorStop(1, 'rgba(25, 118, 210, 0.9)');
+                            }
+                            ctx.fillStyle = grad;
+                            ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE); 
+                            
+                            if (isSurface) {
+                                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                                ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, 2);
+                            }
+                            
+                                                        // SSR Solar/Lunar Specular Highlight (Brilho Especular)
+                            if (!isLava && isSurface) {
+                                const screenWaterX = x * BLOCK_SIZE - cameraRef.current.x;
+                                const time = timeRef.current;
+                                const isDay = time < 18000;
+                                const celestialX = isDay ? (cvs.width * (time / 18000)) : (cvs.width * ((time - 18000) / 6000));
+                                
+                                // Simulating dot(ViewDirection, ReflectionDirection) in 1D
+                                const distToCelestial = Math.abs((screenWaterX + BLOCK_SIZE / 2) - celestialX);
+                                
+                                // Brilho Especular (Specular Intensity)
+                                if (distToCelestial < 150) {
+                                    const specularIntensity = Math.pow(Math.max(0, 1 - (distToCelestial / 150)), 2) * (isDay ? 0.7 : 0.4);
+                                    
+                                    // Add wave distortion to the specular highlight
+                                    const specDistortion = Math.sin(timeRef.current * 0.05 + x * 0.5) * 10;
+                                    
+                                    if (distToCelestial + specDistortion < 120) {
+                                        ctx.fillStyle = `rgba(${isDay ? '255, 250, 200' : '200, 220, 255'}, ${specularIntensity})`;
+                                        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (backroomsPhase === 'EXPLORING' && safeZoneBoundsRef.current) { const { sx, ex, sy, ey } = safeZoneBoundsRef.current; ctx.fillStyle = 'rgba(0, 255, 0, 0.15)'; ctx.fillRect(sx, sy, ex - sx, ey - sy); }
         ctx.restore(); // Restore camera transform
+
         
         // --- SHADERS OVERLAY ---
-        if (options.graphicsQuality === 'ULTRA') {
+        if (options.shaderLevel >= 4) {
             ctx.save();
             const t3 = timeRef.current;
             const isPrecip = world.weather && world.weather.duration > 0;
@@ -7100,17 +7795,54 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             ctx.fillStyle = ambientTint;
             ctx.fillRect(0, 0, cvs.width, cvs.height);
 
-            // 2. Weather mist (Overlay)
+                        // 2. Weather mist and Atmospheric Fog (Neblina Atmosférica)
+            ctx.globalCompositeOperation = 'source-over';
+            let fogAlpha = 0;
+            let fogColor = '255, 255, 255';
+            
+            // Base time fog
+            if (t3 >= DAWN_START && t3 < DAWN_START + 4000) {
+                // Manhã = neblina leve
+                const p = (t3 - DAWN_START) / 4000;
+                fogAlpha = 0.2 * (1 - p); // Fades out
+                fogColor = '255, 250, 240';
+            } else if (t3 > DAWN_START + 4000 && t3 < DUSK_START) {
+                // Tarde = mínima
+                fogAlpha = 0.05;
+                fogColor = '240, 245, 255';
+            } else if (t3 >= DUSK_START && t3 < NIGHT_START) {
+                // Entardecer
+                const p = (t3 - DUSK_START) / (NIGHT_START - DUSK_START);
+                fogAlpha = 0.05 + 0.1 * p;
+                fogColor = '255, 200, 150';
+            } else {
+                // Noite = moderada
+                fogAlpha = 0.15;
+                fogColor = '10, 20, 40';
+            }
+            
+            // Weather fog overrides
             if (isPrecip) {
                 const precipBiome = getBiome(Math.floor(playerRef.current.x / BLOCK_SIZE), currentSeed);
-                ctx.globalCompositeOperation = 'source-over';
                 if (precipBiome === 'desert') {
-                    ctx.fillStyle = 'rgba(210, 180, 140, 0.4)'; // Sandy mist
-                    ctx.fillRect(0, 0, cvs.width, cvs.height);
+                    fogAlpha = 0.4; // Sandstorm = intensa
+                    fogColor = '230, 200, 150';
                 } else if (precipBiome === 'snow') {
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)'; // Snowy mist
-                    ctx.fillRect(0, 0, cvs.width, cvs.height);
+                    fogAlpha = 0.3; // Snowstorm = intensa
+                    fogColor = '240, 250, 255';
+                } else {
+                    fogAlpha = 0.3; // Rain = intensa
+                    fogColor = '180, 180, 190';
                 }
+            }
+            
+            if (fogAlpha > 0) {
+                // Draw a gradient fog that is thicker near the bottom (ground)
+                const fogGrad = ctx.createLinearGradient(0, 0, 0, cvs.height);
+                fogGrad.addColorStop(0, `rgba(${fogColor}, ${fogAlpha * 0.2})`);
+                fogGrad.addColorStop(1, `rgba(${fogColor}, ${fogAlpha})`);
+                ctx.fillStyle = fogGrad;
+                ctx.fillRect(0, 0, cvs.width, cvs.height);
             }
 
             // 3. Vignette
@@ -7219,6 +7951,72 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 }
             }
             
+            
+            // --- ENTITY SHADOWS ---
+            if (options.shaderLevel >= 4) {
+                const tShadow = timeRef.current;
+                const isDayS = tShadow < 18000;
+                const timeAngle = isDayS ? (tShadow / 18000) * Math.PI : ((tShadow - 18000) / 18000) * Math.PI;
+                const lightAngle = timeAngle;
+                // Intensity fades during sunrise/sunset
+                const shadowIntensity = isDayS ? Math.max(0.1, Math.sin(timeAngle) * 0.8) : Math.max(0.05, Math.sin(timeAngle) * 0.3);
+                // Shear increases as sun gets lower (longer shadows)
+                const shadowShear = -Math.cos(lightAngle) * (1.0 + Math.abs(Math.cos(lightAngle)) * 2.5);
+                const shadowScaleY = Math.max(0.15, Math.abs(Math.sin(lightAngle)) * 0.4);
+
+                ctx.save();
+                
+                // Player shadows
+                [player, ...otherPlayersRef.current].forEach(p => {
+                    if(!p) return;
+                    const baseX = p.x + p.width / 2;
+                    const baseY = p.y + p.height;
+                    ctx.save();
+                    ctx.translate(baseX, baseY);
+                    ctx.transform(1, 0, shadowShear, shadowScaleY, 0, 0);
+                    ctx.translate(-baseX, -baseY);
+                    ctx.filter = `brightness(0) opacity(${0.4 * shadowIntensity})`;
+                    
+                    let localSkin = undefined;
+                    if ((p as any).playerName) {
+                        try {
+                            const usrName = (p as any).playerName;
+                            const accsStr = localStorage.getItem('zubicraft_accounts') || '[]';
+                            const accs = JSON.parse(accsStr);
+                            const usr = accs.find((a: any) => a.name === usrName);
+                            if (usr && usr.skin) localSkin = usr.skin;
+                        } catch(e) {}
+                    }
+
+                    drawCharacter({
+                         ...p,
+                         skin: localSkin || (p as any).skin,
+                         equipment: (p as any).equipment || equipment,
+                         heldItem: (p as any).heldItem || inventory[selectedSlot],
+                         mouseXY: (p as any).mouseXY || { x: p.x + (p.facingRight ? 50 : -50), y: p.y },
+                         isBlocking: (p as any).isBlocking || false,
+                         posture: (p as any).posture || 'STAND'
+                    }, false);
+                    ctx.restore();
+                });
+
+                // Mob shadows
+                entitiesRef.current.forEach(ent => {
+                    if(ent.type === 'PROJECTILE' || ent.type === 'DROP' || ent.isParticle) return;
+                    const baseX = ent.x + ent.width / 2;
+                    const baseY = ent.y + ent.height;
+                    ctx.save();
+                    ctx.translate(baseX, baseY);
+                    ctx.transform(1, 0, shadowShear, shadowScaleY, 0, 0);
+                    ctx.fillStyle = `rgba(0, 0, 0, ${0.4 * shadowIntensity})`;
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, ent.width / 1.5, ent.width / 4, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                });
+                ctx.restore();
+            }
+
             // Draw Mobs
             entitiesRef.current.forEach(ent => {
                 if (ent.type === 'DROP' || ent.type === 'PROJECTILE' || ent.type === 'PLAYER') return;
@@ -7269,25 +8067,64 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             const cx = mouseRef.current.x;
             const cy = mouseRef.current.y;
             
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-            ctx.beginPath();
-            ctx.arc(cx, cy, 2, 0, Math.PI * 2);
-            ctx.fill();
+            const heldItem = inventory[selectedSlot];
+            const isGun = heldItem && heldItem.type === ItemType.WEAPON && GUN_STATS[heldItem.id];
             
-            if (player.attackCooldown > 0) {
-                const maxCd = 60; // rough standard sword cooldown frames
-                const pct = Math.max(0, Math.min(1, player.attackCooldown / maxCd));
-                ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(cx, cy, 6 + (pct * 4), -Math.PI/2, -Math.PI/2 + ((1-pct) * Math.PI * 2));
-                ctx.stroke();
+            if (isGun) {
+                // Crosshair for gun
+                ctx.fillStyle = mouseRef.current.right ? 'red' : 'rgba(255, 255, 255, 0.8)';
+                ctx.fillRect(cx - 1, cy - 8, 2, 6); // Top
+                ctx.fillRect(cx - 1, cy + 2, 2, 6); // Bottom
+                ctx.fillRect(cx - 8, cy - 1, 6, 2); // Left
+                ctx.fillRect(cx + 2, cy - 1, 6, 2); // Right
+                ctx.fillRect(cx - 1, cy - 1, 2, 2); // Center dot
+                
+                // Ammo Text
+                const currentAmmoInClip = heldItem.meta?.ammo || 0;
+                
+                const gunName = heldItem.id.toString().toLowerCase();
+                const isSmallAmmo = ['glock', 'beretta', 'usp', 'five_seven', 'p250', 'cz75', 'tec_9', 'desert_eagle', 'm1911', 'revolver'].some(n => gunName.includes(n));
+                const allowedAmmoIds = isSmallAmmo ? ['common_ammo', 'piercing_ammo'] : ['heavy_ammo', 'piercing_ammo'];
+                
+                let totalInventoryAmmo = 0;
+                if (options.gameMode === 'CREATIVE' || options.gameMode === 'GOD') {
+                    totalInventoryAmmo = 999;
+                } else {
+                    for(let i=0; i<inventory.length; i++) {
+                        if (inventory[i] && allowedAmmoIds.includes(inventory[i]!.id.toString())) {
+                            totalInventoryAmmo += inventory[i]!.count;
+                        }
+                    }
+                }
+                
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 10px monospace';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = 'black';
+                ctx.shadowBlur = 4;
+                ctx.fillText(`${currentAmmoInClip}/${totalInventoryAmmo > 99 ? '99+' : totalInventoryAmmo}`, cx, cy + 20);
+                ctx.shadowBlur = 0; // reset
             } else {
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-                ctx.lineWidth = 1;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
                 ctx.beginPath();
-                ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-                ctx.stroke();
+                ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                if (player.attackCooldown > 0) {
+                    const maxCd = 60; // rough standard sword cooldown frames
+                    const pct = Math.max(0, Math.min(1, player.attackCooldown / maxCd));
+                    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, 6 + (pct * 4), -Math.PI/2, -Math.PI/2 + ((1-pct) * Math.PI * 2));
+                    ctx.stroke();
+                } else {
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
             }
         }
 
@@ -7326,6 +8163,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                 if (Math.abs(inputs.x) > 0.1) {
                                     if (blockingRef.current) { p.vx = inputs.x * baseSpeed * 0.3; } else { p.vx = inputs.x * baseSpeed; }
                                     if (inputs.x > 0) p.facingRight = true; if (inputs.x < 0) p.facingRight = false;
+                                    (mouseRef.current as any).isAimingTouch = false; // Reset aim to horizontal when walking
                                 } else if (!blockingRef.current) { p.vx *= 0.8; }
                                 keysRef.current['Space'] = inputs.jump; mouseRef.current.left = inputs.attack; mouseRef.current.right = inputs.place;
                             }}
@@ -7449,7 +8287,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                     
                                     if (rawName.includes('praia') || rawName.includes('beach')) {
                                         playerRef.current.x = (WORLD_WIDTH - 200) * BLOCK_SIZE;
-                                        playerRef.current.y = 0; // Fallback safe spawn
+                                        playerRef.current.x = 0; playerRef.current.y = 0; // Fallback safe spawn
                                         setChatMessages(p => [...p, {msg: `Teleportado para Praia!`, color: '#00ff00'}]);
                                         isCommand = true;
                                     } else {
@@ -7469,12 +8307,12 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                          for(let i=1; i<40; i++) {
                                              if (getBiome((chunkStart + i)*500, currentSeed) === biomeName) {
                                                 playerRef.current.x = (chunkStart + i)*500 * BLOCK_SIZE;
-                                                playerRef.current.y = 0; // fallback safe
+                                                playerRef.current.x = 0; playerRef.current.y = 0; // fallback safe
                                                 found = true; break;
                                              }
                                              if (chunkStart - i > 0 && getBiome((chunkStart - i)*500, currentSeed) === biomeName) {
                                                 playerRef.current.x = (chunkStart - i)*500 * BLOCK_SIZE;
-                                                playerRef.current.y = 0; // fallback safe
+                                                playerRef.current.x = 0; playerRef.current.y = 0; // fallback safe
                                                 found = true; break;
                                              }
                                          }
@@ -7504,7 +8342,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                         });
                                         if (closest) {
                                             playerRef.current.x = (closest as any).x * BLOCK_SIZE;
-                                            playerRef.current.y = 0;
+                                            playerRef.current.x = 0; playerRef.current.y = 0;
                                             found = true;
                                             setChatMessages(p => [...p, {msg: `Teleportado para estrutura: ${(closest as any).name}.`, color: '#00ff00'}]);
                                         }
@@ -7612,6 +8450,49 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                            }}
                         />
                     )}
+                    
+                    {/* BACKROOMS OVERLAYS */}
+                    {backroomsPhase === 'FALLING' && (
+                        <div className="absolute inset-0 bg-black z-[100] flex items-center justify-center transition-opacity duration-[3000ms] ease-in" style={{ opacity: 1 }}>
+                            <div className="text-red-600 font-mono text-3xl animate-pulse">Por que você fez isso?</div>
+                        </div>
+                    )}
+                    {backroomsPhase === 'WAKING_UP' && (
+                        <div className="absolute inset-0 bg-black z-[100] flex items-center justify-center transition-opacity duration-[1000ms] ease-out">
+                            <div className="text-white font-mono text-xl animate-fade-in-out">Seja bem-vindo ao lar.</div>
+                        </div>
+                    )}
+                    {(backroomsPhase === 'EXPLORING' || backroomsPhase === 'ESCAPING') && (
+                        <>
+                            <div className="absolute top-4 right-4 bg-yellow-900/80 border-2 border-yellow-600 p-3 rounded-lg shadow-xl z-[90]">
+                                <div className="text-yellow-400 font-mono font-bold uppercase tracking-wider text-sm mb-1">Objetivo:</div>
+                                <div className="text-white font-mono text-lg">ENCONTRE A CHAVE E A SAÍDA</div>
+                            </div>
+                            
+                            {/* Insanity distortions */}
+                            <div className="absolute inset-0 pointer-events-none z-[80] mix-blend-overlay" style={{ background: `radial-gradient(circle, transparent 50%, rgba(0,0,0,${Math.max(0, 100 - sanityLevelRef.current)/100}) 100%)`}}></div>
+                            {smilerStatic > 0 && <div className="absolute inset-0 pointer-events-none z-[85] mix-blend-difference" style={{ opacity: smilerStatic * 0.5, backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}></div>}
+                        </>
+                    )}
+                    {backroomsPhase === 'ESCAPING' && (
+                        <div className="absolute inset-0 bg-black z-[100] flex items-center justify-center transition-opacity duration-[1000ms] ease-in">
+                            <div className="text-red-600 font-mono text-3xl animate-pulse">Você não pertence a este lugar.</div>
+                        </div>
+                    )}
+                    {backroomsPhase === 'JUMPSCARE' && (
+                        <div className="absolute inset-0 bg-black z-[120] flex items-center justify-center">
+                            {/* Flashy Smiler Face */}
+                            <div className="relative animate-ping" style={{ animationDuration: '0.1s' }}>
+                                <div className="w-64 h-64 bg-black rounded-full flex flex-col items-center justify-center relative">
+                                    <div className="flex gap-12 mt-4">
+                                        <div className="w-8 h-8 bg-white rounded-full shadow-[0_0_20px_#fff]"></div>
+                                        <div className="w-8 h-8 bg-white rounded-full shadow-[0_0_20px_#fff]"></div>
+                                    </div>
+                                    <div className="w-48 h-20 border-b-8 border-white rounded-full mt-4 shadow-[0_0_20px_#fff]"></div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </>
             )}
             {showDeathScreen && (
@@ -7703,9 +8584,9 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                 )}
                                 {optionsTab === 'VIDEO' && (
                                     <>
-                                        <button onClick={() => setOptions({...options, shaderLevel: options.shaderLevel === 1 ? 2 : (options.shaderLevel === 2 ? 3 : 1)})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                                        <button onClick={() => setOptions({...options, shaderLevel: options.shaderLevel === 1 ? 2 : (options.shaderLevel === 2 ? 3 : (options.shaderLevel === 3 ? 4 : 1))})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
                                             <span>Shaders</span>
-                                            <span className="text-blue-400">{options.shaderLevel === 3 ? 'Ultra Realista' : `Nível ${options.shaderLevel || 1}`}</span>
+                                            <span className="text-blue-400">{options.shaderLevel === 4 ? 'Nível 4' : (options.shaderLevel === 3 ? 'Ultra Realista' : `Nível ${options.shaderLevel || 1}`)}</span>
                                         </button>
                                         <button onClick={() => setOptions({...options, textureQuality: options.textureQuality === 'ultra' ? 'medium' : 'ultra'})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
                                             <span>{lang === 'PT' ? 'Textura dos Blocos' : 'Block Texture'}</span>
@@ -7741,3 +8622,5 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
         </div>
     );
 };
+
+export default GameCanvas;

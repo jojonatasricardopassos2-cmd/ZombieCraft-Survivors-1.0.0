@@ -1,25 +1,201 @@
-2889-                gState.usingGamepad = true;
-2890-                
-2891-                // Mover: Left Stick Axes 0 & 1 or D-Pad
-2892-                const leftX = gp.axes[0] || 0;
-2893-                
-2894:                if (leftX < -0.3 || gp.buttons[14]?.pressed) { keysRef.current['a'] = true; keysRef.current['d'] = false; }
-2895:                else if (leftX > 0.3 || gp.buttons[15]?.pressed) { keysRef.current['d'] = true; keysRef.current['a'] = false; }
-2896:                else { keysRef.current['a'] = false; keysRef.current['d'] = false; }
-2897-                
-2898-                // Correr: Hold left stick past 0.8 or click L3 (button 10)
-2899-                if (Math.abs(leftX) > 0.8 || gp.buttons[10]?.pressed) { keysRef.current['shift'] = true; }
-2900-                else { keysRef.current['shift'] = false; }
-2901-
+859:    const spawnDrop = (x: number, y: number, itemId: BlockType | string, count: number, meta?: any, shouldBroadcast: boolean = true) => {
+860-        const id = generateEntityId();
+861-        const drop: Entity = {
+862-            id,
+863-            type: 'DROP',
+864-            x, y, width: 12, height: 12, vx: (Math.random() - 0.5) * 4, vy: -3,
+865-            grounded: false, health: 1, maxHealth: 1, facingRight: true,
+866-            itemId, itemCount: count, itemMeta: meta, creationTime: Date.now(),
+867-            pickupDelay: Date.now() + 1500
+868-        };
+869-        
 --
-2943-                        // Menu/Inventory (X/Square is 2, Start is 9)
-2944-                        if (i === 2 || i === 9) {
-2945-                            if (!isInventoryOpen) setIsInventoryOpen(true);
-2946-                            else setIsInventoryOpen(false);
-2947-                            keysRef.current['w'] = false;
-2948:                            keysRef.current['a'] = false;
-2949-                            keysRef.current['d'] = false;
-2950-                        }
-2951-                        
-2952-                        // OffHand (Y/Triangle is 3)
-2953-                        if (i === 3) {
+2031:                spawnDrop(playerRef.current.x, playerRef.current.y, rewardItem.id, rewardItem.count);
+2032-            } else {
+2033-                setInventory(finalInv);
+2034-            }
+2035-            
+2036-            addNotification(lang === 'PT' ? "Missão Concluída!" : "Quest Completed!");
+2037-        }
+2038-    };
+2039-
+2040-    const handleCraft = (recipe: CraftingRecipe) => {
+2041-        let can = true; const tempInv = [...inventory];
+--
+2053:            if (!added) { spawnDrop(playerRef.current.x, playerRef.current.y, res.id, res.count); }
+2054-            setInventory(tempInv);
+2055-        }
+2056-    };
+2057-
+2058-    // Special handler specifically for Armor Bench which might pass a custom onReturnItem logic
+2059-    const handleArmorBenchReturn = (item: ItemStack) => {
+2060-        setInventory(prev => {
+2061-            const newInv = [...prev];
+2062-            let placed = false;
+2063-            // Try stack
+--
+2082:                spawnDrop(playerRef.current.x, playerRef.current.y, item.id, item.count, item.meta);
+2083-            }
+2084-            return newInv;
+2085-        });
+2086-    };
+2087-
+2088-    const handleEquip = (item: ItemStack, slot: keyof Equipment) => {
+2089-        if (cursorItem) {
+2090-            const valid = (slot === 'helmet' && (cursorItem.id?.toString() || '').includes('helmet')) || (slot === 'chestplate' && (cursorItem.id?.toString() || '').includes('chestplate')) || (slot === 'leggings' && (cursorItem.id?.toString() || '').includes('leggings')) || (slot === 'boots' && (cursorItem.id?.toString() || '').includes('boots')) || (slot === 'offHand');
+2091-            if (valid) { const old = equipment[slot]; setEquipment(prev => ({ ...prev, [slot]: cursorItem })); setCursorItem(old); }
+2092-        } else { if (item) { setCursorItem(item); setEquipment(prev => ({ ...prev, [slot]: null })); } }
+--
+2099:        if (placed) setInventory(newInv); else spawnDrop(playerRef.current.x, playerRef.current.y, item.id, item.count, item.meta);
+2100-        setEquipment(prev => ({ ...prev, [slot]: null }));
+2101-    };
+2102-
+2103-    const handleFurnaceClick = (pos: string, slotType: 'input' | 'fuel' | 'output') => {
+2104-        const furnace = furnacesRef.current.get(pos); if (!furnace) return;
+2105-        
+2106-        // UI Logic
+2107-        if (cursorItem) {
+2108-            if (slotType === 'output') return; 
+2109-            const target = slotType === 'input' ? furnace.input : furnace.fuel;
+--
+4479:                                    if (mob.type === 'COW') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 1); } 
+4480:                                    if (mob.type === 'GOLDEN_DEER') { spawnDrop(mob.x, mob.y, 'raw_beef', 2); spawnDrop(mob.x, mob.y, 'leather', 2); } 
+4481:                                    if (mob.type === 'SHARK') spawnDrop(mob.x, mob.y, 'raw_beef', 2); 
+4482:                                    if (mob.type === 'PIG') spawnDrop(mob.x, mob.y, 'raw_porkchop', 2); 
+4483:                                    if (mob.type === 'SHEEP') spawnDrop(mob.x, mob.y, BlockType.WOOL, 1); 
+4484:                                    if (mob.type === 'LUNAR_FOX') { spawnDrop(mob.x, mob.y, 'raw_diamond', 2); spawnDrop(mob.x, mob.y, 'raw_gold', 3); } 
+4485:                                    if (mob.type === 'ZOMBIE') spawnDrop(mob.x, mob.y, 'raw_beef', 1); 
+4486:                                    if (mob.type === 'MUTANT_ZOMBIE') { spawnDrop(mob.x, mob.y, 'uranium_totem', 1); spawnDrop(mob.x, mob.y, 'uranium', 5); } 
+4487-                                    // Remove mob carefully considering shifting indices
+4488-                                    entitiesRef.current.splice(j, 1); 
+4489-                                } 
+4490-                                
+4491-                                if (ent.loyalty || ent.returnTime) { ent.projectileState = 'RETURNING'; } 
+4492-                                else { 
+4493:                                    if(!isArrow && !isRadioactive && !isBullet && !isSpike) spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); 
+4494-                                    // Because we might have removed 'j' and j < i, i could have shifted.
+4495-                                    const currentProjectileIndex = (mob.health <= 0 && j < i) ? i - 1 : i;
+4496-                                    entitiesRef.current.splice(currentProjectileIndex, 1); 
+4497-                                    // To keep the outer loop clean, we must adjust i if it shifted. 
+4498-                                    // But since we break out of inner loop and 'continue' outer loop, i gets decremented correctly.
+4499-                                    // Actually wait, outer loop just does i--. That's fine! 
+4500-                                } 
+4501-                                projectileDestroyed = true; 
+4502-                                break; 
+4503-                            } 
+--
+4521:                            if (ent.loyalty || ent.returnTime) ent.projectileState = 'RETURNING'; else { if(ent.itemId !== 'arrow' && ent.itemId !== 'uranium' && ent.itemId !== 'spike' && ent.itemId !== 'bullet') spawnDrop(ent.x, ent.y, ent.itemId!, 1, ent.itemMeta); entitiesRef.current.splice(i, 1); continue; } 
+4522-                        } 
+4523-                    } else if (ent.projectileState === 'RETURNING') { 
+4524-                        const dx = player.x - ent.x; const dy = player.y - ent.y; const dist = Math.sqrt(dx*dx + dy*dy); const speed = 15; ent.vx = (dx / dist) * speed; ent.vy = (dy / dist) * speed; ent.x += ent.vx; ent.y += ent.vy; ent.rotation = Math.atan2(ent.vy, ent.vx) + Math.PI; 
+4525-                        if (dist < 30) { entitiesRef.current.splice(i, 1); setInventory(prev => { const newInv = [...prev]; let added = false; for(let j=0; j<36; j++) { if(newInv[j] && newInv[j]!.id == ent.itemId && newInv[j]!.count < 64) { newInv[j]!.count++; added = true; break; } } if(!added) { for(let j=0; j<36; j++) { if(!newInv[j]) { newInv[j] = { id: !isNaN(Number(ent.itemId)) ? Number(ent.itemId) : ent.itemId!, count: 1, type: !isNaN(Number(ent.itemId)) ? ItemType.BLOCK : (FOOD_VALUES[ent.itemId as string] ? ItemType.FOOD : ItemType.TOOL), meta: ent.itemMeta }; if (ent.loyalty) { if(!newInv[j]!.meta) newInv[j]!.meta = {}; newInv[j]!.meta!.loyalty = true; } break; } } } return newInv; }); continue; } 
+4526-                    } continue; 
+4527-                }
+4528-                
+4529-                // --- MOB LOGIC ---
+4530-                if (options.multiplayer?.mode === 'CLIENT' && (ent.type === 'ZOMBIE' || ent.type === 'COW' || ent.type === 'PIG' || ent.type === 'SHEEP' || ent.type === 'MUTANT_ZOMBIE' || ent.type === 'SCORPION')) { continue; }
+4531-                
+--
+4711:                                                    spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, b, 1);
+4712-                                                }
+4713-                                            }
+4714-                                        }
+4715-                                    }
+4716-                                }
+4717-                                
+4718-                            }
+4719-
+4720-                            if (Math.random() < 0.01) { 
+4721-                                spawnMob('ZOMBIE', ent.x, ent.y - 20);
+--
+4762:                                                    spawnDrop(x * BLOCK_SIZE, y * BLOCK_SIZE, b, 1);
+4763-                                                }
+4764-                                            }
+4765-                                        }
+4766-                                    }
+4767-                                }
+4768-                                updateLighting(world, timeRef.current);
+4769-                                
+4770-                                // Damage player
+4771-                                const distToP = Math.sqrt((player.x - ent.x) ** 2 + (player.y - ent.y) ** 2);
+4772-                                if (distToP < radius * BLOCK_SIZE) {
+--
+5247:                         if (ent.health <= 0) { gainXP(XP_PER_MOB); if (ent.type === 'COW') { spawnDrop(ent.x, ent.y, 'raw_beef', 2); spawnDrop(ent.x, ent.y, 'leather', 1); } if (ent.type === 'GOLDEN_DEER') { spawnDrop(ent.x, ent.y, 'raw_beef', 2); spawnDrop(ent.x, ent.y, 'leather', 2); } if (ent.type === 'SHARK') spawnDrop(ent.x, ent.y, 'raw_beef', 2); if (ent.type === 'PIG') spawnDrop(ent.x, ent.y, 'raw_porkchop', 2); if (ent.type === 'SHEEP') { spawnDrop(ent.x, ent.y, 'raw_mutton', 1); spawnDrop(ent.x, ent.y, BlockType.WOOL, 1); } if (ent.type === 'LUNAR_FOX') { spawnDrop(ent.x, ent.y, 'raw_diamond', 2); spawnDrop(ent.x, ent.y, 'raw_gold', 3); } if (ent.type === 'MUTANT_ZOMBIE') { spawnDrop(ent.x, ent.y, 'uranium_totem', 1); spawnDrop(ent.x, ent.y, 'uranium', 5); } if (ent.type === 'ZOMBIE' && Math.random() < 0.5) { spawnDrop(ent.x, ent.y, 'bone', 1); } entitiesRef.current = entitiesRef.current.filter(e => e.id !== ent.id); } } }); damageTool(selectedSlot); }
+5248-                }
+5249-                if (!hitEntity) { 
+5250-                    if (bx >= 0 && bx < WORLD_WIDTH && by >= 0 && by < WORLD_HEIGHT) { 
+5251-                        const bType = world.blocks[by * WORLD_WIDTH + bx]; 
+5252-                        if (bType !== BlockType.AIR && (bType !== BlockType.BEDROCK || adminFlags.oneHitBreak) && bType !== BlockType.WATER) { 
+5253-                            if (breakingRef.current.x !== bx || breakingRef.current.y !== by) breakingRef.current = { x: bx, y: by, progress: 0 }; 
+5254-                            if (canDamageBlock(bType, heldItem) || adminFlags.oneHitBreak) { 
+5255-                                const speed = getBreakSpeed(bType, heldItem); 
+5256-                                breakingRef.current.progress += adminFlags.oneHitBreak ? 1000000 : Math.max(1, speed); 
+5257-                                if ((player.attackCooldown || 0) <= 0) {
+--
+5269:                                    if (bType === BlockType.CROP_WHEAT || bType === BlockType.CROP_CARROT || bType === BlockType.CROP_POTATO) { const crop = cropsRef.current.get(key); if(crop) { if(crop.type==='WHEAT') { spawnDrop(bx*BLOCK_SIZE, by*BLOCK_SIZE, 'wheat_seeds', 1); if(crop.stage>=3) spawnDrop(bx*BLOCK_SIZE, by*BLOCK_SIZE, 'wheat', 1); } else if (crop.type === 'CARROT') { spawnDrop(bx*BLOCK_SIZE, by*BLOCK_SIZE, 'carrot', crop.stage>=3 ? 3 : 1); } else if (crop.type === 'POTATO') { spawnDrop(bx*BLOCK_SIZE, by*BLOCK_SIZE, 'potato', crop.stage>=3 ? 3 : 1); } cropsRef.current.delete(key); } } 
+5270:                                    if (bType === BlockType.DOOR_BOTTOM_CLOSED || bType === BlockType.DOOR_BOTTOM_OPEN) { setBlockAt(bx, by - 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_BOTTOM_CLOSED, 1); } else if (bType === BlockType.DOOR_TOP_CLOSED || bType === BlockType.DOOR_TOP_OPEN) { setBlockAt(bx, by + 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_BOTTOM_CLOSED, 1); } 
+5271:                                    if (bType === BlockType.DOOR_STONE_BOTTOM_CLOSED || bType === BlockType.DOOR_STONE_BOTTOM_OPEN) { setBlockAt(bx, by - 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_STONE_BOTTOM_CLOSED, 1); } else if (bType === BlockType.DOOR_STONE_TOP_CLOSED || bType === BlockType.DOOR_STONE_TOP_OPEN) { setBlockAt(bx, by + 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_STONE_BOTTOM_CLOSED, 1); } 
+5272:                                    if (bType === BlockType.DOOR_IRON_BOTTOM_CLOSED || bType === BlockType.DOOR_IRON_BOTTOM_OPEN) { setBlockAt(bx, by - 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_IRON_BOTTOM_CLOSED, 1); } else if (bType === BlockType.DOOR_IRON_TOP_CLOSED || bType === BlockType.DOOR_IRON_TOP_OPEN) { setBlockAt(bx, by + 1, BlockType.AIR); spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.DOOR_IRON_BOTTOM_CLOSED, 1); } 
+5273-                                    if ((bType === BlockType.WOOD || bType === BlockType.DARK_WOOD || bType === BlockType.PINE_WOOD || bType === BlockType.FROZEN_WOOD || bType === BlockType.GOLDEN_WOOD) && heldItem && (heldItem.id?.toString() || '').includes('axe')) {
+5274-                                        // Recursively break tree
+5275-                                        const queue = [{x: bx, y: by}];
+5276-                                        const visited = new Set<string>();
+5277-                                        visited.add(`${bx},${by}`);
+5278-                                        let h = 0;
+5279-                                        while(h < queue.length) {
+5280-                                            const p = queue[h++];
+5281-                                            // SPAWN DROPS
+5282-                                            const b = worldRef.current.blocks[p.y * WORLD_WIDTH + p.x];
+--
+5286:                                                     spawnDrop(p.x * BLOCK_SIZE, p.y * BLOCK_SIZE, bType, 1);
+5287-                                                 } else if (b === BlockType.LEAVES || b === BlockType.DARK_LEAVES || b === BlockType.PINE_LEAVES || b === BlockType.APPLE_LEAVES || b === BlockType.SNOWY_LEAVES || b === BlockType.GOLDEN_LEAVES) {
+5288-                                                     const isAutumn = options.seasonsEnabled && (Math.floor(totalDaysRef.current / 7) % 4) === 2;
+5289-                                                     const isSpring = options.seasonsEnabled && (Math.floor(totalDaysRef.current / 7) % 4) === 0;
+5290-                                                     
+5291-                                                     if (Math.random() < (isAutumn ? 0.5 : 0.3)) {
+5292:                                                         spawnDrop(p.x * BLOCK_SIZE, p.y * BLOCK_SIZE, 'tree_seed', 1);
+5293-                                                     }
+5294-                                                     if (isAutumn && Math.random() < 0.05) {
+5295:                                                         spawnDrop(p.x * BLOCK_SIZE, p.y * BLOCK_SIZE, 'golden_wood', 1);
+5296-                                                     }
+5297-                                                     if (isSpring && Math.random() < 0.05) {
+5298:                                                         spawnDrop(p.x * BLOCK_SIZE, p.y * BLOCK_SIZE, 'rare_flower', 1);
+5299-                                                     }
+5300-                                                 }
+5301-                                            }
+5302-                                            
+5303-                                            // Neighbors
+5304-                                            for(let dx=-1; dx<=1; dx++) {
+5305-                                                for(let dy=-1; dy<=1; dy++) {
+5306-                                                    const nx = p.x + dx; const ny = p.y + dy;
+5307-                                                    if (nx >= 0 && nx < WORLD_WIDTH && ny >= 0 && ny < WORLD_HEIGHT) {
+5308-                                                        const key = `${nx},${ny}`;
+--
+5334:                                            spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.SNOW_BLOCK, 1);
+5335-                                        }
+5336:                                        else if (bType === BlockType.BERRY_BUSH) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'cherry', 1 + Math.floor(Math.random() * 2)); } 
+5337:                                        else if (bType === BlockType.APPLE_LEAVES) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'apple', 1); }
+5338:                                        else if (bType === BlockType.SEED_BUSH) { const rand = Math.random(); if (rand < 0.33) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'wheat_seeds', 1); else if (rand < 0.66) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'carrot', 1); else spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'potato', 1); } 
+5339:                                        else if (bType === BlockType.BUSH) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'stick', 1); } 
+5340:                                        else if (bType === BlockType.GRASS || bType === BlockType.DARK_GRASS || bType === BlockType.SNOWY_GRASS) { if (Math.random() < 0.1) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'wheat_seeds', 1); if (Math.random() < 0.05) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'carrot', 1); if (Math.random() < 0.05) spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'potato', 1); } 
+5341:                                        else if (bType === BlockType.COAL_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, BlockType.COAL_ORE, 1); }
+5342:                                        else if (bType === BlockType.IRON_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'raw_iron', 1); }
+5343:                                        else if (bType === BlockType.GOLD_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'raw_gold', 1); }
+5344:                                        else if (bType === BlockType.DIAMOND_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'raw_diamond', 1); }
+5345:                                        else if (bType === BlockType.COPPER_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'raw_copper', 1); }
+5346:                                        else if (bType === BlockType.TITANIUM_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'raw_titanium', 1); }
+5347:                                        else if (bType === BlockType.URANIUM_ORE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'raw_uranium', 1); } 
+5348:                                        else if (bType === BlockType.FLOWER_RED || bType === BlockType.FLOWER_GREEN || bType === BlockType.FLOWER_BLUE) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, bType, 1); } 
+5349:                                        else if (bType === BlockType.CACTUS) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'dark_green_resin', 1); }
+5350:                                        else if (bType === BlockType.DRY_LEAVES) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, 'stick', 1 + Math.floor(Math.random() * 2)); }
+5351:                                        else if (!(bType?.toString() || '').includes('DOOR') && !(bType?.toString() || '').includes('CROP')) { spawnDrop(bx * BLOCK_SIZE, by * BLOCK_SIZE, dropId, 1); } 
+5352-            
+5353-            // REMOVED LEVEL LOGIC FOR PICKAXE DROP CHANCE
+5354-
+5355-            } breakingRef.current = { x: -1, y: -1, progress: 0 }; damageTool(selectedSlot); } } else { breakingRef.current = { x: -1, y: -1, progress: 0 }; } } else breakingRef.current = { x: -1, y: -1, progress: 0 }; } } }
+5356-            } else breakingRef.current = { x: -1, y: -1, progress: 0 };
+5357-            
+5358-            // ... (rest of mouse handlers) ...
+5359-            if (mouseRef.current.left && activeBuildBlock && inventory[selectedSlot] && (inventory[selectedSlot]?.id?.toString() || '').includes('hammer')) {
+5360-                 if (bx >= 0 && bx < WORLD_WIDTH && by >= 0 && by < WORLD_HEIGHT) {
+5361-                     const now = Date.now();

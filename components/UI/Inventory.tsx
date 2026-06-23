@@ -130,13 +130,15 @@ export const Inventory: React.FC<InventoryProps> = ({
     if (!isOpen) return;
 
     const getAvailableTabs = () => {
-        const tabs = ['INVENTORY', 'CHARACTER', 'CRAFTING'] as ('INVENTORY'|'CHARACTER'|'CRAFTING'|'CREATIVE'|'DECOR'|'ITEMS'|'COMBAT'|'MEDICAL'|'SCIENCE')[];
+        const tabs = ['INVENTORY', 'CHARACTER', 'CRAFTING'] as ('INVENTORY'|'CHARACTER'|'CRAFTING'|'CREATIVE'|'DECOR'|'ITEMS'|'COMBAT'|'MEDICAL'|'SCIENCE'|'COMPONENTS'|'SMALL_ARMS'|'LARGE_ARMS'|'AMMO')[];
         
         if (gameMode === 'GOD' || gameMode === 'CREATIVE') tabs.push('CREATIVE');
 
         if (nearbyStation === BlockType.CRAFTING_TABLE) tabs.push('DECOR', 'ITEMS', 'COMBAT');
         if (nearbyStation === BlockType.MEDICAL_BENCH) tabs.push('MEDICAL');
         if (nearbyStation === BlockType.SCIENCE_BENCH) tabs.push('SCIENCE', 'MEDICAL', 'CRAFTING');
+        if (nearbyStation === BlockType.WEAPON_BENCH) tabs.push('COMPONENTS', 'SMALL_ARMS', 'LARGE_ARMS');
+        if (nearbyStation === BlockType.AMMO_BENCH) tabs.push('AMMO');
         
         // Remove duplicates if any
         return Array.from(new Set(tabs));
@@ -181,6 +183,8 @@ export const Inventory: React.FC<InventoryProps> = ({
     if (nearbyStation === BlockType.CRAFTING_TABLE) setActiveTab('DECOR');
     else if (nearbyStation === BlockType.MEDICAL_BENCH) setActiveTab('MEDICAL');
     else if (nearbyStation === BlockType.SCIENCE_BENCH) setActiveTab('SCIENCE');
+    else if (nearbyStation === BlockType.WEAPON_BENCH) setActiveTab('SMALL_ARMS');
+    else if (nearbyStation === BlockType.AMMO_BENCH) setActiveTab('AMMO');
     else setActiveTab('INVENTORY');
   }, [nearbyStation, isOpen]);
 
@@ -258,6 +262,12 @@ export const Inventory: React.FC<InventoryProps> = ({
         if (activeTab === 'SCIENCE') recipes = RECIPES.filter(r => r.station === BlockType.SCIENCE_BENCH);
         if (activeTab === 'MEDICAL') recipes = RECIPES.filter(r => r.station === BlockType.MEDICAL_BENCH);
         if (activeTab === 'CRAFTING') recipes = RECIPES.filter(r => r.station === 'NONE'); // Allowed to hand-craft
+    } else if (nearbyStation === BlockType.WEAPON_BENCH) {
+        if (activeTab === 'SMALL_ARMS') recipes = RECIPES.filter(r => r.station === BlockType.WEAPON_BENCH && r.category === 'SMALL_ARMS');
+        if (activeTab === 'LARGE_ARMS') recipes = RECIPES.filter(r => r.station === BlockType.WEAPON_BENCH && r.category === 'LARGE_ARMS');
+        if (activeTab === 'COMPONENTS') recipes = RECIPES.filter(r => r.station === BlockType.WEAPON_BENCH && r.category === 'COMPONENTS');
+    } else if (nearbyStation === BlockType.AMMO_BENCH) {
+        if (activeTab === 'AMMO') recipes = RECIPES.filter(r => r.station === BlockType.AMMO_BENCH);
     } else {
         // Hand Crafting
         if (activeTab === 'CRAFTING') recipes = RECIPES.filter(r => r.station === 'NONE');
@@ -369,30 +379,40 @@ export const Inventory: React.FC<InventoryProps> = ({
               </div>
               
               <div className="flex flex-col sm:flex-row gap-2 justify-between">
-                  <div className="flex gap-2 flex-wrap">
+                  <div className="flex gap-2 overflow-x-auto pb-2 shrink-0 max-w-full" style={{ scrollbarWidth: 'thin' }}>
                           <>
-                            <button onClick={() => setActiveTab('INVENTORY')} className={`px-3 py-1 rounded ${activeTab === 'INVENTORY' ? 'bg-blue-600' : 'bg-gray-700'}`}>{t.INVENTORY}</button>
-                            <button onClick={() => setActiveTab('CHARACTER')} className={`px-3 py-1 rounded ${activeTab === 'CHARACTER' ? 'bg-purple-600' : 'bg-gray-700'}`}>{t.CHARACTER}</button>
-                            <button onClick={() => setActiveTab('CRAFTING')} className={`px-3 py-1 rounded ${activeTab === 'CRAFTING' ? 'bg-green-600' : 'bg-gray-700'}`}>{t.CRAFTING}</button>
+                            <button onClick={() => setActiveTab('INVENTORY')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'INVENTORY' ? 'bg-blue-600' : 'bg-gray-700'}`}>{t.INVENTORY}</button>
+                            <button onClick={() => setActiveTab('CHARACTER')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'CHARACTER' ? 'bg-purple-600' : 'bg-gray-700'}`}>{t.CHARACTER}</button>
+                            <button onClick={() => setActiveTab('CRAFTING')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'CRAFTING' ? 'bg-green-600' : 'bg-gray-700'}`}>{t.CRAFTING}</button>
                             {gameMode === 'GOD' || gameMode === 'CREATIVE' ? (
-                                <button onClick={() => setActiveTab('CREATIVE')} className={`px-3 py-1 rounded ${activeTab === 'CREATIVE' ? 'bg-yellow-600' : 'bg-gray-700'}`}>CREATIVE</button>
+                                <button onClick={() => setActiveTab('CREATIVE')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'CREATIVE' ? 'bg-yellow-600' : 'bg-gray-700'}`}>CREATIVE</button>
                             ) : null}
                           </>
                       {nearbyStation === BlockType.CRAFTING_TABLE && (
                           <>
-                            <button onClick={() => setActiveTab('DECOR')} className={`px-3 py-1 rounded ${activeTab === 'DECOR' ? 'bg-orange-600' : 'bg-gray-700'}`}>{t.DECOR}</button>
-                            <button onClick={() => setActiveTab('ITEMS')} className={`px-3 py-1 rounded ${activeTab === 'ITEMS' ? 'bg-teal-600' : 'bg-gray-700'}`}>{t.ITEMS}</button>
-                            <button onClick={() => setActiveTab('COMBAT')} className={`px-3 py-1 rounded ${activeTab === 'COMBAT' ? 'bg-red-600' : 'bg-gray-700'}`}>{t.COMBAT}</button>
+                            <button onClick={() => setActiveTab('DECOR')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'DECOR' ? 'bg-orange-600' : 'bg-gray-700'}`}>{t.DECOR}</button>
+                            <button onClick={() => setActiveTab('ITEMS')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'ITEMS' ? 'bg-teal-600' : 'bg-gray-700'}`}>{t.ITEMS}</button>
+                            <button onClick={() => setActiveTab('COMBAT')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'COMBAT' ? 'bg-red-600' : 'bg-gray-700'}`}>{t.COMBAT}</button>
                           </>
                       )}
                       {nearbyStation === BlockType.MEDICAL_BENCH && (
-                          <button onClick={() => setActiveTab('MEDICAL')} className={`px-3 py-1 rounded ${activeTab === 'MEDICAL' ? 'bg-red-500' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Médico' : 'Medical'}</button>
+                          <button onClick={() => setActiveTab('MEDICAL')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'MEDICAL' ? 'bg-red-500' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Médico' : 'Medical'}</button>
                       )}
                       {nearbyStation === BlockType.SCIENCE_BENCH && (
                           <>
-                              <button onClick={() => setActiveTab('SCIENCE')} className={`px-3 py-1 rounded ${activeTab === 'SCIENCE' ? 'bg-teal-500' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Ciência' : 'Science'}</button>
-                              <button onClick={() => setActiveTab('MEDICAL')} className={`px-3 py-1 rounded ${activeTab === 'MEDICAL' ? 'bg-red-500' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Médico' : 'Medical'}</button>
+                              <button onClick={() => setActiveTab('SCIENCE')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'SCIENCE' ? 'bg-teal-500' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Ciência' : 'Science'}</button>
+                              <button onClick={() => setActiveTab('MEDICAL')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'MEDICAL' ? 'bg-red-500' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Médico' : 'Medical'}</button>
                           </>
+                      )}
+                      {nearbyStation === BlockType.WEAPON_BENCH && (
+                          <>
+                              <button onClick={() => setActiveTab('SMALL_ARMS')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'SMALL_ARMS' ? 'bg-zinc-500' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Pequenas' : 'Small'}</button>
+                              <button onClick={() => setActiveTab('LARGE_ARMS')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'LARGE_ARMS' ? 'bg-zinc-600' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Grandes' : 'Large'}</button>
+                              <button onClick={() => setActiveTab('COMPONENTS')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'COMPONENTS' ? 'bg-zinc-700' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Peças' : 'Parts'}</button>
+                          </>
+                      )}
+                      {nearbyStation === BlockType.AMMO_BENCH && (
+                          <button onClick={() => setActiveTab('AMMO')} className={`shrink-0 px-3 py-1 rounded ${activeTab === 'AMMO' ? 'bg-amber-600' : 'bg-gray-700'}`}>{lang === 'PT' ? 'Munição' : 'Ammo'}</button>
                       )}
                   </div>
                   
