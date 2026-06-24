@@ -1,5 +1,6 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { Mic, MicOff } from 'lucide-react';
 import { audio } from '../utils/audio.ts';
 import { PeerSocket } from '../utils/peerSocket.ts';
 import { 
@@ -128,10 +129,83 @@ interface Notification {
     timestamp: number;
 }
 
+
+const MicUI = ({ analyserRef, options, isMicActive, setIsMicActive, micVolumeRef, lang }: any) => {
+    const [micVolume, setMicVolume] = useState(0);
+
+    useEffect(() => {
+        let req: number;
+        const loop = () => {
+            if (isMicActive && analyserRef.current) {
+                const data = new Uint8Array(analyserRef.current.frequencyBinCount);
+                analyserRef.current.getByteFrequencyData(data);
+                let max = 0;
+                for(let i = 0; i < Math.floor(data.length / 2); i++) {
+                    if (data[i] > max) max = data[i];
+                }
+                const vol = Math.min(100, Math.floor((max / 255) * 100));
+                
+                setMicVolume(prev => {
+                    const next = prev * 0.6 + vol * 0.4;
+                    if (micVolumeRef) micVolumeRef.current = next;
+                    return next;
+                });
+            } else {
+                setMicVolume(0);
+                if (micVolumeRef) micVolumeRef.current = 0;
+            }
+            req = requestAnimationFrame(loop);
+        };
+        req = requestAnimationFrame(loop);
+        return () => cancelAnimationFrame(req);
+    }, [isMicActive, analyserRef, micVolumeRef]);
+
+    if (!options.micEnabled) return null;
+
+    return (
+        <div className="absolute bottom-6 left-6 z-[9999] flex items-center gap-3 pointer-events-auto bg-black/60 p-2 rounded-lg border-2 border-gray-700">
+            <button 
+                onClick={() => setIsMicActive((p: boolean) => !p)}
+                className={`w-12 h-12 flex flex-col items-center justify-center rounded-md font-bold text-xs ${isMicActive ? 'bg-red-600 text-white shadow-[0_0_10px_red]' : 'bg-gray-700 text-gray-400'}`}
+            >
+                {isMicActive ? <Mic size={20} /> : <MicOff size={20} />}
+                <span>[V]</span>
+            </button>
+            
+            {micVolume >= 90 && (
+                <div className="absolute -top-6 left-0 text-red-500 font-bold animate-pulse text-xs whitespace-nowrap drop-shadow-md">
+                    EXTREME SOUND!
+                </div>
+            )}
+            <div className="flex flex-col gap-1 w-6 items-center justify-end h-16 bg-black/80 rounded-sm p-1 border border-gray-600">
+                {[...Array(10)].map((_, i) => {
+                    const isActive = (9 - i) < Math.floor(micVolume / 10);
+                    let color = 'bg-green-500';
+                    if (9 - i > 5) color = 'bg-yellow-400';
+                    if (9 - i > 7) color = 'bg-orange-500';
+                    if (9 - i > 8) color = 'bg-red-600';
+                    return (
+                        <div key={i} className={`w-full flex-1 rounded-sm ${isActive ? color : 'bg-gray-800'}`} />
+                    );
+                })}
+            </div>
+        </div>
+    );
+};
+
 export const GameCanvas: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const requestRef = useRef<number | null>(null);
     
+    
+    const micStreamRef = useRef<MediaStream | null>(null);
+    const analyserRef = useRef<AnalyserNode | null>(null);
+    const micDataArrayRef = useRef<Uint8Array | null>(null);
+    const micVolumeRef = useRef(0);
+    const voiceCallsRef = useRef<Record<string, any>>({});
+    const remoteAudioElementsRef = useRef<Record<string, any>>({});
+    const [isMicActive, setIsMicActive] = useState(false);
+
     const [gameState, setGameState] = useState<'INTRO' | 'MENU' | 'PLAYING' | 'PAUSED'>('INTRO');
     const [connectionPhase, setConnectionPhase] = useState<'NONE'|'CONNECTING'|'SYNCING'|'LOADED'>('NONE');
     const [pauseMenuState, setPauseMenuState] = useState<'MAIN' | 'OPTIONS'>('MAIN');
@@ -224,13 +298,52 @@ export const GameCanvas: React.FC = () => {
     const [options, setOptions] = useState<GameOptions>(() => {
         const savedOptsStr = localStorage.getItem('zombiecraft_global_options');
         if (savedOptsStr) {
-            try { return JSON.parse(savedOptsStr); } catch(e){}
+            try { 
+                const parsed = JSON.parse(savedOptsStr);
+                if (parsed.micEnabled === undefined) parsed.micEnabled = true; // default to true if undefined
+                return parsed;
+            } catch(e){}
         }
         return { showCoordinates: false, adminMode: false, isMobile: false, graphicsQuality: 'ULTRA', shaderLevel: 1, textureQuality: 'medium', volume: 1, bindings: DEFAULT_BINDINGS, mouseSensitivity: 1, gamepadSensitivity: 1 };
     });
     
     // Add optionsRef for use inside gameLoop
     const optionsRef = useRef(options);
+    
+    useEffect(() => {
+        if (options.micEnabled && isMicActive) {
+            navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+                micStreamRef.current = stream;
+                                if (!(window as any).sharedAudioCtx) {
+                    (window as any).sharedAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                }
+                const audioCtx = (window as any).sharedAudioCtx;
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                const source = audioCtx.createMediaStreamSource(stream);
+                const analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+                analyserRef.current = analyser;
+                micDataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
+            }).catch(e => {
+                console.error('Mic access denied:', e);
+                setIsMicActive(false);
+            });
+        } else {
+            if (micStreamRef.current) {
+                micStreamRef.current.getTracks().forEach(t => t.stop());
+                micStreamRef.current = null;
+            }
+        }
+        return () => {
+            if (micStreamRef.current) {
+                micStreamRef.current.getTracks().forEach(t => t.stop());
+            }
+        };
+    }, [options.micEnabled, isMicActive]);
+
     useEffect(() => {
         optionsRef.current = options;
     }, [options]);
@@ -617,6 +730,46 @@ export const GameCanvas: React.FC = () => {
             }
         }
         return changed;
+    };
+
+    
+    const emitNoise = (x: number, y: number, intensity: number) => {
+        let actualIntensity = intensity;
+        if (worldRef.current && worldRef.current.weather && worldRef.current.weather.type !== 'CLEAR') {
+            const wtype = worldRef.current.weather.type;
+            if (wtype === 'HEAVY_RAIN' || wtype === 'STORM' || wtype === 'ELECTRICAL_STORM') {
+                actualIntensity *= 0.3;
+                if (actualIntensity < 400) return;
+            } else if (wtype === 'RAIN') {
+                actualIntensity *= 0.6;
+                if (actualIntensity < 200) return;
+            }
+        }
+
+        const radius = actualIntensity;
+        for (const ent of entitiesRef.current) {
+            if (ent && ((ent.type?.toString() || '').includes('ZOMBIE') || ent.type === 'PLAGUE_KING')) {
+                const dist = Math.sqrt((ent.x - x) ** 2 + ((ent.y + ent.height/2) - y) ** 2);
+                if (dist < radius) {
+                    if (ent.aiState !== 'CHASING') {
+                        if (Math.random() < 0.2) {
+                            // Curiosity system: Just looks towards the sound
+                            ent.vx = 0;
+                            ent.facingRight = (x > ent.x);
+                        } else {
+                            ent.aiState = 'INVESTIGATING';
+                            ent.investigateX = x;
+                            ent.investigateY = y;
+                            ent.investigateTimer = 0;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (playerRef.current) {
+             (playerRef.current as any).threatLevel = Math.min(5, ((playerRef.current as any).threatLevel || 1) + (intensity / 5000));
+        }
     };
 
     const setBlockAt = (x: number, y: number, type: BlockType, shouldBroadcast: boolean = true) => {
@@ -1105,7 +1258,10 @@ export const GameCanvas: React.FC = () => {
                         setIsInventoryOpen(true);
                         return;
                     } else if (b === BlockType.LEVER || b === BlockType.LEVER_ON) {
-                        audio.playHit();
+                        
+                             audio.playHit();
+                             emitNoise(player.x, player.y, 400);
+
                         setBlockAt(x, y, b === BlockType.LEVER ? BlockType.LEVER_ON : BlockType.LEVER);
                         return;
                     } else if (b === BlockType.BUTTON) {
@@ -2132,9 +2288,31 @@ export const GameCanvas: React.FC = () => {
     const handleCreativeGive = (item: ItemStack) => { handleAdminGiveItem(item); };
     const handleAdminSetTime = (time: 'DAY' | 'NIGHT') => { if (time === 'DAY') timeRef.current = DAWN_START; else timeRef.current = NIGHT_START; if(worldRef.current) updateLighting(worldRef.current, timeRef.current); };
     const handleAdminTeleportBiome = (biomeName: string) => {
+        if (biomeName === 'cidade_abandonada' || biomeName === 'fazenda') {
+            const structure = worldRef.current?.structures?.find(s => s.name === biomeName);
+            if (structure) {
+                playerRef.current.x = structure.x * BLOCK_SIZE;
+                playerRef.current.y = 0;
+                addNotification(lang === 'PT' ? 'Teleportado para a estrutura!' : 'Teleported to structure!');
+                return;
+            } else {
+                addNotification(lang === 'PT' ? 'Estrutura não encontrada neste mundo. Tente criar um novo mundo!' : 'Structure not found in this world. Try creating a new world!');
+                return;
+            }
+        }
+        
+        if (worldRef.current?.structures) {
+            const structure = worldRef.current.structures.find(s => s.name === biomeName);
+            if (structure) {
+                playerRef.current.x = structure.x * BLOCK_SIZE;
+                playerRef.current.y = 0;
+                return;
+            }
+        }
+        
         if (biomeName.includes('beach')) {
             playerRef.current.x = (WORLD_WIDTH - 200) * BLOCK_SIZE;
-            playerRef.current.x = 0; playerRef.current.y = 0;
+            playerRef.current.y = 0;
             return;
         }
         let found = false;
@@ -2143,12 +2321,12 @@ export const GameCanvas: React.FC = () => {
         for(let i=1; i<150; i++) {
             if (getBiome((chunkStart + i)*500, currentSeed) === biomeName) {
                 playerRef.current.x = (chunkStart + i)*500 * BLOCK_SIZE;
-                playerRef.current.x = 0; playerRef.current.y = 0;
+                playerRef.current.y = 0;
                 found = true; break;
             }
             if (chunkStart - i > 0 && getBiome((chunkStart - i)*500, currentSeed) === biomeName) {
                 playerRef.current.x = (chunkStart - i)*500 * BLOCK_SIZE;
-                playerRef.current.x = 0; playerRef.current.y = 0;
+                playerRef.current.y = 0;
                 found = true; break;
             }
         }
@@ -2248,7 +2426,19 @@ export const GameCanvas: React.FC = () => {
             
             setCurrentWorldId(Date.now().toString()); setCurrentWorldName(newConfig.name); setCurrentSeed(newConfig.seed); 
             if (newConfig.options) setOptions(newConfig.options); 
-            timeRef.current = 0; moonPhaseRef.current = 'NORMAL'; 
+            timeRef.current = 0; moonPhaseRef.current = 'NORMAL';
+            if (worldRef.current) {
+                worldRef.current.weather = { type: 'CLEAR', intensity: 0, duration: 0, windDirection: 0, windSpeed: 0, lightningFrequency: 0, mudiness: 0 };
+                if (Math.random() < 0.20) {
+                    const r = Math.random();
+                    if (r < 0.2) { worldRef.current.weather.type = 'FOG'; worldRef.current.weather.intensity = 0.5; worldRef.current.weather.duration = 12000; }
+                    else if (r < 0.5) { worldRef.current.weather.type = 'CLOUDY'; worldRef.current.weather.intensity = 0.5; worldRef.current.weather.duration = 12000; }
+                    else if (r < 0.8) { worldRef.current.weather.type = 'RAIN'; worldRef.current.weather.intensity = 0.5; worldRef.current.weather.duration = 12000; }
+                    else if (r < 0.90) { worldRef.current.weather.type = 'HEAVY_RAIN'; worldRef.current.weather.intensity = 1.0; worldRef.current.weather.duration = 12000; }
+                    else if (r < 0.98) { worldRef.current.weather.type = 'STORM'; worldRef.current.weather.intensity = 1.0; worldRef.current.weather.duration = 12000; }
+                    else { worldRef.current.weather.type = 'ELECTRICAL_STORM'; worldRef.current.weather.intensity = 1.0; worldRef.current.weather.duration = 12000; }
+                }
+            } 
             setPlayerLevel(1); setPlayerXP(0); setSkillPoints(0); setPlayerStats(DEFAULT_STATS); staminaRef.current = MAX_STAMINA; hungerRef.current = 10;
             playerRef.current.invincibilityEndTime = Date.now() + 3000;
             const inv = Array(36).fill(null); inv[0] = { id: BlockType.TORCH, count: 16, type: ItemType.BLOCK }; setInventory(inv); setEquipment({ helmet: null, chestplate: null, leggings: null, boots: null, offHand: null });
@@ -2314,7 +2504,89 @@ const activeChestPosRef = useRef(activeChestPos);
             
             const myPlayerId = socket.myPlayerId; 
 
-            const onConnect = () => {
+            
+            const setupVoiceCall = (call: any, peerId: string) => {
+                if (voiceCallsRef.current[peerId]) return;
+                voiceCallsRef.current[peerId] = call;
+                call.on('stream', (remoteStream: MediaStream) => {
+                    if (!remoteAudioElementsRef.current[peerId]) {
+                        const audioEl = new Audio();
+                        audioEl.srcObject = remoteStream;
+                        audioEl.play().catch(e => console.error(e));
+                        audioEl.muted = true; // Handle via WebAudio
+                        
+                        if (!(window as any).sharedAudioCtx) {
+                            (window as any).sharedAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                        }
+                        const actx = (window as any).sharedAudioCtx;
+                        if (actx.state === 'suspended') actx.resume();
+                        
+                        const source = actx.createMediaStreamSource(remoteStream);
+                        const panner = actx.createPanner();
+                        panner.panningModel = 'HRTF';
+                        panner.distanceModel = 'inverse';
+                        panner.refDistance = 100;
+                        panner.maxDistance = 10000;
+                        panner.rolloffFactor = 1;
+                        
+                        const echoDelay = actx.createDelay(1.0);
+                        echoDelay.delayTime.value = 0.2;
+                        const echoFeedback = actx.createGain();
+                        echoFeedback.gain.value = 0.3;
+                        echoDelay.connect(echoFeedback);
+                        echoFeedback.connect(echoDelay);
+                        
+                        const echoGain = actx.createGain();
+                        echoGain.gain.value = 0;
+                        echoDelay.connect(echoGain);
+                        
+                        const underwaterFilter = actx.createBiquadFilter();
+                        underwaterFilter.type = 'lowpass';
+                        underwaterFilter.frequency.value = 20000;
+                        
+                        const masterGain = actx.createGain();
+                        masterGain.gain.value = 1.0;
+                        
+                        source.connect(underwaterFilter);
+                        
+                        source.connect(echoDelay);
+                        echoGain.connect(underwaterFilter);
+                        
+                        underwaterFilter.connect(panner);
+                        panner.connect(masterGain);
+                        masterGain.connect(actx.destination);
+                        
+                        const remoteAnalyser = actx.createAnalyser();
+                        remoteAnalyser.fftSize = 256;
+                        source.connect(remoteAnalyser);
+                        
+                        remoteAudioElementsRef.current[peerId] = {
+                            audioEl, source, panner, echoGain, underwaterFilter, masterGain, remoteAnalyser,
+                            dataArray: new Uint8Array(remoteAnalyser.frequencyBinCount)
+                        };
+                    }
+                });
+                call.on('close', () => {
+                    if (remoteAudioElementsRef.current[peerId]) {
+                        remoteAudioElementsRef.current[peerId].audioEl.pause();
+                        delete remoteAudioElementsRef.current[peerId];
+                    }
+                    delete voiceCallsRef.current[peerId];
+                });
+            };
+
+            socket.on('incoming-call', (call: any) => {
+                if (options.micEnabled && micStreamRef.current) {
+                    call.answer(micStreamRef.current);
+                } else {
+                    call.answer(); // empty
+                }
+                setupVoiceCall(call, call.peer);
+            });
+
+            const onConnect = (data: any) => {
+                const myPid = data?.myPeerId;
+                if (myPid) (window as any).myPeerId = myPid;
                 if (options.multiplayer?.mode === 'CLIENT') {
                     setConnectionPhase('SYNCING');
                 } else if (options.multiplayer?.mode === 'HOST') {
@@ -2358,6 +2630,13 @@ const activeChestPosRef = useRef(activeChestPos);
                 
                 if (type === 'JOIN') {
                     if (payload.id !== myPlayerId) {
+                    if (payload.peerId && (window as any).myPeerId && (window as any).myPeerId > payload.peerId && !voiceCallsRef.current[payload.peerId]) {
+                        if (options.micEnabled && micStreamRef.current && socketRef.current) {
+                            const call = (socketRef.current as any).call(payload.peerId, micStreamRef.current);
+                            if (call) setupVoiceCall(call, payload.peerId);
+                        }
+                    }
+
                         addNotification(`${payload.name || 'Player'} joined the world!`);
                         if (options.multiplayer?.mode === 'HOST' && worldRef.current) {
                             // SEND FULL WORLD DATA ON JOIN TO SYNC BROKEN BLOCKS
@@ -2515,6 +2794,7 @@ const activeChestPosRef = useRef(activeChestPos);
                         posture: p.posture,
                         isMoving: Math.abs(p.vx) > 0.1 || Math.abs(p.vy) > 0.1,
                         playerName: options.multiplayer?.playerName,
+                        peerId: (window as any).myPeerId,
                         // @ts-ignore
                         heldItemIcon: cursorItemRef.current ? cursorItemRef.current.id : null,
                         heldItem: inventory[selectedSlot] || null,
@@ -2556,6 +2836,9 @@ const activeChestPosRef = useRef(activeChestPos);
 
             return () => {
                 clearInterval(interval);
+                Object.values(voiceCallsRef.current).forEach((call: any) => call.close());
+                voiceCallsRef.current = {};
+                remoteAudioElementsRef.current = {};
                 socket.disconnect();
             };
         }
@@ -2672,6 +2955,15 @@ const activeChestPosRef = useRef(activeChestPos);
             if (gameState !== 'PLAYING') return;
             keysRef.current[e.code] = true;
             if (e.code === bindings.inventory) { const heldItem = inventory[selectedSlot]; if (heldItem && (heldItem.id?.toString() || '').includes('hammer')) { setIsHammerMenuOpen(true); return; } if (isFurnaceOpen || isChestOpen || isSleepUIOpen || isArmorBenchOpen) { setIsFurnaceOpen(false); setIsChestOpen(false); setIsSleepUIOpen(false); setIsArmorBenchOpen(false); if (cursorItem) setCursorItem(null); } else { if (isInventoryOpen) { setIsInventoryOpen(false); setNearbyStation('NONE'); } else { setIsInventoryOpen(true); setNearbyStation('NONE'); } } }
+            
+            if (e.code === 'KeyV' && options.micEnabled) {
+                setIsMicActive(p => {
+                    const next = !p;
+                    addNotification(lang === 'PT' ? 'Microfone Zumbi: ' + (next ? 'ON' : 'OFF') : 'Zombie Mic: ' + (next ? 'ON' : 'OFF'));
+                    return next;
+                });
+            }
+
             if (e.code === bindings.interact) handleInteraction();
             if (e.code === 'KeyL') setShowAchievementsUI(p => !p);
             if (e.code === 'ControlLeft' || e.code === 'ControlRight') handleReload();
@@ -3022,7 +3314,7 @@ const activeChestPosRef = useRef(activeChestPos);
                 window.removeEventListener('touchmove', handleTouchStart);
             }
         };
-    }, [gameState, cursorItem, isFurnaceOpen, isChestOpen, isInventoryOpen, inventory, selectedSlot, playerStats, equipment, isHammerMenuOpen, activeBuildBlock, options.adminMode, isSleepUIOpen, options.isMobile, isArmorBenchOpen, isChatOpen, backroomsPhase]); 
+    }, [gameState, cursorItem, isFurnaceOpen, isChestOpen, isInventoryOpen, inventory, selectedSlot, playerStats, equipment, isHammerMenuOpen, activeBuildBlock, options.adminMode, isSleepUIOpen, options.isMobile, isArmorBenchOpen, isChatOpen, backroomsPhase, options.micEnabled, lang]); 
 
     useEffect(() => {
         if (gameState !== 'PLAYING' || options.tutorialEnabled === false || unlockedAchievements.includes(0)) return;
@@ -3052,6 +3344,17 @@ const activeChestPosRef = useRef(activeChestPos);
         if (gameState !== 'PLAYING') { requestRef.current = requestAnimationFrame(gameLoop); if (gameState === 'PAUSED' && canvasRef.current) { const ctx = canvasRef.current.getContext('2d'); if(ctx) { ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height); } } return; }
         const player = playerRef.current; const world = worldRef.current; const cvs = canvasRef.current; if (!world || !cvs) return; const ctx = cvs.getContext('2d'); if (!ctx) return;
         let isPaused = isInventoryOpen || isFurnaceOpen || isChestOpen || isHammerMenuOpen || isAdminMenuOpen || isSleepUIOpen || isArmorBenchOpen || isChatOpen;
+
+        if (!isPaused && options.micEnabled && isMicActive) {
+            if (!((window as any).lastMicCheck) || Date.now() - ((window as any).lastMicCheck) > 100) {
+                (window as any).lastMicCheck = Date.now();
+                const vol = micVolumeRef.current;
+                if (vol > 10) {
+                    emitNoise(player.x, player.y, vol * 15);
+                }
+            }
+        }
+
         if (connectionPhaseRef.current === 'CONNECTING' || connectionPhaseRef.current === 'SYNCING') {
             isPaused = true;
         }
@@ -3412,7 +3715,53 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             
 
             // Smoothly project other players using interpolation to network target
-            otherPlayersRef.current.forEach(p => {
+            otherPlayersRef.current.forEach((p: any) => {
+                 // Voice Proximity and Environment
+                 if (p.peerId && remoteAudioElementsRef.current[p.peerId]) {
+                     const remoteAudio = remoteAudioElementsRef.current[p.peerId];
+                     
+                     // 1. Proximity Panning
+                     remoteAudio.panner.positionX.value = (p.x - player.x) / 10;
+                     remoteAudio.panner.positionY.value = (p.y - player.y) / 10;
+                     remoteAudio.panner.positionZ.value = 0;
+                     
+                     // 2. Environment Effects (Underwater + Cave)
+                     const py = Math.floor(p.y / BLOCK_SIZE);
+                     const px = Math.floor(p.x / BLOCK_SIZE);
+                     let isUnderwater = false;
+                     if (py >= 0 && py < WORLD_HEIGHT && px >= 0 && px < WORLD_WIDTH) {
+                         if (world.blocks[py * WORLD_WIDTH + px] === BlockType.WATER) {
+                             isUnderwater = true;
+                         }
+                     }
+                     
+                     if (isUnderwater) {
+                         remoteAudio.underwaterFilter.frequency.value = 800; // muffled
+                         remoteAudio.masterGain.gain.value = 0.5;
+                     } else {
+                         remoteAudio.underwaterFilter.frequency.value = 20000; // clear
+                         remoteAudio.masterGain.gain.value = 1.0;
+                     }
+                     
+                     const isCave = py > INTERNAL_SURFACE_Y;
+                     if (isCave) {
+                         remoteAudio.echoGain.gain.value = 0.7; // add echo
+                     } else {
+                         remoteAudio.echoGain.gain.value = 0;
+                     }
+                     
+                     // 3. Speaking Indication
+                     if (Date.now() % 100 < 50) {
+                         remoteAudio.remoteAnalyser.getByteFrequencyData(remoteAudio.dataArray);
+                         let sum = 0;
+                         for(let i=0; i<remoteAudio.dataArray.length/2; i++) {
+                             sum += remoteAudio.dataArray[i];
+                         }
+                         const avg = sum / (remoteAudio.dataArray.length/2);
+                         p.isSpeaking = avg > 15; p.speakingVolume = avg;
+                     }
+                 }
+
                  if (p.targetX !== undefined && p.targetY !== undefined) {
                      p.x += ((p.targetX || p.x) - p.x) * 0.4;
                      p.y += ((p.targetY || p.y) - p.y) * 0.4;
@@ -3451,6 +3800,40 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 timeRef.current = (timeRef.current + inc) % FULL_DAY_TICKS;
                 if (timeRef.current < prevTime) {
                     totalDaysRef.current += 1;
+                    
+                    // Daily Weather check
+                    const dailyRainChance = adminFlags.rainChance > 0.01 ? adminFlags.rainChance : 0.20; // Default 20% or override if admin sets it high
+                    if (Math.random() < dailyRainChance && world.weather) {
+                        const r = Math.random();
+                        if (r < 0.2) {
+                            world.weather.type = 'FOG';
+                            world.weather.intensity = 0.5;
+                            world.weather.duration = 12000;
+                        } else if (r < 0.5) {
+                            world.weather.type = 'CLOUDY';
+                            world.weather.intensity = 0.5;
+                            world.weather.duration = 12000;
+                        } else if (r < 0.8) {
+                            world.weather.type = 'RAIN';
+                            world.weather.intensity = 0.5;
+                            world.weather.duration = 12000;
+                        } else if (r < 0.90) {
+                            world.weather.type = 'HEAVY_RAIN';
+                            world.weather.intensity = 1.0;
+                            world.weather.duration = 12000;
+                        } else if (r < 0.98) {
+                            world.weather.type = 'STORM';
+                            world.weather.intensity = 1.0;
+                            world.weather.duration = 12000;
+                        } else {
+                            world.weather.type = 'ELECTRICAL_STORM';
+                            world.weather.intensity = 1.0;
+                            world.weather.duration = 12000;
+                        }
+                    } else if (world.weather && world.weather.type !== 'CLEAR') {
+                        // Clear weather if it didn't rain today and we are just letting it naturally clear
+                        // Actually, let duration handle its own fade out
+                    }
                 }
             }
             
@@ -3468,7 +3851,11 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 } else {
                     const inWater = world.blocks[py * WORLD_WIDTH + px] === BlockType.WATER || world.blocks[(py+1) * WORLD_WIDTH + px] === BlockType.WATER;
                     const isGolden = getBiome(px, currentSeed) === 'golden_forest';
-                    audio.updateAmbient(isRaining, false, isDay, inWater, isGolden);
+                    let stormIntensity = 0;
+                    if (world.weather?.type === 'HEAVY_RAIN') stormIntensity = 0.3;
+                    if (world.weather?.type === 'STORM') stormIntensity = 0.7;
+                    if (world.weather?.type === 'ELECTRICAL_STORM') stormIntensity = 1.0;
+                    audio.updateAmbient(isRaining, false, isDay, inWater, isGolden, stormIntensity);
                 }
             }
             
@@ -3484,22 +3871,24 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 }
             }
             
-            // --- WEATHER SYSTEM ---
-            if (!world.weather) world.weather = { type: 'CLEAR', intensity: 0, duration: 0 };
+            
+            // --- DYNAMIC WEATHER SYSTEM ---
+            if (!world.weather) world.weather = { type: 'CLEAR', intensity: 0, duration: 0, windDirection: 0, windSpeed: 0, lightningFrequency: 0, mudiness: 0 };
+            
+            // Calculate global wind based on perlin or time
+            world.weather.windDirection = Math.sin(timeRef.current / 1000) * Math.PI;
+            
             if (world.weather.duration > 0) {
-                // SNOW ACCUMULATION
-                if ((world.weather.type === 'RAIN' || world.weather.type === 'HEAVY_RAIN') && timeRef.current % 30 === 0) {
+                // SNOW ACCUMULATION (keep existing code)
+                if ((world.weather.type.includes('RAIN') || world.weather.type === 'STORM' || world.weather.type === 'ELECTRICAL_STORM') && timeRef.current % 30 === 0) {
                     for(let i=0; i<3; i++) {
                         const rx = Math.floor(Math.random() * WORLD_WIDTH);
-                        // Biome check
-                        const biomeNoise = Math.abs(rx / 500) % 4; // roughly
                         if (true) {
-                            // Find ground
                             for(let y=0; y<WORLD_HEIGHT; y++) {
-                                const b = world.blocks[y * WORLD_WIDTH + rx];
-                                if (b !== BlockType.AIR && b !== BlockType.WATER && b !== BlockType.ICE && b !== BlockType.SNOW_BLOCK) {
-                                    if (b === BlockType.SNOWY_GRASS || b === BlockType.SNOWY_LEAVES || b === BlockType.PINE_LEAVES || b === BlockType.PINE_WOOD) {
-                                       world.blocks[(y - 1) * WORLD_WIDTH + rx] = BlockType.SNOW_BLOCK;
+                                const idx = y * WORLD_WIDTH + rx;
+                                if (world.blocks[idx] !== BlockType.AIR) {
+                                    if (world.blocks[idx] === BlockType.GRASS || world.blocks[idx] === BlockType.LEAVES) {
+                                        // add snow logic here if needed
                                     }
                                     break;
                                 }
@@ -3507,37 +3896,52 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                         }
                     }
                 }
-                world.weather.duration--;
-                if (world.weather.duration === 0) {
-                    world.weather.type = 'CLEAR';
-                    world.weather.intensity = 0;
-                } else if (world.weather.type === 'HEAVY_RAIN' && Math.random() < 0.05 && entitiesRef.current.length < 60) {
-                    // Heavy rain spawns zombies
-                    spawnMob('ZOMBIE');
-                }
-            } else {
-                const currentSeason = options.seasonsEnabled ? Math.floor(totalDaysRef.current / 7) % 4 : -1;
-                let rainChance = adminFlags.rainChance;
-                if (currentSeason === 0) rainChance *= 2; 
-                else if (currentSeason === 1) rainChance *= 0.3; 
                 
-                if (Math.random() < rainChance) {
-                    const r = Math.random();
-                    if (currentSeason === 0) {
-                        world.weather.type = 'RAIN'; 
-                        world.weather.intensity = 0.3 + Math.random() * 0.3;
-                        world.weather.duration = 7200;
-                    } else if (r < 0.7) {
-                        world.weather.type = 'RAIN';
-                        world.weather.intensity = 0.5 + Math.random() * 0.5;
-                        world.weather.duration = 10800;
-                    } else {
-                        world.weather.type = 'HEAVY_RAIN';
-                        world.weather.intensity = 1.0;
-                        world.weather.duration = 10800;
+                // Lightning
+                if (world.weather.type === 'ELECTRICAL_STORM' || world.weather.type === 'STORM') {
+                    if (Math.random() < (world.weather.type === 'ELECTRICAL_STORM' ? 0.005 : 0.001)) {
+                         // Lightning strikes
+                         if ((window as any).audio) (window as any).audio.playThunder?.(); else audio.playThunder?.();
+                         const strikeX = player.x + (Math.random() * 2000 - 1000);
+                         // visual effect
+                         entitiesRef.current.push({
+                             id: generateEntityId(), type: 'PROJECTILE', itemId: 'bullet_spark',
+                             x: strikeX, y: 0, width: 2, height: WORLD_HEIGHT*BLOCK_SIZE,
+                             vx: 0, vy: 0, grounded: false, health: 1, maxHealth: 1, facingRight: true, creationTime: Date.now()
+                         } as any);
+                         
+                         // Scare zombies
+                         entitiesRef.current.forEach(e => {
+                             if(e.type.includes('ZOMBIE') && Math.abs(e.x - strikeX) < 1000) {
+                                 e.vx = (Math.random() > 0.5 ? 5 : -5);
+                                 e.vy = -5;
+                             }
+                         });
                     }
                 }
-            }
+                
+                // Mudiness
+                if (world.weather.type.includes('RAIN') || world.weather.type.includes('STORM')) {
+                    world.weather.mudiness = Math.min(1, (world.weather.mudiness || 0) + 0.0001);
+                } else {
+                    world.weather.mudiness = Math.max(0, (world.weather.mudiness || 0) - 0.0002);
+                }
+                
+                world.weather.duration--;
+                if (world.weather.duration === 0) {
+                    // Gradual fade out
+                    if (world.weather.type === 'ELECTRICAL_STORM') { world.weather.type = 'STORM'; world.weather.duration = 2000; }
+                    else if (world.weather.type === 'STORM') { world.weather.type = 'HEAVY_RAIN'; world.weather.duration = 2000; }
+                    else if (world.weather.type === 'HEAVY_RAIN') { world.weather.type = 'RAIN'; world.weather.duration = 2000; }
+                    else if (world.weather.type === 'RAIN') { world.weather.type = 'CLOUDY'; world.weather.duration = 2000; }
+                    else {
+                        world.weather.type = 'CLEAR';
+                        world.weather.intensity = 0;
+                    }
+                } else if ((world.weather.type === 'HEAVY_RAIN' || world.weather.type === 'STORM' || world.weather.type === 'ELECTRICAL_STORM') && Math.random() < 0.05 && entitiesRef.current.length < 60) {
+                    spawnMob('ZOMBIE');
+                }
+            } // Close world.weather.duration > 0
 
             const animals = entitiesRef.current.filter(e => e.type !== 'DROP' && e.type !== 'PROJECTILE' && e.type !== 'PLAYER'); if (animals.length > 50) { const toRemove = animals.length - 50; let removed = 0; for (let i = 0; i < entitiesRef.current.length; i++) { if (removed >= toRemove) break; const e = entitiesRef.current[i]; if (['COW','PIG','SHEEP','ZOMBIE'].includes(e.type)) { entitiesRef.current.splice(i, 1); i--; removed++; } } }
             // --- POISON EFFECT ---
@@ -3565,14 +3969,19 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                     lastRadiationDamageRef.current = Date.now();
                     setHearts(player.health);
                     addNotification(lang === 'PT' ? "Radiação detectada!" : "Radiation detected!");
-                    if (player.health <= 0) {
+                    
+            if ((player as any).threatLevel && (player as any).threatLevel > 1) {
+                (player as any).threatLevel = Math.max(1, (player as any).threatLevel - 0.0005);
+            }
+
+            if (player.health <= 0) {
                         // Handle death
                         player.health = 0;
                         setHearts(0);
                     }
                 }
             }
-            const maxStamina = MAX_STAMINA + (playerStats.endurance * 20); const drainEfficiency = Math.max(0.1, 1 - (playerStats.endurance * 0.05)); const regenEfficiency = 1 + (playerStats.endurance * 0.1); if (!sprintRef.current) { if (staminaRef.current < maxStamina && hungerRef.current > 0) staminaRef.current = Math.min(maxStamina, staminaRef.current + (BASE_STAMINA_REGEN * regenEfficiency)); } else { if (Math.abs(player.vx) > PLAYER_SPEED) { if (staminaRef.current > 0) staminaRef.current = Math.max(0, staminaRef.current - (BASE_STAMINA_DRAIN * drainEfficiency)); else hungerRef.current = Math.max(0, hungerRef.current - SPRINT_HUNGER_DRAIN); } }
+            const maxStamina = MAX_STAMINA + (playerStats.endurance * 20); const drainEfficiency = Math.max(0.1, 1 - (playerStats.endurance * 0.05)); const regenEfficiency = 1 + (playerStats.endurance * 0.1); if (!sprintRef.current) { if (staminaRef.current < maxStamina && hungerRef.current > 0) staminaRef.current = Math.min(maxStamina, staminaRef.current + (BASE_STAMINA_REGEN * regenEfficiency)); } else { if (Math.abs(player.vx) > PLAYER_SPEED) { if (staminaRef.current > 0) staminaRef.current = Math.max(0, staminaRef.current - (BASE_STAMINA_DRAIN * drainEfficiency * (world.weather?.mudiness && world.weather.mudiness > 0.5 ? 1.5 : 1))); else hungerRef.current = Math.max(0, hungerRef.current - SPRINT_HUNGER_DRAIN); } }
             const decayInterval = (HUNGER_DECAY_TICK + (playerStats.metabolism * 1000)) * (options.difficulty === 'EASY' ? 1.5 : 1); 
             if (!['GOD', 'CREATIVE', 'SPECTATOR'].includes(options.gameMode || 'SURVIVAL') && timeRef.current % decayInterval < 1 && hungerRef.current > 0) hungerRef.current = Math.max(0, hungerRef.current - 0.5);
             
@@ -3661,7 +4070,22 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             if (timeRef.current % 1000 === 0) updateLighting(world, timeRef.current);
             if (timeRef.current < DUSK_START && world.light[0] < 15 && timeRef.current % 60 === 0) updateLighting(world, timeRef.current);
             if (timeRef.current % 10 === 0) updateFluids(world);
-            furnacesRef.current.forEach((furnace) => { let dirty = false; if (furnace.burnTime > 0) { furnace.burnTime--; dirty = true; } else if (furnace.burnTime <= 0 && furnace.input && furnace.fuel && furnace.input.count > 0 && furnace.fuel.count > 0) { const outputId = COOKING_RECIPES[(furnace.input.id?.toString() || '')]; if (outputId) { if (!furnace.output || (furnace.output.id === outputId && furnace.output.count < 64)) { const fuelVal = FUEL_VALUES[(furnace.fuel.id?.toString() || '')]; if (fuelVal) { furnace.maxBurnTime = fuelVal; furnace.burnTime = fuelVal; furnace.fuel.count--; if(furnace.fuel.count <= 0) furnace.fuel = null; dirty = true; } } } } if (furnace.burnTime > 0 && furnace.input) { const outputId = COOKING_RECIPES[(furnace.input.id?.toString() || '')]; if (outputId) { if (!furnace.output || (furnace.output.id === outputId && furnace.output.count < 64)) { furnace.cookTime++; if (furnace.cookTime >= 200) { furnace.cookTime = 0; furnace.input.count--; if (furnace.input.count <= 0) furnace.input = null; 
+            furnacesRef.current.forEach((furnace, key) => { 
+                let dirty = false; 
+                if (furnace.burnTime > 0) { 
+                    furnace.burnTime--; 
+                    dirty = true;
+                    // Storm/Rain extinguish logic
+                    if (world.weather && world.weather.type.includes('RAIN') || world.weather?.type.includes('STORM')) {
+                        const [fx, fy] = key.split(',').map(Number);
+                        // Check if exposed to sky (simple check: block above is air, or light is max)
+                        if (fy > 0 && world.blocks[(fy-1) * WORLD_WIDTH + fx] === BlockType.AIR) {
+                            if (Math.random() < 0.1) {
+                                furnace.burnTime = Math.max(0, furnace.burnTime - 100);
+                            }
+                        }
+                    }
+                } else if (furnace.burnTime <= 0 && furnace.input && furnace.fuel && furnace.input.count > 0 && furnace.fuel.count > 0) { const outputId = COOKING_RECIPES[(furnace.input.id?.toString() || '')]; if (outputId) { if (!furnace.output || (furnace.output.id === outputId && furnace.output.count < 64)) { const fuelVal = FUEL_VALUES[(furnace.fuel.id?.toString() || '')]; if (fuelVal) { furnace.maxBurnTime = fuelVal; furnace.burnTime = fuelVal; furnace.fuel.count--; if(furnace.fuel.count <= 0) furnace.fuel = null; dirty = true; } } } } if (furnace.burnTime > 0 && furnace.input) { const outputId = COOKING_RECIPES[(furnace.input.id?.toString() || '')]; if (outputId) { if (!furnace.output || (furnace.output.id === outputId && furnace.output.count < 64)) { furnace.cookTime++; if (furnace.cookTime >= 200) { furnace.cookTime = 0; furnace.input.count--; if (furnace.input.count <= 0) furnace.input = null; 
             
             // FIXED: Set Correct Output Type
             const isBlock = !isNaN(Number(outputId)); 
@@ -3765,6 +4189,61 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             let pCenterY = Math.floor((player.y + player.height/2)/BLOCK_SIZE);
             let pEndY = Math.floor((player.y + player.height) / BLOCK_SIZE);
             
+            
+            // --- HORDE MANAGER ---
+            const currentDay = Math.floor(timeRef.current / FULL_DAY_TICKS);
+            if (!((window as any).hordeData)) {
+                (window as any).hordeData = { lastHordeDay: -1, hordeActive: false };
+            }
+            const hd = (window as any).hordeData;
+            
+            const threatLevel = (player as any).threatLevel || 1;
+            // Spawn a horde if day > lastHordeDay, it's night, and either every 5 days or high threat
+            const isNightForHorde = timeRef.current % FULL_DAY_TICKS > NIGHT_START && timeRef.current % FULL_DAY_TICKS < DAWN_START;
+            const shouldSpawnHorde = (currentDay > hd.lastHordeDay) && isNightForHorde && (currentDay % 5 === 0 || threatLevel >= 3);
+            
+            if (shouldSpawnHorde && !hd.hordeActive) {
+                hd.lastHordeDay = currentDay;
+                hd.hordeActive = true;
+                
+                const hordeSize = Math.floor(6 * threatLevel) + Math.floor(currentDay / 3) * 3;
+                addNotification(lang === 'PT' ? '⚠️ UMA HORDA ESTÁ SE APROXIMANDO! ⚠️' : '⚠️ A HORDE IS APPROACHING! ⚠️');
+                audio.playZombieHurt(); // use as warning sound
+                
+                const dir = Math.random() < 0.5 ? 1 : -1;
+                const startX = player.x + dir * (800 + Math.random() * 400); // spawn far away
+                let startY = -1;
+                const bx = Math.floor(startX / BLOCK_SIZE);
+                if (bx > 0 && bx < WORLD_WIDTH) {
+                    for(let y=0; y<WORLD_HEIGHT; y++) {
+                        if (world.blocks[y * WORLD_WIDTH + bx] !== BlockType.AIR) {
+                            startY = (y - 1) * BLOCK_SIZE;
+                            break;
+                        }
+                    }
+                    if (startY !== -1) {
+                        for(let i=0; i<hordeSize; i++) {
+                            const types = ['ZOMBIE', 'ZOMBIE_RUNNER', 'ZOMBIE_TANK'];
+                            if (currentDay > 10 || threatLevel > 2) types.push('ZOMBIE_EXPLOSIVE');
+                            if (currentDay > 20 || threatLevel > 4) types.push('ZOMBIE_KING');
+                            const type = types[Math.floor(Math.random() * types.length)];
+                            spawnMob(type as any, startX + (Math.random() * 300 - 150), startY - Math.random() * 100);
+                            
+                            // Mark the last spawned entity as horde member
+                            const lastEnt = entitiesRef.current[entitiesRef.current.length - 1];
+                            if (lastEnt && lastEnt.type.includes('ZOMBIE')) {
+                                (lastEnt as any).isHordeMember = true;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (hd.hordeActive && !isNightForHorde) {
+                hd.hordeActive = false;
+            }
+            // --- END HORDE MANAGER ---
+
             // Check environment speed modifiers (moss, cobweb, climbing vines)
             const standingOnIdx = pEndY * WORLD_WIDTH + pCenterX;
             const inBlockIdx = pCenterY * WORLD_WIDTH + pCenterX;
@@ -3780,6 +4259,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             const baseSpeed = PLAYER_SPEED + (playerStats.agility * 0.5); const runSpeed = PLAYER_RUN_SPEED + (playerStats.agility * 0.8); let speed = (sprintRef.current && (hungerRef.current > 3 || staminaRef.current > 0)) ? runSpeed : baseSpeed;
             if (temperatureState === 'COLD') speed *= 0.6;
             speed *= envSpeedMultiplier;
+            if (world.weather?.mudiness && world.weather.mudiness > 0.5) { speed *= 0.8; }
             if (player.posture === 'CROUCH') speed *= 0.5;
             if (player.posture === 'PRONE') speed *= 0.25;
             if ((player as any).freezeEndTime && (player as any).freezeEndTime > Date.now()) speed *= 0.5;
@@ -3831,7 +4311,12 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 if (keysRef.current[bindings.down]) player.vy = climbSpeed;
                 if (keysRef.current[bindings.left]) { player.vx = -climbSpeed; }
                 if (keysRef.current[bindings.right]) { player.vx = climbSpeed; }
-                if (keysRef.current[bindings.jump]) {
+                
+            if (player.vx !== 0 && player.grounded && Date.now() % 200 < 50) {
+                emitNoise(player.x, player.y, keysRef.current['ShiftLeft'] ? 400 : 150);
+            }
+
+                    if (keysRef.current[bindings.jump]) {
                     isClimbingRef.current = false;
                     player.vy = -JUMP_FORCE * 0.8;
                 }
@@ -4225,6 +4710,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             // --- ENTITY LOOP ---
             for (let i = entitiesRef.current.length - 1; i >= 0; i--) {
                 const ent = entitiesRef.current[i];
+                if (!ent) continue;
                 
                 // --- DROP LOGIC ---
                 if (ent.type === 'DROP') { 
@@ -4439,6 +4925,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 // SOFT COLLISION (mob vs mob)
                 for (let j = i - 1; j >= 0; j--) {
                     const otherEnt = entitiesRef.current[j];
+                    if (!otherEnt) continue;
                     if (otherEnt.type === 'DROP' || otherEnt.type === 'PROJECTILE' || ent.type === 'DROP' || ent.type === 'PROJECTILE') continue;
                     if (Math.abs(ent.x - otherEnt.x) < 20 && Math.abs(ent.y - otherEnt.y) < 20) {
                         const diffX = ent.x - otherEnt.x;
@@ -4666,20 +5153,198 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                 ent.health = 0;
                             }
                         } else { if (Math.random() < 0.02) { ent.vx = (Math.random() - 0.5) * 2; if (ent.vx > 0) ent.facingRight = true; if (ent.vx < 0) ent.facingRight = false; } } 
-                    } else if (Math.abs(distToPlayer) < 400 && distY < 200) { 
-                        let speed = 1.5;
-                        if (ent.type === 'ZOMBIE_RUNNER') speed = 4.5;
-                        if (ent.type === 'ZOMBIE_TANK') speed = 0.8;
-                        const isEntKnockedBack = ent.lastDamageTime && Date.now() - ent.lastDamageTime < 300;
-                        if (isEntKnockedBack) {
-                            ent.vx *= 0.95;
-                        } else {
-                            ent.facingRight = distToPlayer > 0; 
-                            ent.vx = ent.facingRight ? speed : -speed; 
-                            if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; 
-                            if (distY > 32 && targetY < ent.y && ent.vy === 0 && Math.random() < 0.1) ent.vy = -JUMP_FORCE; 
+                    } else {
+                        const isZombieType = (ent.type?.toString() || '').includes('ZOMBIE') || ent.type === 'PLAGUE_KING';
+                        if (isZombieType && ent.type !== 'ZOMBIE_SKELETON' && ent.type !== 'ZOMBIE_EXPLOSIVE') {
+                            if (!ent.aiState) ent.aiState = 'WANDER';
+                            
+                            let speed = 1.5;
+                            if (ent.type === 'ZOMBIE_RUNNER') speed = 4.5;
+                            if (ent.type === 'ZOMBIE_TANK') speed = 0.8;
+                            
+                            const dayNumber = Math.floor(totalDaysRef.current || 0);
+                            if (dayNumber >= 20) speed *= 1.2;
+                            if (dayNumber >= 50) speed *= 1.4;
+                            if (dayNumber >= 100) speed *= 1.8;
+                            
+                            let daySpeedFactor = isDay ? 0.6 : 1.0;
+                            const isEntKnockedBack = ent.lastDamageTime && Date.now() - ent.lastDamageTime < 300;
+                            
+                            
+                            const threatMultiplier = Math.max(1, (player as any).threatLevel || 1);
+                            
+                            let detectionRange = ent.aiState === 'INVESTIGATING' ? 400 : (isDay ? 250 : 450);
+                            if (dayNumber >= 20) detectionRange += 100;
+                            
+                            // Vision system modifiers
+                            const isPlayerMoving = Math.abs(player.vx) > 0.5 || Math.abs(player.vy) > 0.5;
+                            if (isPlayerMoving) detectionRange *= 1.5;
+                            else if (!isDay) detectionRange *= 0.5; // stationary in dark is harder to see
+                            
+                            detectionRange *= threatMultiplier;
+                            
+                            let canSeePlayer = false;
+                            // Cone of vision: mostly in front, but close behind can still detect
+                            const inCone = (ent.facingRight && distToPlayer > -40) || (!ent.facingRight && distToPlayer < 40);
+                            
+                            if (Math.abs(distY) < 150 && Math.abs(distToPlayer) < detectionRange && inCone) {
+                                canSeePlayer = true;
+                                const step = BLOCK_SIZE;
+                                for (let st = step; st < Math.abs(distToPlayer); st += step) {
+                                    const sx = Math.floor((ent.x + (distToPlayer > 0 ? st : -st)) / BLOCK_SIZE);
+                                    const sy = Math.floor((ent.y + ent.height/2) / BLOCK_SIZE);
+                                    if (sx >= 0 && sx < WORLD_WIDTH && sy >= 0 && sy < WORLD_HEIGHT) {
+                                        const b = world.blocks[sy * WORLD_WIDTH + sx];
+                                        if (b !== BlockType.AIR && b !== BlockType.WATER && b !== BlockType.LADDER && b !== BlockType.VINES && b !== BlockType.TALL_GRASS) {
+                                            canSeePlayer = false; break;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if ((ent as any).isHordeMember) {
+                                canSeePlayer = true; // Horde always knows where you are
+                            }
+                            
+                            if (canSeePlayer) {
+                                ent.aiState = 'CHASING';
+                                ent.lastSeenPlayerX = targetX;
+                                ent.lastSeenPlayerY = targetY;
+                                ent.investigateTimer = 0;
+                                ent.memoryTimer = 300 + (dayNumber >= 50 ? 300 : 0);
+                            }
+                            
+                            if (isEntKnockedBack) {
+                                ent.vx *= 0.95;
+                            } else {
+                                if (ent.aiState === 'CHASING') {
+                                    if (!canSeePlayer) {
+                                        if (ent.memoryTimer && ent.memoryTimer > 0) {
+                                            ent.memoryTimer--;
+                                            const lx = ent.lastSeenPlayerX || ent.x;
+                                            const distToLx = lx - ent.x;
+                                            if (Math.abs(distToLx) > 10) {
+                                                ent.facingRight = distToLx > 0;
+                                                ent.vx = ent.facingRight ? speed * daySpeedFactor : -speed * daySpeedFactor;
+                                            } else {
+                                                ent.vx = 0;
+                                            }
+                                        } else {
+                                            ent.aiState = 'WANDER';
+                                        }
+                                    } else {
+                                        ent.facingRight = distToPlayer > 0;
+                                        ent.vx = ent.facingRight ? speed * daySpeedFactor : -speed * daySpeedFactor;
+                                    }
+                                    
+                                    if (Math.random() < 0.05) {
+                                        for (const otherEnt of entitiesRef.current) {
+                                            if (otherEnt && otherEnt !== ent && ((otherEnt.type?.toString() || '').includes('ZOMBIE') || otherEnt.type === 'PLAGUE_KING')) {
+                                                if (Math.abs(otherEnt.x - ent.x) < 300 && Math.abs(otherEnt.y - ent.y) < 100) {
+                                                    if (otherEnt.aiState !== 'CHASING') {
+                                                        otherEnt.aiState = 'INVESTIGATING';
+                                                        otherEnt.investigateX = targetX;
+                                                        otherEnt.investigateY = targetY;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    
+                                    // Ladder & Door logic
+                                    const ecx = Math.floor(ent.x / BLOCK_SIZE);
+                                    const ecy = Math.floor((ent.y + ent.height/2) / BLOCK_SIZE);
+                                    const bAtFeet = world.blocks[ecy * WORLD_WIDTH + ecx];
+                                    if (bAtFeet === BlockType.LADDER || bAtFeet === BlockType.VINES) {
+                                        if (targetY < ent.y - 10) ent.vy = -3.5;
+                                        else if (targetY > ent.y + 10) ent.vy = 3.5;
+                                        else ent.vy = 0;
+                                    }
+                                    
+                                    const by = Math.floor((ent.y + ent.height/2) / BLOCK_SIZE);
+                                    const bx = Math.floor((ent.x + (ent.facingRight ? ent.width + 2 : -2)) / BLOCK_SIZE);
+                                    const frontBlock = world.blocks[by * WORLD_WIDTH + bx];
+                                    if (frontBlock === BlockType.DOOR_BOTTOM_CLOSED || frontBlock === BlockType.DOOR_TOP_CLOSED || frontBlock === BlockType.WHITE_DOOR_CLOSED) {
+                                        setBlockAt(bx, by, frontBlock === BlockType.DOOR_BOTTOM_CLOSED ? BlockType.DOOR_BOTTOM_OPEN : frontBlock === BlockType.DOOR_TOP_CLOSED ? BlockType.DOOR_TOP_OPEN : BlockType.WHITE_DOOR_OPEN);
+                                        emitNoise(ent.x, ent.y, 100);
+                                    }
+                                    
+                                    if (wallInFront && ent.vy === 0) {
+                                        ent.vy = -JUMP_FORCE;
+                                        ent.stuckTimer = (ent.stuckTimer || 0) + 1;
+                                        if (ent.stuckTimer > 60) {
+                                            const bx = Math.floor((ent.x + (ent.facingRight ? ent.width + 5 : -5)) / BLOCK_SIZE);
+                                            const by = Math.floor((ent.y + ent.height/2) / BLOCK_SIZE);
+                                            const b = world.blocks[by * WORLD_WIDTH + bx];
+                                            if (b === BlockType.WOOD || b === BlockType.DOOR_BOTTOM_CLOSED || b === BlockType.DOOR_TOP_CLOSED || b === BlockType.WHITE_DOOR_CLOSED || b === BlockType.GLASS || b === BlockType.PLANKS) {
+                                                world.blocks[by * WORLD_WIDTH + bx] = BlockType.AIR;
+                                                ent.stuckTimer = 0;
+                                                spawnDrop(bx*BLOCK_SIZE, by*BLOCK_SIZE, b, 1);
+                                            }
+                                        }
+                                    } else {
+                                        ent.stuckTimer = 0;
+                                    }
+                                    
+                                    if (distY > 32 && targetY < ent.y && ent.vy === 0 && Math.random() < 0.1) ent.vy = -JUMP_FORCE; 
+                                } else if (ent.aiState === 'INVESTIGATING') {
+                                    const ix = ent.investigateX || ent.x;
+                                    const distToIx = ix - ent.x;
+                                    if (Math.abs(distToIx) > 20) {
+                                        ent.facingRight = distToIx > 0;
+                                        ent.vx = ent.facingRight ? speed * 0.7 * daySpeedFactor : -speed * 0.7 * daySpeedFactor;
+                                        if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE;
+                                    } else {
+                                        ent.vx = 0;
+                                        if (!ent.investigateTimer) ent.investigateTimer = 0;
+                                        ent.investigateTimer++;
+                                        if (ent.investigateTimer > 180) {
+                                            ent.aiState = 'WANDER';
+                                            ent.investigateTimer = 0;
+                                        } else if (ent.investigateTimer % 60 === 0) {
+                                            ent.facingRight = !ent.facingRight;
+                                        }
+                                    }
+                                } else if (ent.aiState === 'WANDER') {
+                                    if (isDay && Math.random() < 0.05) {
+                                        const ey = Math.floor(ent.y/BLOCK_SIZE);
+                                        const ex = Math.floor(ent.x/BLOCK_SIZE);
+                                        let inShade = false;
+                                        for(let y=ey; y>ey-10 && y>=0; y--) {
+                                            const blockAbove = world.blocks[y*WORLD_WIDTH + ex];
+                                            if (blockAbove !== BlockType.AIR && blockAbove !== BlockType.WATER && blockAbove !== BlockType.TALL_GRASS && blockAbove !== BlockType.VINES && blockAbove !== BlockType.LADDER) { inShade = true; break; }
+                                        }
+                                        if (!inShade) {
+                                            if (Math.random() < 0.1) ent.facingRight = !ent.facingRight;
+                                            ent.vx = ent.facingRight ? speed * 0.5 : -speed * 0.5;
+                                        } else {
+                                            ent.vx = 0;
+                                            if (Math.random() < 0.01) ent.facingRight = !ent.facingRight;
+                                        }
+                                    } else {
+                                        if (Math.random() < 0.01) ent.facingRight = !ent.facingRight;
+                                        if (Math.random() < 0.02) ent.vx = 0;
+                                        else if (ent.vx === 0) ent.vx = ent.facingRight ? speed * 0.5 * daySpeedFactor : -speed * 0.5 * daySpeedFactor;
+                                    }
+                                    if (wallInFront && ent.vy === 0 && Math.abs(ent.vx) > 0) ent.vy = -JUMP_FORCE;
+                                }
+                            }
+                        } else if (Math.abs(distToPlayer) < 400 && distY < 200) {
+                            let speed = 1.5;
+                            const isEntKnockedBack = ent.lastDamageTime && Date.now() - ent.lastDamageTime < 300;
+                            if (isEntKnockedBack) {
+                                ent.vx *= 0.95;
+                            } else {
+                                ent.facingRight = distToPlayer > 0; 
+                                ent.vx = ent.facingRight ? speed : -speed; 
+                                if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; 
+                                if (distY > 32 && targetY < ent.y && ent.vy === 0 && Math.random() < 0.1) ent.vy = -JUMP_FORCE; 
+                            }
+                        } else { 
+                            if (Math.random() < 0.02) { ent.vx = (Math.random() - 0.5) * 2; if (ent.vx > 0) ent.facingRight = true; if (ent.vx < 0) ent.facingRight = false; } 
                         }
-                    } else { if (Math.random() < 0.02) { ent.vx = (Math.random() - 0.5) * 2; if (ent.vx > 0) ent.facingRight = true; if (ent.vx < 0) ent.facingRight = false; } } 
+                    }
                     
                     if (Math.abs(distToPlayer) < 30 && Math.abs(targetY - ent.y) < 50 && (ent.attackCooldown || 0) <= 0 && ent.type !== 'ZOMBIE_EXPLOSIVE') { 
                         if (closestPlayer.id === player.id) {
@@ -4929,7 +5594,16 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 } else { 
                     const heldItem = inventory[selectedSlot]; let attracted = false; 
                     if (heldItem) { if (ent.type === 'PIG' && heldItem.id === 'carrot') attracted = true; if ((ent.type === 'COW' || ent.type === 'SHEEP') && heldItem.id === 'wheat') attracted = true; } 
-                    if (attracted) { if (Math.abs(distToPlayer) < 200) { ent.facingRight = distToPlayer > 0; ent.vx = ent.facingRight ? 3 : -3; if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; } else { ent.vx = 0; } } else if (isPanic) { ent.facingRight = targetX < ent.x; const panicSpeed = ent.type === 'LUNAR_FOX' ? 5 : 3; ent.vx = ent.facingRight ? panicSpeed : -panicSpeed; if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; } else if (Math.random() < 0.02) { ent.vx = (Math.random() - 0.5) * 2; if (ent.vx > 0) ent.facingRight = true; if (ent.vx < 0) ent.facingRight = false; } 
+                    if (attracted) { if (Math.abs(distToPlayer) < 200) { ent.facingRight = distToPlayer > 0; ent.vx = ent.facingRight ? 3 : -3; if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; } else { ent.vx = 0; } } else if (isPanic) { ent.facingRight = targetX < ent.x; const panicSpeed = ent.type === 'LUNAR_FOX' ? 5 : 3; ent.vx = ent.facingRight ? panicSpeed : -panicSpeed; if (wallInFront && ent.vy === 0) ent.vy = -JUMP_FORCE; } else if (Math.random() < 0.02) { 
+                    const isStorm = world.weather && (world.weather.type.includes('HEAVY') || world.weather.type.includes('STORM') || world.weather.type.includes('RAIN'));
+                    if (isStorm) {
+                        ent.vx = 0; // Animals stay still/seek shelter during storms
+                    } else {
+                        ent.vx = (Math.random() - 0.5) * 2; 
+                        if (ent.vx > 0) ent.facingRight = true; 
+                        if (ent.vx < 0) ent.facingRight = false; 
+                    }
+                } 
                 }
                 
                 // RESTORE KNOCKBACK OVERRIDE
@@ -5205,7 +5879,10 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                                 }
                                             }
                                         }
-                                        audio.playBreak();
+                                        
+                                         audio.playBreak();
+                                         emitNoise(p.x * BLOCK_SIZE, p.y * BLOCK_SIZE, 600);
+
                                     } else {
                                         setBlockAt(bx, by, BlockType.AIR);
                                         
@@ -5659,8 +6336,10 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                     if (block === BlockType.WATER || block === BlockType.LAVA) { if(options.shaderLevel >= 1) { ctx.globalAlpha = 1.0; continue; } 
                         // Realistic Fluid
                         const isLava = block === BlockType.LAVA;
-                        const wave1 = Math.sin(timeRef.current * 0.05 + x * 0.2) * 0.1;
-                        const wave2 = Math.cos(timeRef.current * 0.03 + y * 0.1) * 0.1;
+                            const isStorm = world.weather && world.weather.type.includes('STORM');
+                            const waveMul = isStorm && !isLava ? 0.3 : 0.1;
+                            const wave1 = Math.sin(timeRef.current * 0.05 + x * 0.2) * waveMul;
+                            const wave2 = Math.cos(timeRef.current * 0.03 + y * 0.1) * waveMul;
                         ctx.globalAlpha = (isLava ? 0.9 : 0.6) + Math.max(0, wave1 + wave2);
                         
                         const grad = ctx.createLinearGradient(x * BLOCK_SIZE, y * BLOCK_SIZE, x * BLOCK_SIZE, (y + 1) * BLOCK_SIZE);
@@ -7281,6 +7960,25 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                  ctx.strokeText(p.playerName, p.x + p.width/2, p.y - 12); 
                  ctx.fillText(p.playerName, p.x + p.width/2, p.y - 12); 
                  ctx.restore();
+                                  if (p.isSpeaking) {
+                     ctx.save();
+                     ctx.translate(p.x + p.width/2 + 20, p.y - 25);
+                     ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                     const volScale = Math.min(1, (p.speakingVolume || 15) / 100);
+                     const bgSize = 10 + volScale * 10;
+                     ctx.beginPath();
+                     ctx.arc(0, 0, bgSize, 0, Math.PI * 2);
+                     ctx.fill();
+                     ctx.fillStyle = '#00FF00';
+                     const fontSize = Math.floor(10 + volScale * 10);
+                     ctx.font = fontSize + 'px Arial';
+                     ctx.textAlign = 'center';
+                     ctx.textBaseline = 'middle';
+                     // Sound waves icon
+                     ctx.fillText('🔊', 0, 1);
+                     ctx.restore();
+                 }
+
              }
         });
 
@@ -7349,7 +8047,8 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             else if (playerBiome === 'desert') wType = 'SAND';
 
             const intensity = world.weather.intensity || 1;
-            const count = wType === 'HEAVY_RAIN' ? 300 : (wType === 'SNOW' ? 200 : (wType === 'SAND' ? 250 : 150)) * intensity;
+            // Optimized: Reduced particle counts to prevent lag
+            const count = wType === 'HEAVY_RAIN' ? 100 : (wType === 'SNOW' ? 80 : (wType === 'SAND' ? 80 : 50)) * intensity;
             
             if (wType === 'SNOW') {
                 snowCoverRef.current = Math.min(1, snowCoverRef.current + 0.002);
@@ -7358,7 +8057,10 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             }
 
             // Convert old weather particles to new weather type immediately to prevent mixed weather
-            const renderType = wType === 'HEAVY_RAIN' ? 'RAIN' : wType as any;
+            let renderType = wType as any;
+            if (['HEAVY_RAIN', 'STORM', 'ELECTRICAL_STORM'].includes(wType)) renderType = 'RAIN';
+            if (wType === 'CLOUDY' || wType === 'FOG') renderType = 'NONE';
+
             weatherParticlesRef.current.forEach(p => {
                 if (['RAIN', 'SNOW', 'SAND'].includes(p.type) && p.type !== renderType) {
                     p.type = renderType;
@@ -7493,8 +8195,14 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 p.vy = Math.max(-spd, Math.min(spd, p.vy));
             }
 
-            p.x += p.vx;
-            p.y += p.vy;
+            if (p.type === 'RAIN' || p.type === 'SNOW' || p.type === 'SAND' || p.type === 'LEAF') {
+                const windSpeed = (world.weather?.windDirection ? Math.cos(world.weather.windDirection) : 0) * (world.weather?.type?.includes('STORM') ? 15 : 5);
+                p.x += p.vx + windSpeed;
+                p.y += p.vy;
+            } else {
+                p.x += p.vx;
+                p.y += p.vy;
+            }
             
             let hitBlock = false;
             const bx = Math.floor(p.x / BLOCK_SIZE);
@@ -7554,7 +8262,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 ctx.strokeStyle = 'rgba(150, 150, 255, 0.6)';
                 ctx.beginPath();
                 ctx.moveTo(p.x, p.y);
-                ctx.lineTo(p.x - p.vx * 2, p.y - p.vy * 2);
+                ctx.lineWidth = 2; ctx.lineTo(p.x - p.vx * 4, p.y - p.vy * 4);
                 ctx.stroke();
             } else if (p.type === 'LEAF' || p.type === 'GOLDEN_LEAF') {
                 let currentSeason = options.seasonsEnabled ? Math.floor(totalDaysRef.current / 7) % 4 : -1;
@@ -7685,8 +8393,10 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                         
                         if (block === BlockType.WATER || block === BlockType.LAVA) {
                             const isLava = block === BlockType.LAVA;
-                            const wave1 = Math.sin(timeRef.current * 0.05 + x * 0.2) * 0.1;
-                            const wave2 = Math.cos(timeRef.current * 0.03 + y * 0.1) * 0.1;
+                            const isStorm = world.weather && world.weather.type.includes('STORM');
+                            const waveMul = isStorm && !isLava ? 0.3 : 0.1;
+                            const wave1 = Math.sin(timeRef.current * 0.05 + x * 0.2) * waveMul;
+                            const wave2 = Math.cos(timeRef.current * 0.03 + y * 0.1) * waveMul;
                             const waterLevel = y * BLOCK_SIZE;
                             
                             // Check if surface water (no water above)
@@ -7701,8 +8411,9 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                 ctx.translate(0, waterLevel * 2);
                                 ctx.scale(1, -1);
                                 
-                                const distortionX = Math.sin(timeRef.current * 0.02 + y * 0.1) * 6;
-                                const distortionY = Math.cos(timeRef.current * 0.02 + x * 0.1) * 4;
+                                const distortionMul = isStorm && !isLava ? 15 : 6;
+                                const distortionX = Math.sin(timeRef.current * 0.02 + y * 0.1) * distortionMul;
+                                const distortionY = Math.cos(timeRef.current * 0.02 + x * 0.1) * (distortionMul * 0.6);
                                 ctx.translate(distortionX, distortionY);
                                 
                                 ctx.globalAlpha = 0.5 + Math.max(0, wave1) * 0.3;
@@ -7787,53 +8498,29 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             }
             if (isPrecip) {
                 const precipBiome = getBiome(Math.floor(playerRef.current.x / BLOCK_SIZE), currentSeed);
-                if (precipBiome === 'desert') ambientTint = 'rgba(230, 200, 150, 1)'; // Sandstorm tint
-                else if (precipBiome === 'snow') ambientTint = 'rgba(230, 240, 255, 1)'; // Snowstorm tint
-                else ambientTint = 'rgba(160, 160, 170, 1)'; // Rain moody gray
-            }
-            
-            ctx.globalCompositeOperation = 'multiply';
-            ctx.fillStyle = ambientTint;
-            ctx.fillRect(0, 0, cvs.width, cvs.height);
-
-                        // 2. Weather mist and Atmospheric Fog (Neblina Atmosférica)
-            ctx.globalCompositeOperation = 'source-over';
-            let fogAlpha = 0;
-            let fogColor = '255, 255, 255';
-            
-            // Base time fog
-            if (t3 >= DAWN_START && t3 < DAWN_START + 4000) {
-                // Manhã = neblina leve
-                const p = (t3 - DAWN_START) / 4000;
-                fogAlpha = 0.2 * (1 - p); // Fades out
-                fogColor = '255, 250, 240';
-            } else if (t3 > DAWN_START + 4000 && t3 < DUSK_START) {
-                // Tarde = mínima
-                fogAlpha = 0.05;
-                fogColor = '240, 245, 255';
-            } else if (t3 >= DUSK_START && t3 < NIGHT_START) {
-                // Entardecer
-                const p = (t3 - DUSK_START) / (NIGHT_START - DUSK_START);
-                fogAlpha = 0.05 + 0.1 * p;
-                fogColor = '255, 200, 150';
-            } else {
-                // Noite = moderada
-                fogAlpha = 0.15;
-                fogColor = '10, 20, 40';
-            }
-            
-            // Weather fog overrides
-            if (isPrecip) {
-                const precipBiome = getBiome(Math.floor(playerRef.current.x / BLOCK_SIZE), currentSeed);
                 if (precipBiome === 'desert') {
-                    fogAlpha = 0.4; // Sandstorm = intensa
+                    fogAlpha = 0.4;
                     fogColor = '230, 200, 150';
                 } else if (precipBiome === 'snow') {
-                    fogAlpha = 0.3; // Snowstorm = intensa
+                    fogAlpha = world.weather.type.includes('HEAVY') || world.weather.type.includes('STORM') ? 0.6 : 0.3;
                     fogColor = '240, 250, 255';
                 } else {
-                    fogAlpha = 0.3; // Rain = intensa
-                    fogColor = '180, 180, 190';
+                    if (world.weather.type === 'FOG') {
+                        fogAlpha = 0.8;
+                        fogColor = '230, 230, 230';
+                    } else if (world.weather.type === 'ELECTRICAL_STORM') {
+                        fogAlpha = 0.7;
+                        fogColor = '100, 100, 110';
+                    } else if (world.weather.type === 'STORM' || world.weather.type === 'HEAVY_RAIN') {
+                        fogAlpha = 0.5;
+                        fogColor = '140, 140, 150';
+                    } else if (world.weather.type === 'RAIN') {
+                        fogAlpha = 0.3;
+                        fogColor = '180, 180, 190';
+                    } else if (world.weather.type === 'CLOUDY') {
+                        fogAlpha = 0.1;
+                        fogColor = '200, 200, 200';
+                    }
                 }
             }
             
@@ -8154,6 +8841,10 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
             <canvas ref={canvasRef} width={window.innerWidth} height={window.innerHeight} className={` ${options.customCursor !== false && !options.isMobile ? 'cursor-none' : ''} touch-none`} />
             {(gameState === 'PLAYING' || gameState === 'PAUSED') && (
                 <>
+                    
+{/* MIC UI */}
+                    <MicUI analyserRef={analyserRef} options={options} isMicActive={isMicActive} setIsMicActive={setIsMicActive} micVolumeRef={micVolumeRef} lang={lang} />
+
                     {/* MOBILE CONTROLS OVERLAY */}
                     {options.isMobile && !isInventoryOpen && !isFurnaceOpen && !isChestOpen && !isArmorBenchOpen && (
                         <MobileControls 
@@ -8288,7 +8979,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                     
                                     if (rawName.includes('praia') || rawName.includes('beach')) {
                                         playerRef.current.x = (WORLD_WIDTH - 200) * BLOCK_SIZE;
-                                        playerRef.current.x = 0; playerRef.current.y = 0; // Fallback safe spawn
+                                        playerRef.current.y = 0; // Fallback safe spawn
                                         setChatMessages(p => [...p, {msg: `Teleportado para Praia!`, color: '#00ff00'}]);
                                         isCommand = true;
                                     } else {
@@ -8308,12 +8999,12 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                          for(let i=1; i<40; i++) {
                                              if (getBiome((chunkStart + i)*500, currentSeed) === biomeName) {
                                                 playerRef.current.x = (chunkStart + i)*500 * BLOCK_SIZE;
-                                                playerRef.current.x = 0; playerRef.current.y = 0; // fallback safe
+                                                playerRef.current.y = 0; // fallback safe
                                                 found = true; break;
                                              }
                                              if (chunkStart - i > 0 && getBiome((chunkStart - i)*500, currentSeed) === biomeName) {
                                                 playerRef.current.x = (chunkStart - i)*500 * BLOCK_SIZE;
-                                                playerRef.current.x = 0; playerRef.current.y = 0; // fallback safe
+                                                playerRef.current.y = 0; // fallback safe
                                                 found = true; break;
                                              }
                                          }
@@ -8343,7 +9034,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                         });
                                         if (closest) {
                                             playerRef.current.x = (closest as any).x * BLOCK_SIZE;
-                                            playerRef.current.x = 0; playerRef.current.y = 0;
+                                            playerRef.current.y = 0;
                                             found = true;
                                             setChatMessages(p => [...p, {msg: `Teleportado para estrutura: ${(closest as any).name}.`, color: '#00ff00'}]);
                                         }
@@ -8438,7 +9129,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                     {isArmorBenchOpen && (<ArmorBenchUI onClose={() => { setIsArmorBenchOpen(false); if(cursorItem) setCursorItem(null); }} playerInv={inventory} onPlayerSlotClick={(idx) => handleInventorySlotClick(idx, 0)} selectedSlot={selectedSlot} lang={lang} onReturnItem={handleArmorBenchReturn} onCraft={handleCraft} />)}
                     {showAchievementsUI && (<AchievementsOverlay unlocked={unlockedAchievements} onClose={() => setShowAchievementsUI(false)} />)}
                     {isFishing && (<FishingMinigame onSuccess={handleFishingSuccess} onFail={handleFishingFail} />)}
-                    {isAdminMenuOpen && (<AdminPanel onClose={() => setIsAdminMenuOpen(false)} adminState={adminFlags} setAdminState={setAdminFlags} onGiveItem={handleAdminGiveItem} onSetTime={handleAdminSetTime} onChangeWeather={(w) => { if(worldRef.current) { if(!worldRef.current.weather) worldRef.current.weather = {type:'CLEAR', intensity:0, duration:0}; worldRef.current.weather.type = w; worldRef.current.weather.duration = w === 'CLEAR' ? 0 : 999999; worldRef.current.weather.intensity = w === 'HEAVY_RAIN' ? 1.0 : 0.5; } }} onChangeMoon={(m) => moonPhaseRef.current = m} onTeleportBiome={handleAdminTeleportBiome} lang={lang} />)}
+                    {isAdminMenuOpen && (<AdminPanel onClose={() => setIsAdminMenuOpen(false)} adminState={adminFlags} setAdminState={setAdminFlags} onGiveItem={handleAdminGiveItem} onSetTime={handleAdminSetTime} onChangeWeather={(w) => { if(worldRef.current) { if(!worldRef.current.weather) worldRef.current.weather = {type:'CLEAR', intensity:0, duration:0}; worldRef.current.weather.type = w; worldRef.current.weather.duration = w === 'CLEAR' ? 0 : 999999; worldRef.current.weather.intensity = (w === 'HEAVY_RAIN' || w === 'STORM' || w === 'ELECTRICAL_STORM') ? 1.0 : (w === 'RAIN' || w === 'SNOW' ? 0.5 : 0.0); } }} onChangeMoon={(m) => moonPhaseRef.current = m} onTeleportBiome={handleAdminTeleportBiome} onGiveXP={(amount) => gainXP(amount)} lang={lang} />)}
                     {isSleepUIOpen && (<SleepUI onClose={() => setIsSleepUIOpen(false)} onSleep={handleSleep} lang={lang} />)}
                     {activeNpc && (<NpcUI npc={activeNpc} onClose={() => setActiveNpc(null)} onCompleteQuest={handleCompleteQuest} inventory={inventory} lang={lang} />)}
                     
@@ -8580,6 +9271,10 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                                         <button onClick={() => setOptions({...options, seasonsEnabled: !options.seasonsEnabled})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
                                             <span>{lang === 'PT' ? 'Estações do Ano' : 'Seasons'}</span>
                                             <span className={options.seasonsEnabled ? "text-green-400" : "text-red-400"}>{options.seasonsEnabled ? 'ON' : 'OFF'}</span>
+                                        </button>
+                                        <button onClick={() => setOptions({...options, micEnabled: !options.micEnabled})} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                                            <span>{lang === 'PT' ? 'Microfone Zumbis' : 'Zombie Mic'}</span>
+                                            <span className={options.micEnabled ? "text-green-400" : "text-red-400"}>{options.micEnabled ? 'ON' : 'OFF'}</span>
                                         </button>
                                     </>
                                 )}

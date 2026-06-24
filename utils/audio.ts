@@ -2,6 +2,7 @@ export class AudioEngine {
     private ctx: AudioContext | null = null;
     private initialized = false;
     private masterGain: GainNode | null = null;
+    private weatherFilter: BiquadFilterNode | null = null;
 
     init() {
         if (this.initialized) return;
@@ -9,6 +10,10 @@ export class AudioEngine {
             const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
             this.ctx = new AudioContext();
             this.masterGain = this.ctx.createGain();
+            this.weatherFilter = this.ctx.createBiquadFilter();
+            this.weatherFilter.type = 'lowpass';
+            this.weatherFilter.frequency.value = 20000;
+            this.weatherFilter.connect(this.masterGain);
             this.masterGain.gain.value = 0.3; // Default low volume
             this.masterGain.connect(this.ctx.destination);
             this.initialized = true;
@@ -164,6 +169,13 @@ export class AudioEngine {
     }
     // -------------------------
 
+    playThunder() {
+        this.playNoise(2.0, 1.5, true);
+        this.playTone(50, 'sawtooth', 2.0, 1.0, true);
+        setTimeout(() => this.playNoise(1.5, 0.8, true), 300);
+        setTimeout(() => this.playTone(80, 'square', 1.5, 0.8, true), 500);
+    }
+    
     playHit() {
         this.playNoise(0.2, 0.6);
         this.playTone(100, 'sawtooth', 0.2, 1, true);
@@ -247,13 +259,22 @@ export class AudioEngine {
         this.ambientNodes[key].gain.gain.linearRampToValueAtTime(vol, this.ctx.currentTime + 1);
     }
 
-    updateAmbient(isRaining: boolean, isSnowing: boolean, isDay: boolean, inWater: boolean, isGolden: boolean = false) {
+    updateAmbient(isRaining: boolean, isSnowing: boolean, isDay: boolean, inWater: boolean, isGolden: boolean = false, stormIntensity: number = 0) {
         if (!this.ctx) return;
         
         if (isRaining && !isSnowing) {
-            if (!this.ambientNodes['rain']) this.startAmbientNoise('rain', 600, 0.15, 'bandpass');
+            if (!this.ambientNodes['rain']) this.startAmbientNoise('rain', 600, 0.15 + (stormIntensity * 0.15), 'bandpass');
+            else this.ambientNodes['rain'].gain.gain.setTargetAtTime(0.15 + (stormIntensity * 0.15), this.ctx!.currentTime, 0.5);
+            
+            if (stormIntensity > 0) {
+                if (!this.ambientNodes['storm']) this.startAmbientNoise('storm', 200, 0.3 * stormIntensity, 'lowpass');
+                else this.ambientNodes['storm'].gain.gain.setTargetAtTime(0.3 * stormIntensity, this.ctx!.currentTime, 0.5);
+            } else {
+                this.stopAmbient('storm');
+            }
         } else {
             this.stopAmbient('rain');
+            this.stopAmbient('storm');
         }
         
         if (isSnowing) {

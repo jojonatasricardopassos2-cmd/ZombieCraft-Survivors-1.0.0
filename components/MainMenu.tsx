@@ -14,7 +14,7 @@ interface MainMenuProps {
   setLang: (l: 'EN' | 'PT' | 'ES' | 'JA') => void;
 }
 
-type MenuState = 'MAIN' | 'SELECT_WORLD' | 'CREATE_WORLD' | 'EDIT_WORLD' | 'OPTIONS' | 'ACHIEVEMENTS' | 'ONLINE_LOBBY' | 'CREATE_ROOM' | 'JOIN_ROOM' | 'LOGIN' | 'FRIENDS' | 'EDIT_SKIN' | 'MODS';
+type MenuState = 'MAIN' | 'SELECT_MODE' | 'SELECT_WORLD' | 'CREATE_WORLD' | 'EDIT_WORLD' | 'OPTIONS' | 'ACHIEVEMENTS' | 'ONLINE_LOBBY' | 'CREATE_ROOM' | 'JOIN_ROOM' | 'LOGIN' | 'FRIENDS' | 'EDIT_SKIN' | 'MODS';
 
 export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }) => {
   const [menuState, setMenuState] = useState<MenuState>('LOGIN');
@@ -38,6 +38,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
   const [showMinimap, setShowMinimap] = useState(true);
   const [adminMode, setAdminMode] = useState(false);
   const [seasonsEnabled, setSeasonsEnabled] = useState(false);
+  const [micEnabled, setMicEnabled] = useState(false);
   const [isMobile, setIsMobile] = useState(false); // Mobile Toggle
   const [graphicsQuality, setGraphicsQuality] = useState<'UGLY' | 'NORMAL' | 'ULTRA'>('ULTRA');
   const [renderDistance, setRenderDistance] = useState(15);
@@ -131,6 +132,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
               if (parsed.showMinimap !== undefined) setShowMinimap(parsed.showMinimap);
               if (parsed.adminMode !== undefined) setAdminMode(parsed.adminMode);
               if (parsed.seasonsEnabled !== undefined) setSeasonsEnabled(parsed.seasonsEnabled);
+              if (parsed.micEnabled !== undefined) setMicEnabled(parsed.micEnabled);
               if (parsed.isMobile !== undefined) setIsMobile(parsed.isMobile);
               if (parsed.graphicsQuality !== undefined) setGraphicsQuality(parsed.graphicsQuality);
               if (parsed.renderDistance !== undefined) setRenderDistance(parsed.renderDistance);
@@ -183,6 +185,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
           showMinimap,
           adminMode,
           seasonsEnabled,
+          micEnabled,
           isMobile,
           graphicsQuality,
           renderDistance,
@@ -194,7 +197,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
           mouseSensitivity,
           gamepadSensitivity
       }));
-  }, [showCoordinates, tutorialEnabled, showMinimap, adminMode, seasonsEnabled, isMobile, graphicsQuality, renderDistance, volume, customCursor, shaderLevel, textureQuality, bindings, mouseSensitivity, gamepadSensitivity]);
+  }, [showCoordinates, tutorialEnabled, showMinimap, adminMode, seasonsEnabled, micEnabled, isMobile, graphicsQuality, renderDistance, volume, customCursor, shaderLevel, textureQuality, bindings, mouseSensitivity, gamepadSensitivity]);
 
   const handleCreateWorld = () => {
       const seed = newWorldSeed.trim() === '' ? Math.floor(Math.random() * 999999) : parseInt(newWorldSeed) || 0;
@@ -393,16 +396,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
             }
         `}</style>
         <button 
-          onClick={() => setMenuState('SELECT_WORLD')}
+          onClick={() => setMenuState('SELECT_MODE')}
           className="text-black font-bold text-4xl hover-bounce text-left"
         >
           {t.PLAY}
-        </button>
-        <button 
-          onClick={() => { if (currentUser) setMenuState('ONLINE_LOBBY'); else alert('Faça login (Criar Conta) para acessar o Modo Online!'); }}
-          className={`text-black font-bold text-4xl hover-bounce text-left ${!currentUser ? 'opacity-50 line-through' : ''}`}
-        >
-          {t.ONLINE_MODE}
         </button>
         <button 
           onClick={() => setMenuState('MODS')}
@@ -684,6 +681,52 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
       </div>
   );
 
+  const renderSelectMode = () => (
+      <div className="flex flex-col items-center justify-center min-h-screen relative z-10 w-full" style={{ backgroundColor: '#2f3d36' }}>
+          <div className="absolute top-10 flex flex-col items-center">
+              <h1 className="text-6xl font-bold text-red-600 drop-shadow-lg" style={{ fontFamily: 'sans-serif', WebkitTextStroke: '2px black' }}>ZombieCraft</h1>
+              <div className="flex items-center gap-2 -mt-2">
+                  <span className="text-gray-300 font-bold text-xl">the</span>
+                  <span className="text-white font-bold text-4xl drop-shadow-md">Survivors</span>
+                  <span className="text-yellow-500 font-bold text-sm bg-black/50 px-1 rounded">DEMO</span>
+              </div>
+          </div>
+
+          <h2 className="text-black font-extrabold text-2xl uppercase tracking-widest mt-32 mb-8">Escolha o Modo</h2>
+
+          <div className="flex gap-8 justify-center">
+              <button 
+                  disabled
+                  className="w-48 h-64 bg-gray-600 border-8 border-black rounded-xl flex flex-col items-center justify-center opacity-70 cursor-not-allowed shadow-[0_0_15px_rgba(0,0,0,0.5)] transition-transform"
+              >
+                  <span className="text-gray-800 font-extrabold text-2xl uppercase leading-tight text-center">Modo<br/>Historia</span>
+              </button>
+
+              <button 
+                  onClick={() => setMenuState('SELECT_WORLD')}
+                  className="w-48 h-64 bg-[#0ea5e9] border-8 border-black rounded-xl flex flex-col items-center justify-center hover:-translate-y-2 hover:shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition-all"
+              >
+                  <span className="text-black font-extrabold text-2xl uppercase leading-tight text-center">Modo<br/>Aberto</span>
+              </button>
+
+              <button 
+                  onClick={() => { if (currentUser) setMenuState('ONLINE_LOBBY'); else alert('Faça login (Criar Conta) para acessar o Modo Online!'); }}
+                  className="w-48 h-64 bg-[#facc15] border-8 border-black rounded-xl flex flex-col items-center justify-center hover:-translate-y-2 hover:shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition-all relative overflow-hidden"
+              >
+                  <span className="text-black font-extrabold text-2xl uppercase leading-tight text-center">Modo<br/>Online</span>
+                  {!currentUser && <div className="absolute inset-0 bg-black/30 flex items-center justify-center"><span className="text-red-500 font-bold bg-black/80 px-2 rotate-12">LOGIN REQ.</span></div>}
+              </button>
+          </div>
+
+          <button 
+              onClick={() => setMenuState('MAIN')}
+              className="absolute bottom-10 left-10 bg-transparent text-black font-mono border-4 border-black rounded-full px-8 py-2 hover:bg-black/10 uppercase font-bold tracking-widest text-xl"
+          >
+              Voltar
+          </button>
+      </div>
+  );
+
   const renderSelectWorld = () => (
       <div className="flex flex-col gap-4 w-[600px] h-[500px] bg-gray-800/90 border-4 border-gray-500 p-6 shadow-2xl">
           <h2 className="text-2xl text-white font-bold text-center border-b border-gray-600 pb-4">{t.SELECT_WORLD_TITLE}</h2>
@@ -923,6 +966,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
                 <button onClick={() => setSeasonsEnabled(!seasonsEnabled)} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
                     <span>Estações do Ano (Seasons)</span>
                     <span className={seasonsEnabled ? "text-green-400" : "text-red-400"}>{seasonsEnabled ? 'ON' : 'OFF'}</span>
+                </button>
+                <button onClick={() => setMicEnabled(!micEnabled)} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
+                    <span>Microfone Zumbis (Zombie Mic)</span>
+                    <span className={micEnabled ? "text-green-400" : "text-red-400"}>{micEnabled ? 'ON' : 'OFF'}</span>
                 </button>
                      <button onClick={() => { if (adminMode) setAdminMode(false); else setShowAdminConfirm(true); }} className="bg-gray-700 hover:bg-gray-600 text-white p-3 border-2 border-gray-400 font-mono text-lg flex justify-between px-6">
                          <span>{t.ADMIN_TEST}</span>
@@ -1369,6 +1416,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onStartGame, lang, setLang }
         {menuState !== 'MAIN' && (
             <div className="absolute inset-0 flex items-center justify-center">
                 {menuState === 'LOGIN' && renderLogin()}
+                {menuState === 'SELECT_MODE' && renderSelectMode()}
                 {menuState === 'SELECT_WORLD' && renderSelectWorld()}
                 {menuState === 'CREATE_WORLD' && renderCreateWorld()}
                 {menuState === 'EDIT_WORLD' && renderEditWorld()}

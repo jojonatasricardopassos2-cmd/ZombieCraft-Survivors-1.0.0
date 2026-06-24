@@ -18,7 +18,7 @@ export class PeerSocket {
                 
                 this.peer.on('open', (id) => {
                     console.log("Host ready on ID:", id);
-                    this.emitLocal('connect');
+                    this.emitLocal('connect', { myPeerId: this.peer!.id });
                 });
                 
                 this.peer.on('connection', (conn) => {
@@ -51,6 +51,10 @@ export class PeerSocket {
                     this.emitLocal('room-error', { message: err.message });
                 });
                 
+                this.peer.on('call', (call) => {
+                    this.emitLocal('incoming-call', call);
+                });
+                
             } else {
                 // Client connects to the Host ID
                 this.peer = new Peer();
@@ -60,7 +64,7 @@ export class PeerSocket {
                     
                     conn.on('open', () => {
                         this.connections.push(conn);
-                        this.emitLocal('connect');
+                        this.emitLocal('connect', { myPeerId: this.peer!.id });
                     });
                     
                     conn.on('data', (data: any) => {
@@ -77,6 +81,10 @@ export class PeerSocket {
                     conn.on('error', (err) => {
                         this.emitLocal('room-error', { message: err.message });
                     });
+                });
+                
+                this.peer.on('call', (call) => {
+                    this.emitLocal('incoming-call', call);
                 });
                 
                 this.peer.on('error', (err) => {
@@ -119,5 +127,9 @@ export class PeerSocket {
             this.peer.destroy();
             this.peer = null;
         }
+    }
+    call(peerId: string, stream: MediaStream) {
+        if (!this.peer) return null;
+        return this.peer.call(peerId, stream);
     }
 }

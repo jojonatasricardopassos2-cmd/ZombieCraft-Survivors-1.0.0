@@ -203,6 +203,17 @@ export interface Entity {
   highestY?: number; // For fall damage tracking
   invincibilityEndTime?: number;
   // Taming
+  // For Advanced AI
+  aiState?: 'IDLE' | 'WANDER' | 'INVESTIGATING' | 'CHASING' | 'AMBUSH';
+  investigateX?: number;
+  investigateY?: number;
+  investigateTimer?: number;
+  stuckTimer?: number;
+  memoryTimer?: number;
+  lastSeenPlayerX?: number;
+  lastSeenPlayerY?: number;
+  
+  // Taming
   isTamed?: boolean;
   tameProgress?: number;
   saddle?: boolean;
@@ -236,9 +247,13 @@ export interface WorldData {
   blocks: number[]; 
   light: number[]; 
   weather?: {
-    type: 'CLEAR' | 'RAIN' | 'HEAVY_RAIN' | 'SNOW';
+    type: 'CLEAR' | 'CLOUDY' | 'RAIN' | 'HEAVY_RAIN' | 'STORM' | 'ELECTRICAL_STORM' | 'FOG' | 'SNOW';
     intensity: number;
     duration: number;
+    windDirection?: number;
+    windSpeed?: number;
+    lightningFrequency?: number;
+    mudiness?: number;
   };
   npcSpawns?: {x: number, y: number}[];
   initialChests?: {x: number, y: number, items: {id: number | string, count: number, type: 'BLOCK' | 'ITEM'}[]}[];
@@ -320,6 +335,7 @@ export const DEFAULT_BINDINGS: KeyBindings = {
 };
 
 export interface GameOptions {
+  micEnabled?: boolean;
     showCoordinates: boolean;
     showMinimap?: boolean;
     adminMode?: boolean;

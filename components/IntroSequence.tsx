@@ -5,7 +5,7 @@ interface IntroProps {
 }
 
 export const IntroSequence: React.FC<IntroProps> = ({ onComplete }) => {
-  const [phase, setPhase] = useState<'BAL_STUDIOS' | 'GAME_LOGO' | 'WARNING'>('BAL_STUDIOS');
+  const [phase, setPhase] = useState<'BAL_STUDIOS' | 'GAME_LOGO' | 'WARNING' | 'FADING_OUT' | 'DONE'>('BAL_STUDIOS');
   
   useEffect(() => {
     if (phase === 'BAL_STUDIOS') {
@@ -14,11 +14,23 @@ export const IntroSequence: React.FC<IntroProps> = ({ onComplete }) => {
     } else if (phase === 'GAME_LOGO') {
       const t2 = setTimeout(() => setPhase('WARNING'), 3000);
       return () => clearTimeout(t2);
+    } else if (phase === 'FADING_OUT') {
+      const t3 = setTimeout(() => {
+        setPhase('DONE');
+        onComplete();
+      }, 1000); // 1s fade to black
+      return () => clearTimeout(t3);
     }
-  }, [phase]);
+  }, [phase, onComplete]);
+
+  if (phase === 'DONE') return null;
+
+  const handleComplete = () => {
+    setPhase('FADING_OUT');
+  };
 
   return (
-    <div className="absolute inset-0 z-[100] bg-black flex items-center justify-center overflow-hidden">
+    <div className={`absolute inset-0 z-[100] flex items-center justify-center overflow-hidden transition-opacity duration-1000 ${phase === 'FADING_OUT' ? 'opacity-0 bg-black' : 'opacity-100 bg-black'}`}>
       <style>{`
         @keyframes fadeInOut {
             0% { opacity: 0; transform: scale(0.95); }
@@ -40,37 +52,8 @@ export const IntroSequence: React.FC<IntroProps> = ({ onComplete }) => {
       
       {phase === 'BAL_STUDIOS' && (
         <div className="animate-fade-in-out flex flex-col items-center justify-center w-full h-full relative bg-black">
-           <div className="flex flex-col items-center justify-center relative w-full max-w-[800px] h-[500px] scale-75 md:scale-100">
-              <div className="absolute top-[120px] right-[100px] flex items-center gap-6">
-                 <span className="text-[#00A2FF] text-[100px] font-black font-sans tracking-tight leading-none">BAL</span>
-                 <div className="flex flex-col items-center mt-2">
-                    <div className="w-[60px] h-[35px] bg-[#00A2FF] relative">
-                       <div className="absolute top-[10px] left-[12px] w-[10px] h-[4px] bg-black"></div>
-                       <div className="absolute top-[10px] right-[12px] w-[10px] h-[4px] bg-black"></div>
-                    </div>
-                    <div className="w-[85px] h-[50px] bg-[#00A2FF] mt-1 relative -left-[12px]"></div>
-                    <div className="flex gap-3 mt-1 relative -left-[12px]">
-                       <div className="w-[18px] h-[40px] bg-[#00A2FF]"></div>
-                       <div className="w-[18px] h-[40px] bg-[#00A2FF]"></div>
-                    </div>
-                 </div>
-              </div>
-
-              <div className="absolute bottom-[120px] left-[100px] flex items-center gap-6">
-                 <div className="flex flex-col items-center mb-2">
-                    <div className="w-[60px] h-[35px] bg-[#E31818] relative">
-                       <div className="absolute top-[10px] left-[12px] w-[10px] h-[4px] bg-black"></div>
-                       <div className="absolute top-[10px] right-[12px] w-[10px] h-[4px] bg-black"></div>
-                    </div>
-                    <div className="w-[85px] h-[50px] bg-[#E31818] mt-1 relative -right-[12px]"></div>
-                    <div className="flex gap-3 mt-1 relative -right-[12px]">
-                       <div className="w-[18px] h-[40px] bg-[#E31818]"></div>
-                       <div className="w-[18px] h-[40px] bg-[#E31818]"></div>
-                    </div>
-                 </div>
-                 <span className="text-[#E31818] text-[100px] font-black font-sans tracking-tight leading-none">GAMES</span>
-              </div>
-           </div>
+           <h1 className="text-white font-black text-8xl md:text-[120px] tracking-[0.2em] mb-8">BAL GAMES</h1>
+           <span className="text-gray-400 text-xl md:text-2xl tracking-[0.5em]">APRESENTA / PRESENTS</span>
         </div>
       )}
       
@@ -94,20 +77,24 @@ export const IntroSequence: React.FC<IntroProps> = ({ onComplete }) => {
       )}
 
       {phase === 'WARNING' && (
-        <div className="animate-fade-in flex flex-col items-center justify-center max-w-2xl text-center px-6">
-          <div className="mb-10">
-             <h1 className="text-red-600 text-6xl font-black mb-6 uppercase tracking-widest drop-shadow-[0_0_15px_rgba(220,38,38,0.8)]">Aviso</h1>
-             <p className="text-gray-300 text-2xl leading-relaxed font-medium">
-               Este jogo contém elementos de sobrevivência, zumbis e ficção.<br/> A experiência pode conter eventos gerados aleatoriamente.
+        <div className="animate-fade-in flex flex-col items-center justify-center w-full h-full bg-black text-center px-6">
+          <div className="mb-12 max-w-4xl">
+             <h1 className="text-red-600 text-6xl md:text-[80px] font-black mb-10 uppercase tracking-widest drop-shadow-[0_0_20px_rgba(220,38,38,0.6)]">Aviso de<br/>Fotossensibilidade</h1>
+             <p className="text-gray-200 text-2xl md:text-3xl leading-relaxed font-medium">
+               Este jogo contém luzes piscantes e padrões visuais que podem causar<br/>convulsões em uma pequena porcentagem de pessoas com epilepsia<br/>fotossensível.
              </p>
           </div>
           <button 
-            onClick={onComplete}
-            className="px-10 py-5 bg-red-600 hover:bg-red-700 text-white font-black text-3xl rounded-md uppercase tracking-widest shadow-[0_6px_0_#991b1b] active:shadow-none active:translate-y-[6px] transition-all"
+            onClick={handleComplete}
+            className="px-12 py-6 bg-red-600 hover:bg-red-700 text-white font-black text-3xl md:text-4xl rounded uppercase tracking-widest transition-all"
           >
             Eu entendo
           </button>
         </div>
+      )}
+
+      {phase === 'FADING_OUT' && (
+        <div className="w-full h-full bg-black"></div>
       )}
     </div>
   );

@@ -9,7 +9,8 @@ interface AdminPanelProps {
     setAdminState: React.Dispatch<React.SetStateAction<{ noClip: boolean, nightVision: boolean, showCreative: boolean, oneHitBreak: boolean, rainChance: number }>>;
     onGiveItem: (item: ItemStack) => void;
     onSetTime: (time: 'DAY' | 'NIGHT') => void;
-    onChangeWeather: (type: 'CLEAR' | 'RAIN' | 'HEAVY_RAIN' | 'SNOW') => void;
+    onChangeWeather: (type: 'CLEAR' | 'CLOUDY' | 'FOG' | 'RAIN' | 'HEAVY_RAIN' | 'STORM' | 'ELECTRICAL_STORM' | 'SNOW') => void;
+    onGiveXP: (amount: number) => void;
     onChangeMoon: (phase: 'NORMAL' | 'FULL' | 'BLOOD') => void;
     onTeleportBiome: (biomeName: string) => void;
     lang: 'EN' | 'PT';
@@ -37,7 +38,7 @@ const AdminItemIcon: React.FC<{ id: string | BlockType, type: ItemType }> = ({ i
     );
 };
 
-export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, adminState, setAdminState, onGiveItem, onSetTime, onChangeWeather, onChangeMoon, onTeleportBiome, lang }) => {
+export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, adminState, setAdminState, onGiveItem, onSetTime, onChangeWeather, onChangeMoon, onTeleportBiome, onGiveXP, lang }) => {
     const t = TRANSLATIONS[lang];
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -156,6 +157,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, adminState, set
 
             {/* Time Control */}
             <div className="mb-4">
+                <h3 className="text-gray-400 text-sm mb-2 uppercase tracking-wider">Player</h3>
+                <div className="flex gap-2 mb-2">
+                    <button onClick={() => onGiveXP(500)} className="flex-1 bg-green-700 hover:bg-green-600 p-2 text-sm rounded">+500 XP</button>
+                    <button onClick={() => onGiveXP(5000)} className="flex-1 bg-green-700 hover:bg-green-600 p-2 text-sm rounded">+5000 XP</button>
+                </div>
                 <h3 className="text-gray-400 text-sm mb-2 uppercase tracking-wider">Time</h3>
                 <div className="flex gap-2">
                     <button onClick={() => onSetTime('DAY')} className="flex-1 bg-yellow-700 hover:bg-yellow-600 p-2 text-sm rounded">{t.RESET_DAY}</button>
@@ -173,13 +179,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, adminState, set
                     <button onClick={() => onTeleportBiome('desert')} className="flex-1 bg-green-900 hover:bg-green-800 py-1 rounded">Desert</button>
                     <button onClick={() => onTeleportBiome('golden_forest')} className="flex-1 bg-yellow-600 hover:bg-yellow-500 py-1 rounded">Golden</button>
                     <button onClick={() => onTeleportBiome('beach')} className="flex-1 bg-yellow-800 hover:bg-yellow-700 py-1 rounded">Beach</button>
+                    <button onClick={() => onTeleportBiome('cidade_abandonada')} className="flex-1 bg-gray-600 hover:bg-gray-500 py-1 rounded">C. Abandonada</button>
+                    <button onClick={() => onTeleportBiome('fazenda')} className="flex-1 bg-orange-800 hover:bg-orange-700 py-1 rounded">Fazenda</button>
                 </div>
 
                 <h3 className="text-gray-400 text-sm mb-1 uppercase tracking-wider">Environment</h3>
-                <div className="flex gap-2 text-sm">
-                    <button onClick={() => onChangeMoon('NORMAL')} className="flex-1 bg-gray-700 hover:bg-gray-600 py-1 rounded">Moon</button>
-                    <button onClick={() => onChangeMoon('FULL')} className="flex-1 bg-gray-700 hover:bg-gray-600 py-1 rounded">Full Moon</button>
-                    <button onClick={() => onChangeMoon('BLOOD')} className="flex-1 bg-gray-700 hover:bg-gray-600 py-1 rounded">Blood Moon</button>
+                <div className="flex flex-wrap gap-2 text-xs">
+                    <button onClick={() => onChangeWeather('CLEAR')} className="flex-1 min-w-[60px] bg-indigo-900 hover:bg-indigo-800 py-1 rounded">Clear</button>
+                    <button onClick={() => onChangeWeather('CLOUDY')} className="flex-1 min-w-[60px] bg-indigo-900 hover:bg-indigo-800 py-1 rounded">Cloudy</button>
+                    <button onClick={() => onChangeWeather('FOG')} className="flex-1 min-w-[60px] bg-indigo-900 hover:bg-indigo-800 py-1 rounded">Fog</button>
+                    <button onClick={() => onChangeWeather('RAIN')} className="flex-1 min-w-[60px] bg-indigo-900 hover:bg-indigo-800 py-1 rounded">Rain</button>
+                    <button onClick={() => onChangeWeather('HEAVY_RAIN')} className="flex-1 min-w-[60px] bg-indigo-900 hover:bg-indigo-800 py-1 rounded">H. Rain</button>
+                    <button onClick={() => onChangeWeather('STORM')} className="flex-1 min-w-[60px] bg-indigo-900 hover:bg-indigo-800 py-1 rounded">Storm</button>
+                    <button onClick={() => onChangeWeather('ELECTRICAL_STORM')} className="flex-1 min-w-[60px] bg-indigo-900 hover:bg-indigo-800 py-1 rounded">Elec. Storm</button>
+                    <button onClick={() => onChangeWeather('SNOW')} className="flex-1 min-w-[60px] bg-indigo-900 hover:bg-indigo-800 py-1 rounded">Snow</button>
                 </div>
                 <div className="flex gap-2 text-sm">
                     <button onClick={() => onChangeWeather('CLEAR')} className="flex-1 bg-indigo-900 hover:bg-indigo-800 py-1 rounded">Clear</button>

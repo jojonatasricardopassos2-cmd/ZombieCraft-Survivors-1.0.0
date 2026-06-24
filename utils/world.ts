@@ -41,9 +41,39 @@ export const getBiome = (x: number, noiseSeed: number): string => {
     return 'snow';
 };
 
+
+function getRandomLoot(rng: SeededRNG) {
+    const LOOT_POOL = [
+        { id: 'wood_sword', type: 'ITEM', count: 1 },
+        { id: 'stone_sword', type: 'ITEM', count: 1 },
+        { id: 'bread', type: 'ITEM', count: 1 },
+        { id: 'apple', type: 'ITEM', count: 1 },
+        { id: 'stick', type: 'ITEM', count: 3 },
+        { id: 'iron_ingot', type: 'ITEM', count: 2 },
+        { id: 'gold_ingot', type: 'ITEM', count: 1 },
+        { id: 4, type: 'BLOCK', count: 10 }, // Wood
+        { id: 3, type: 'BLOCK', count: 10 }, // Stone
+        { id: 'cooked_meat', type: 'ITEM', count: 2 }
+    ];
+    
+    // Choose 1 to 3 random items
+    const numItems = Math.floor(rng.next() * 3) + 1;
+    const items = [];
+    for(let i=0; i<numItems; i++) {
+        const pick = LOOT_POOL[Math.floor(rng.next() * LOOT_POOL.length)];
+        items.push({ id: pick.id, count: pick.count, type: pick.type as 'BLOCK' | 'ITEM' });
+    }
+    return items;
+}
 export function generateWorld(seedInput: number): WorldData {
   const blocks = new Array(WORLD_WIDTH * WORLD_HEIGHT).fill(BlockType.AIR);
   const light = new Array(WORLD_WIDTH * WORLD_HEIGHT).fill(0);
+  
+  const npcSpawns: {x: number, y: number, type?: string}[] = [];
+  const initialChests: {x: number, y: number, items: {id: number | string, count: number, type: 'BLOCK' | 'ITEM'}[]}[] = [];
+  const structures: {name: string, x: number}[] = [];
+  
+  // Structures, NPCs and Chests already declared at top
   
   const rng = new SeededRNG(seedInput);
   const noiseSeed = seedInput; 
@@ -244,6 +274,7 @@ export function generateWorld(seedInput: number): WorldData {
       
       // Chest
       blocks[(ly - 1) * WORLD_WIDTH + lx] = BlockType.CHEST;
+      initialChests.push({ x: lx, y: ly - 1, items: getRandomLoot(rng) });
       if (!isRuin) {
           blocks[(ly - 1) * WORLD_WIDTH + lx + 1] = BlockType.TABLE;
           blocks[(ly - 1) * WORLD_WIDTH + lx + 2] = BlockType.CABINET;
@@ -541,9 +572,7 @@ export function generateWorld(seedInput: number): WorldData {
   }
 
   // Generate Abandoned Houses
-  const npcSpawns: {x: number, y: number, type?: string}[] = [];
-  const initialChests: {x: number, y: number, items: {id: number | string, count: number, type: 'BLOCK' | 'ITEM'}[]}[] = [];
-  const structures: {name: string, x: number}[] = [];
+  
   
   // Generate 1 Big City
   let cityGenerated = false;
@@ -560,59 +589,77 @@ export function generateWorld(seedInput: number): WorldData {
           }
       }
       
-      if (startY > SEA_LEVEL - 5 && startY < SEA_LEVEL + 50) {
-          structures.push({ name: 'cidade grande', x: startX });
-          // Flatten land for 30 blocks
-          for (let ix = 0; ix < 30; ix++) {
-              let ground = startY;
+      if (startY > INTERNAL_SURFACE_Y - 20 && startY < INTERNAL_SURFACE_Y + 50) {
+          structures.push({ name: 'cidade_abandonada', x: startX });
+          
+          // Flatten land for 80 blocks for the entire city
+          for (let ix = 0; ix < 80; ix++) {
               for(let iy=startY-10; iy<=startY; iy++) blocks[iy * WORLD_WIDTH + startX + ix] = BlockType.AIR;
-              blocks[startY * WORLD_WIDTH + startX + ix] = BlockType.STONE;
+              blocks[startY * WORLD_WIDTH + startX + ix] = BlockType.DIRT;
+              blocks[(startY+1) * WORLD_WIDTH + startX + ix] = BlockType.DIRT;
           }
           
-          // Build a 4-story building
-          const bStartX = startX + 5;
-          const bWidth = 15;
-          
-          for(let floor=0; floor<4; floor++) {
-              const floorY = startY - 1 - (floor * 5);
-              for(let ix = 0; ix < bWidth; ix++) {
-                  blocks[floorY * WORLD_WIDTH + bStartX + ix] = BlockType.WOOD; // Floor
-                  if (ix === 0 || ix === bWidth - 1) { // Walls
-                      blocks[(floorY - 1) * WORLD_WIDTH + bStartX + ix] = BlockType.WALL_WOOD;
-                      blocks[(floorY - 2) * WORLD_WIDTH + bStartX + ix] = BlockType.GLASS_BLUE;
-                      blocks[(floorY - 3) * WORLD_WIDTH + bStartX + ix] = BlockType.GLASS_BLUE;
-                      blocks[(floorY - 4) * WORLD_WIDTH + bStartX + ix] = BlockType.WALL_WOOD;
-                  }
-              }
-              // Stairs
-              if (floor < 3) {
-                  blocks[(floorY - 1) * WORLD_WIDTH + bStartX + 2] = BlockType.LADDER;
-                  blocks[(floorY - 2) * WORLD_WIDTH + bStartX + 2] = BlockType.LADDER;
-                  blocks[(floorY - 3) * WORLD_WIDTH + bStartX + 2] = BlockType.LADDER;
-                  blocks[(floorY - 4) * WORLD_WIDTH + bStartX + 2] = BlockType.LADDER;
-                  blocks[(floorY - 5) * WORLD_WIDTH + bStartX + 2] = BlockType.AIR; // Hole in ceiling
-              }
-              // Door
-              if (floor === 0) {
-                  blocks[(floorY - 1) * WORLD_WIDTH + bStartX] = BlockType.DOOR_BOTTOM_CLOSED;
-                  blocks[(floorY - 2) * WORLD_WIDTH + bStartX] = BlockType.DOOR_TOP_CLOSED;
-                  blocks[(floorY - 1) * WORLD_WIDTH + bStartX + bWidth - 1] = BlockType.DOOR_BOTTOM_CLOSED;
-                  blocks[(floorY - 2) * WORLD_WIDTH + bStartX + bWidth - 1] = BlockType.DOOR_TOP_CLOSED;
-              }
-              // Furniture
-              blocks[(floorY - 1) * WORLD_WIDTH + bStartX + 4] = BlockType.BED;
-              blocks[(floorY - 1) * WORLD_WIDTH + bStartX + 6] = BlockType.CHEST;
-              initialChests.push({ x: bStartX + 6, y: floorY - 1, items: [{ id: 'diamond', count: 2, type: 'ITEM' }] });
-              blocks[(floorY - 1) * WORLD_WIDTH + bStartX + 8] = BlockType.CABINET;
-              blocks[(floorY - 1) * WORLD_WIDTH + bStartX + 10] = BlockType.TABLE;
-          }
-          // Roof
-          const roofY = startY - 1 - (4 * 5);
-          for(let ix = 0; ix < bWidth; ix++) {
-              blocks[roofY * WORLD_WIDTH + bStartX + ix] = BlockType.ROOF_STONE;
-          }
+          const buildings = [
+              { floors: 5, width: 12, spacing: 5 },
+              { floors: 4, width: 12, spacing: 5 },
+              { floors: 6, width: 12, spacing: 5 },
+              { floors: 2, width: 20, spacing: 5 }
+          ];
 
-          npcSpawns.push({ x: startX + 15, y: startY - 2, type: 'QUEST_GIVER' });
+          let currentX = startX + 5;
+          
+          buildings.forEach(b => {
+              const bWidth = b.width;
+              for(let floor=0; floor<b.floors; floor++) {
+                  const floorY = startY - 1 - (floor * 5);
+                  for(let ix = 0; ix < bWidth; ix++) {
+                      blocks[floorY * WORLD_WIDTH + currentX + ix] = BlockType.WOOD; // Floor
+                      if (ix === 0 || ix === bWidth - 1) { // Edges (windows)
+                          blocks[(floorY - 1) * WORLD_WIDTH + currentX + ix] = BlockType.WALL_WOOD;
+                          blocks[(floorY - 2) * WORLD_WIDTH + currentX + ix] = BlockType.GLASS_BLUE;
+                          blocks[(floorY - 3) * WORLD_WIDTH + currentX + ix] = BlockType.GLASS_BLUE;
+                          blocks[(floorY - 4) * WORLD_WIDTH + currentX + ix] = BlockType.WALL_WOOD;
+                      } else { // Interior back-wall
+                          blocks[(floorY - 1) * WORLD_WIDTH + currentX + ix] = BlockType.WALL_WOOD;
+                          blocks[(floorY - 2) * WORLD_WIDTH + currentX + ix] = BlockType.WALL_WOOD;
+                          blocks[(floorY - 3) * WORLD_WIDTH + currentX + ix] = BlockType.WALL_WOOD;
+                          blocks[(floorY - 4) * WORLD_WIDTH + currentX + ix] = BlockType.WALL_WOOD;
+                      }
+                  }
+                  // Stairs
+                  if (floor < b.floors - 1) {
+                      const stairPos = Math.floor(bWidth / 2);
+                      blocks[(floorY - 1) * WORLD_WIDTH + currentX + stairPos] = BlockType.LADDER;
+                      blocks[(floorY - 2) * WORLD_WIDTH + currentX + stairPos] = BlockType.LADDER;
+                      blocks[(floorY - 3) * WORLD_WIDTH + currentX + stairPos] = BlockType.LADDER;
+                      blocks[(floorY - 4) * WORLD_WIDTH + currentX + stairPos] = BlockType.LADDER;
+                      blocks[(floorY - 5) * WORLD_WIDTH + currentX + stairPos] = BlockType.AIR; // Hole in ceiling
+                  }
+                  // Door
+                  if (floor === 0) {
+                      blocks[(floorY - 1) * WORLD_WIDTH + currentX] = BlockType.DOOR_BOTTOM_CLOSED;
+                      blocks[(floorY - 2) * WORLD_WIDTH + currentX] = BlockType.DOOR_TOP_CLOSED;
+                      blocks[(floorY - 1) * WORLD_WIDTH + currentX + bWidth - 1] = BlockType.DOOR_BOTTOM_CLOSED;
+                      blocks[(floorY - 2) * WORLD_WIDTH + currentX + bWidth - 1] = BlockType.DOOR_TOP_CLOSED;
+                  }
+                  // Furniture
+                  blocks[(floorY - 1) * WORLD_WIDTH + currentX + 2] = BlockType.BED;
+                  blocks[(floorY - 1) * WORLD_WIDTH + currentX + 4] = BlockType.CABINET;
+                  
+                  const chestPos = currentX + bWidth - 3;
+                  blocks[(floorY - 1) * WORLD_WIDTH + chestPos] = BlockType.CHEST;
+                  initialChests.push({ x: chestPos, y: floorY - 1, items: getRandomLoot(rng) });
+                  
+                  blocks[(floorY - 1) * WORLD_WIDTH + currentX + bWidth - 4] = BlockType.TABLE;
+              }
+              // Roof
+              const roofY = startY - 1 - (b.floors * 5);
+              for (let ix = 0; ix < bWidth; ix++) {
+                  blocks[roofY * WORLD_WIDTH + currentX + ix] = BlockType.WOOD;
+              }
+              currentX += bWidth + b.spacing;
+          });
+          
           cityGenerated = true;
       }
   }
@@ -631,7 +678,7 @@ export function generateWorld(seedInput: number): WorldData {
           }
       }
       
-      if (getBiome(startX, rng.next()) === 'plains' && startY > SEA_LEVEL - 5 && startY < SEA_LEVEL + 50) {
+      if (getBiome(startX, rng.next()) === 'plains' && startY > INTERNAL_SURFACE_Y - 20 && startY < INTERNAL_SURFACE_Y + 50) {
           // Flatten land for 20 blocks
           for (let ix = 0; ix < 20; ix++) {
               let ground = startY;
@@ -648,6 +695,10 @@ export function generateWorld(seedInput: number): WorldData {
                   blocks[(startY - 1) * WORLD_WIDTH + startX + ix] = BlockType.CROP_WHEAT;
               }
           }
+          // Chest
+          blocks[(startY - 1) * WORLD_WIDTH + startX + 18] = BlockType.CHEST;
+          initialChests.push({ x: startX + 18, y: startY - 1, items: [{ id: 'wheat_seeds', count: 5, type: 'ITEM' }, { id: 'bread', count: 2, type: 'ITEM' }] });
+
           // Animals spawn naturally, but we specify a farm center
           npcSpawns.push({ x: startX + 10, y: startY - 2, type: 'FARM_ANIMAL' });
           structures.push({ name: 'fazenda', x: startX });
