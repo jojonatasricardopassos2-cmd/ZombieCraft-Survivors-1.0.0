@@ -441,7 +441,7 @@ export const RECIPES: CraftingRecipe[] = [
 
 export const COOKING_RECIPES: Record<string, string> = {
   'raw_beef': 'steak',
-  'raw_porkchop': 'cooked_porkchop',
+  'raw_porkchop': 'cooked_porkchop', 'raw_chicken': 'cooked_chicken',
   'raw_mutton': 'cooked_mutton',
   'potato': 'baked_potato',
   'raw_iron': 'iron_ingot',
@@ -466,7 +466,7 @@ export const FUEL_VALUES: Record<string, number> = {
 // Add other base item colors
 Object.assign(ITEM_COLORS, {
   'basic_axe': '#a1887f', 'stick': '#6d4c41', 'raw_beef': '#ef5350', 'steak': '#8d6e63',
-  'raw_porkchop': '#f48fb1', 'cooked_porkchop': '#e1bee7', 'raw_mutton': '#ef9a9a', 'cooked_mutton': '#bcaaa4',
+  'raw_porkchop': '#f48fb1', 'cooked_porkchop': '#e1bee7', 'raw_chicken': '#ef5350', 'cooked_chicken': '#8d6e63', 'raw_mutton': '#ef9a9a', 'cooked_mutton': '#bcaaa4',
   'iron_ingot': '#cfd8dc', 'gold_ingot': '#ffecb3', 'copper_ingot': '#e67e22', 'titanium_ingot': '#0d47a1',
   'diamond': '#4dd0e1', 'uranium': '#76ff03', 'leather': '#5d4037',
   'raw_iron': '#a1887f', 'raw_gold': '#fbc02d', 'raw_copper': '#d35400', 'raw_titanium': '#1565c0', 'raw_diamond': '#b2ebf2', 'raw_uranium': '#b2ff59',
@@ -475,7 +475,7 @@ Object.assign(ITEM_COLORS, {
   'blue_resin': '#1e88e5', 'green_resin': '#43a047', 'red_resin': '#e53935', 'dark_green_resin': '#1b5e20',
   'saddle': '#795548',
   'spawn_zombie': '#2e7d32', 'spawn_pig': '#f48fb1', 'spawn_cow': '#795548', 'spawn_sheep': '#e0e0e0', 'spawn_chicken': '#ffb300',
-  'spawn_scorpion': '#ffb300', 'spawn_camel': '#d7ccc8', 'spawn_snake': '#4caf50', 'spawn_rabbit': '#a1887f', 'spawn_mutant_zombie': '#1b5e20',
+  'spawn_scorpion': '#ffb300', 'spawn_camel': '#d7ccc8', 'spawn_snake': '#4caf50', 'spawn_rabbit': '#a1887f', 'spawn_mutant_zombie': '#1b5e20', 'spawn_smiler': '#000000',
   'spawn_golden_deer': '#ffca28', 'spawn_lunar_fox': '#b39ddb',
   'spawn_polar_bear': '#ffffff', 'spawn_dog': '#d7ccc8', 'spawn_npc': '#ffcc80', 'spawn_zombie_runner': '#4caf50', 'spawn_zombie_tank': '#1b5e20', 'spawn_zombie_explosive': '#8bc34a', 'spawn_zombie_toxic': '#00e676', 'spawn_zombie_skeleton': '#f5f5f5', 'spawn_zombie_infector': '#6a1b9a', 'spawn_zombie_dark': '#222', 'spawn_zombie_frozen': '#81d4fa', 'spawn_zombie_king': '#1b5e20', 'spawn_plague_king': '#2e7d32', 'spawn_bush_mob': '#1b5e20', 'spawn_spider': '#212121', 'spawn_blood_zombie': '#b71c1c', 'spawn_bird': '#000000', 'spawn_shark': '#1e88e5', 'bone': '#e0e0e0',
   'syringe': '#eeeeee', 'bandage': '#ffebeb', 'medicine': '#ff1744',
@@ -516,7 +516,7 @@ export const ITEM_ICONS: Record<string, string> = {
 
 export const FOOD_VALUES: Record<string, number> = {
   'raw_beef': 2, 'steak': 8,
-  'raw_porkchop': 2, 'cooked_porkchop': 8,
+  'raw_chicken': 2, 'cooked_chicken': 6, 'raw_porkchop': 2, 'cooked_porkchop': 8,
   'raw_mutton': 2, 'cooked_mutton': 8,
   'carrot': 3, 'potato': 1, 'baked_potato': 5,
   'cherry': 1, 'bread': 5
@@ -572,7 +572,7 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         'stick': 'Stick', 'basic_axe': 'Basic Axe', 'rope': 'Rope', 'fiber': 'Fiber', 'arrow': 'Arrow', 'bow': 'Simple Bow', 'crossbow': 'Besta',
         'iron_ingot': 'Iron Ingot', 'gold_ingot': 'Gold Ingot', 'copper_ingot': 'Copper Ingot', 'titanium_ingot': 'Titanium Ingot', 'diamond': 'Diamond', 'uranium': 'Uranium', 'leather': 'Leather',
         'raw_iron': 'Raw Iron', 'raw_gold': 'Raw Gold', 'raw_copper': 'Raw Copper', 'raw_titanium': 'Raw Titanium', 'raw_diamond': 'Raw Diamond', 'raw_uranium': 'Raw Uranium',
-        'raw_beef': 'Raw Beef', 'steak': 'Steak', 'raw_porkchop': 'Raw Porkchop', 'cooked_porkchop': 'Cooked Porkchop', 'raw_mutton': 'Raw Mutton', 'cooked_mutton': 'Cooked Mutton',
+        'raw_beef': 'Raw Beef', 'steak': 'Steak', 'raw_porkchop': 'Raw Porkchop', 'cooked_porkchop': 'Cooked Porkchop', 'raw_chicken': 'Raw Chicken', 'cooked_chicken': 'Cooked Chicken', 'raw_mutton': 'Raw Mutton', 'cooked_mutton': 'Cooked Mutton',
         'offhand': 'Off Hand', 'wheat_seeds': 'Wheat Seeds', 'carrot': 'Carrot', 'potato': 'Potato', 'wheat': 'Wheat', 'cherry': 'Cherry', 'baked_potato': 'Baked Potato', 'bread': 'Bread',
         'blue_resin': 'Blue Resin', 'green_resin': 'Green Resin', 'red_resin': 'Red Resin', 'dark_green_resin': 'Dark Green Resin', 'uranium_totem': 'Uranium Totem',
         'saddle': 'Saddle', 'bone': 'Bone', 'apple': 'Apple', 'tree_seed': 'Tree Seed',
@@ -596,7 +596,7 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         'copper_helmet': 'Copper Helmet', 'copper_chestplate': 'Copper Chestplate', 'copper_leggings': 'Copper Leggings', 'copper_boots': 'Copper Boots',
         'hazmat_helmet': 'Radiation Helmet', 'hazmat_chestplate': 'Radiation Chestplate', 'hazmat_leggings': 'Radiation Leggings', 'hazmat_boots': 'Radiation Boots',
         'leather_helmet': 'Leather Helmet', 'leather_chestplate': 'Leather Chestplate', 'leather_leggings': 'Leather Leggings', 'leather_boots': 'Leather Boots',
-        'spawn_zombie': 'Zombie Spawn Egg', 'spawn_zombie_runner': 'Runner Zombie Egg', 'spawn_zombie_tank': 'Tank Zombie Egg', 'spawn_zombie_explosive': 'Explosive Zombie Egg', 'spawn_zombie_toxic': 'Toxic Zombie Egg', 'spawn_zombie_skeleton': 'Skeleton Zombie Egg', 'spawn_zombie_infector': 'Infector Zombie Egg', 'spawn_zombie_dark': 'Dark Zombie Egg', 'spawn_zombie_frozen': 'Frozen Zombie Egg', 'spawn_zombie_king': 'Zombie King Egg', 'spawn_plague_king': 'Plague King Egg', 'spawn_blood_zombie': 'Blood Zombie Egg', 'spawn_pig': 'Pig Spawn Egg', 'spawn_cow': 'Cow Spawn Egg', 'spawn_sheep': 'Sheep Spawn Egg', 'spawn_scorpion': 'Scorpion Spawn Egg', 'spawn_camel': 'Camel Spawn Egg', 'spawn_snake': 'Snake Spawn Egg', 'spawn_rabbit': 'Rabbit Spawn Egg', 'spawn_mutant_zombie': 'Mutant Zombie Spawn Egg', 'spawn_polar_bear': 'Polar Bear Spawn Egg', 'spawn_dog': 'Dog Spawn Egg', 'spawn_chicken': 'Chicken Spawn Egg', 'spawn_npc': 'NPC Spawn Egg', 'spawn_bush_mob': 'Bush Mob Spawn Egg', 'spawn_spider': 'Spider Spawn Egg', 'spawn_bird': 'Bird Spawn Egg', 'spawn_golden_deer': 'Golden Deer Egg', 'spawn_lunar_fox': 'Lunar Fox Egg', 'spawn_shark': 'Shark Egg',
+        'spawn_zombie': 'Zombie Spawn Egg', 'spawn_zombie_runner': 'Runner Zombie Egg', 'spawn_zombie_tank': 'Tank Zombie Egg', 'spawn_zombie_explosive': 'Explosive Zombie Egg', 'spawn_zombie_toxic': 'Toxic Zombie Egg', 'spawn_zombie_skeleton': 'Skeleton Zombie Egg', 'spawn_zombie_infector': 'Infector Zombie Egg', 'spawn_zombie_dark': 'Dark Zombie Egg', 'spawn_zombie_frozen': 'Frozen Zombie Egg', 'spawn_zombie_king': 'Zombie King Egg', 'spawn_plague_king': 'Plague King Egg', 'spawn_blood_zombie': 'Blood Zombie Egg', 'spawn_pig': 'Pig Spawn Egg', 'spawn_cow': 'Cow Spawn Egg', 'spawn_sheep': 'Sheep Spawn Egg', 'spawn_scorpion': 'Scorpion Spawn Egg', 'spawn_camel': 'Camel Spawn Egg', 'spawn_snake': 'Snake Spawn Egg', 'spawn_rabbit': 'Rabbit Spawn Egg', 'spawn_mutant_zombie': 'Mutant Zombie Spawn Egg', 'spawn_polar_bear': 'Polar Bear Spawn Egg', 'spawn_dog': 'Dog Spawn Egg', 'spawn_chicken': 'Chicken Spawn Egg', 'spawn_npc': 'NPC Spawn Egg', 'spawn_bush_mob': 'Bush Mob Spawn Egg', 'spawn_spider': 'Spider Spawn Egg', 'spawn_bird': 'Bird Spawn Egg', 'spawn_golden_deer': 'Golden Deer Egg', 'spawn_lunar_fox': 'Lunar Fox Egg', 'spawn_shark': 'Shark Egg', 'spawn_smiler': 'Smiler Egg',
         SLEEP_MENU: "Sleep Menu",
         WAKE_TIME: "Wake up at:",
         SLEEP: "Sleep",
@@ -650,7 +650,7 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         'stick': 'Graveto', 'basic_axe': 'Machado Básico', 'rope': 'Corda', 'fiber': 'Fibra', 'arrow': 'Flecha', 'bow': 'Arco Simples', 'crossbow': 'Besta',
         'iron_ingot': 'Barra de Ferro', 'gold_ingot': 'Barra de Ouro', 'copper_ingot': 'Barra de Cobre', 'titanium_ingot': 'Barra de Titânio', 'diamond': 'Diamante', 'uranium': 'Urânio', 'leather': 'Couro',
         'raw_iron': 'Ferro Bruto', 'raw_gold': 'Ouro Bruto', 'raw_copper': 'Cobre Bruto', 'raw_titanium': 'Titânio Bruto', 'raw_diamond': 'Diamante Bruto', 'raw_uranium': 'Urânio Bruto',
-        'raw_beef': 'Bife Cru', 'steak': 'Bife Assado', 'raw_porkchop': 'Carne de Porco Crua', 'cooked_porkchop': 'Carne de Porco Assada', 'raw_mutton': 'Carne de Carneiro Crua', 'cooked_mutton': 'Carne de Carneiro Assada',
+        'raw_beef': 'Bife Cru', 'steak': 'Bife Assado', 'raw_porkchop': 'Carne de Porco Crua', 'cooked_porkchop': 'Carne de Porco Assada', 'raw_chicken': 'Frango Cru', 'cooked_chicken': 'Frango Assado', 'raw_mutton': 'Carne de Carneiro Crua', 'cooked_mutton': 'Carne de Carneiro Assada',
         'offhand': 'Mão Esquerda', 'wheat_seeds': 'Sementes de Trigo', 'carrot': 'Cenoura', 'potato': 'Batata', 'wheat': 'Trigo', 'cherry': 'Cereja', 'baked_potato': 'Batata Cozida', 'bread': 'Pão',
         'blue_resin': 'Resina Azul', 'green_resin': 'Resina Verde', 'red_resin': 'Resina Vermelha', 'dark_green_resin': 'Resina Verde Escura', 'uranium_totem': 'Totem de Urânio',
         'saddle': 'Sela', 'bone': 'Osso', 'apple': 'Maçã', 'tree_seed': 'Semente de Árvore',
@@ -674,7 +674,7 @@ export const ITEM_NAMES: Record<'EN' | 'PT' | 'ES' | 'JA', Record<string, string
         'copper_helmet': 'Capacete de Cobre', 'copper_chestplate': 'Peitoral de Cobre', 'copper_leggings': 'Calça de Cobre', 'copper_boots': 'Botas de Cobre',
         'hazmat_helmet': 'Capacete de Radiação', 'hazmat_chestplate': 'Peitoral de Radiação', 'hazmat_leggings': 'Calça de Radiação', 'hazmat_boots': 'Botas de Radiação',
         'leather_helmet': 'Capacete de Couro', 'leather_chestplate': 'Peitoral de Couro', 'leather_leggings': 'Calça de Couro', 'leather_boots': 'Botas de Couro',
-        'spawn_zombie': 'Ovo de Zumbi', 'spawn_zombie_runner': 'Ovo de Zumbi Corredor', 'spawn_zombie_tank': 'Ovo de Zumbi Tanque', 'spawn_zombie_explosive': 'Ovo de Zumbi Explosivo', 'spawn_zombie_toxic': 'Ovo de Zumbi Tóxico', 'spawn_zombie_skeleton': 'Ovo de Zumbi Esqueleto', 'spawn_zombie_infector': 'Ovo de Zumbi Infectador', 'spawn_zombie_dark': 'Ovo de Zumbi Sombrio', 'spawn_zombie_frozen': 'Ovo de Zumbi de Gelo', 'spawn_zombie_king': 'Ovo do Rei Zumbi', 'spawn_plague_king': 'Ovo do Rei da Praga', 'spawn_blood_zombie': 'Ovo de Zumbi de Sangue', 'spawn_pig': 'Ovo de Porco', 'spawn_cow': 'Ovo de Vaca', 'spawn_sheep': 'Ovo de Ovelha', 'spawn_scorpion': 'Ovo de Escorpião', 'spawn_camel': 'Ovo de Camelo', 'spawn_snake': 'Ovo de Cobra', 'spawn_rabbit': 'Ovo de Coelho', 'spawn_mutant_zombie': 'Ovo de Zumbi Mutante', 'spawn_polar_bear': 'Ovo de Urso Polar', 'spawn_dog': 'Ovo de Cachorro', 'spawn_chicken': 'Ovo de Galinha', 'spawn_npc': 'Ovo de NPC', 'spawn_bush_mob': 'Ovo de Monstro do Arbusto', 'spawn_spider': 'Ovo de Aranha', 'spawn_bird': 'Ovo de Pássaro', 'spawn_golden_deer': 'Ovo de Cervo Dourado', 'spawn_lunar_fox': 'Ovo de Raposa Lunar', 'spawn_shark': 'Ovo de Tubarão',
+        'spawn_zombie': 'Ovo de Zumbi', 'spawn_zombie_runner': 'Ovo de Zumbi Corredor', 'spawn_zombie_tank': 'Ovo de Zumbi Tanque', 'spawn_zombie_explosive': 'Ovo de Zumbi Explosivo', 'spawn_zombie_toxic': 'Ovo de Zumbi Tóxico', 'spawn_zombie_skeleton': 'Ovo de Zumbi Esqueleto', 'spawn_zombie_infector': 'Ovo de Zumbi Infectador', 'spawn_zombie_dark': 'Ovo de Zumbi Sombrio', 'spawn_zombie_frozen': 'Ovo de Zumbi de Gelo', 'spawn_zombie_king': 'Ovo do Rei Zumbi', 'spawn_plague_king': 'Ovo do Rei da Praga', 'spawn_blood_zombie': 'Ovo de Zumbi de Sangue', 'spawn_pig': 'Ovo de Porco', 'spawn_cow': 'Ovo de Vaca', 'spawn_sheep': 'Ovo de Ovelha', 'spawn_scorpion': 'Ovo de Escorpião', 'spawn_camel': 'Ovo de Camelo', 'spawn_snake': 'Ovo de Cobra', 'spawn_rabbit': 'Ovo de Coelho', 'spawn_mutant_zombie': 'Ovo de Zumbi Mutante', 'spawn_polar_bear': 'Ovo de Urso Polar', 'spawn_dog': 'Ovo de Cachorro', 'spawn_chicken': 'Ovo de Galinha', 'spawn_npc': 'Ovo de NPC', 'spawn_bush_mob': 'Ovo de Monstro do Arbusto', 'spawn_spider': 'Ovo de Aranha', 'spawn_bird': 'Ovo de Pássaro', 'spawn_golden_deer': 'Ovo de Cervo Dourado', 'spawn_lunar_fox': 'Ovo de Raposa Lunar', 'spawn_shark': 'Ovo de Tubarão', 'spawn_smiler': 'Ovo de Smiler',
         dark_crystal: "Cristal Sombrio",
         plague_totem: "Totem da Praga",
         wood_knife: "Faca de Madeira",

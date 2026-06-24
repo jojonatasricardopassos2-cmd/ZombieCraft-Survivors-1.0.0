@@ -225,7 +225,7 @@ export const Inventory: React.FC<InventoryProps> = ({
           'dark_green_resin', 'green_resin', 'blue_resin', 'red_resin', 'uranium_totem',
           'leather_helmet', 'leather_chestplate', 'leather_leggings', 'leather_boots',
           'uranium_helmet', 'uranium_chestplate', 'uranium_leggings', 'uranium_boots',
-          'spawn_zombie', 'spawn_pig', 'spawn_cow', 'spawn_sheep', 'spawn_chicken', 'spawn_scorpion', 'spawn_camel', 'spawn_snake', 'spawn_rabbit', 'spawn_mutant_zombie', 'spawn_polar_bear', 'spawn_dog', 'spawn_npc', 'spawn_zombie_runner', 'spawn_zombie_tank', 'spawn_zombie_explosive', 'spawn_zombie_toxic', 'spawn_zombie_skeleton', 'spawn_zombie_infector', 'spawn_zombie_dark', 'spawn_zombie_frozen', 'spawn_zombie_king', 'spawn_plague_king', 'spawn_bush_mob', 'spawn_spider', 'spawn_blood_zombie', 'spawn_bird', 'spawn_golden_deer', 'spawn_lunar_fox', 'spawn_shark'
+          'spawn_zombie', 'spawn_pig', 'spawn_cow', 'spawn_sheep', 'spawn_chicken', 'spawn_scorpion', 'spawn_camel', 'spawn_snake', 'spawn_rabbit', 'spawn_mutant_zombie', 'spawn_polar_bear', 'spawn_dog', 'spawn_npc', 'spawn_zombie_runner', 'spawn_zombie_tank', 'spawn_zombie_explosive', 'spawn_zombie_toxic', 'spawn_zombie_skeleton', 'spawn_zombie_infector', 'spawn_zombie_dark', 'spawn_zombie_frozen', 'spawn_zombie_king', 'spawn_plague_king', 'spawn_bush_mob', 'spawn_spider', 'spawn_blood_zombie', 'spawn_bird', 'spawn_golden_deer', 'spawn_lunar_fox', 'spawn_shark', 'spawn_smiler'
       ];
       extraItems.forEach(id => {
           if(!seen.has(id)) {

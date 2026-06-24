@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tailwindcss/vite": "^4.3.1",
     "@types/cors": "^2.8.19",
     "cors": "^2.8.6",
     "express": "^5.2.1",
@@ -19,7 +20,8 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3"
+    "socket.io-client": "^4.8.3",
+    "tailwindcss": "^4.3.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

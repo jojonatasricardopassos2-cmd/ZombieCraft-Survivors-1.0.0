@@ -221,7 +221,7 @@ export interface Entity {
   };
 }
 
-export type RecipeCategory = 'DECOR' | 'ITEMS' | 'COMBAT' | 'BASIC' | 'ARMOR';
+export type RecipeCategory = 'DECOR' | 'ITEMS' | 'COMBAT' | 'BASIC' | 'ARMOR' | 'SMALL_ARMS' | 'LARGE_ARMS' | 'COMPONENTS' | 'MATERIALS' | 'AMMO';
 
 export interface CraftingRecipe {
   result: { id: BlockType | string; count: number; type: ItemType };

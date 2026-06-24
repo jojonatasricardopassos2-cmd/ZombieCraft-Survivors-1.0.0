@@ -370,7 +370,7 @@ export const GameCanvas: React.FC = () => {
 
     // --- HELPER FUNCTIONS ---
 
-    const canDamageBlock = (block: BlockType, tool: ItemStack | null): boolean => {
+    const canDamageBlock = (block: BlockType, tool: ItemStack | null): boolean => { if (backroomsPhase !== 'NONE' && block !== BlockType.BR_KEY_BLOCK) return false;
         const handBreakable = new Set([
             BlockType.AIR, BlockType.WATER,
             BlockType.DIRT, BlockType.GRASS, BlockType.DARK_GRASS, BlockType.SAND, BlockType.MOSS, BlockType.WALLPAPER, BlockType.CUSHION, BlockType.BR_KEY_BLOCK, BlockType.GOLDEN_GRASS,
@@ -621,7 +621,7 @@ export const GameCanvas: React.FC = () => {
 
     const setBlockAt = (x: number, y: number, type: BlockType, shouldBroadcast: boolean = true) => {
         if (!worldRef.current) return;
-        if (backroomsPhase !== 'NONE') { const currentBlock = worldRef.current.blocks[y * WORLD_WIDTH + x]; if (currentBlock !== BlockType.BR_KEY_BLOCK && type !== BlockType.BR_KEY_BLOCK) return; }
+        if (backroomsPhase !== 'NONE') { const currentBlock = worldRef.current.blocks[y * WORLD_WIDTH + x]; const allowedBrBlocks = [BlockType.BR_KEY_BLOCK, BlockType.DOOR_BOTTOM_CLOSED, BlockType.DOOR_BOTTOM_OPEN, BlockType.DOOR_TOP_CLOSED, BlockType.DOOR_TOP_OPEN, BlockType.WHITE_DOOR_CLOSED, BlockType.WHITE_DOOR_OPEN]; if (!allowedBrBlocks.includes(currentBlock) && !allowedBrBlocks.includes(type)) return; }
         if (x < 0 || x >= WORLD_WIDTH || y < 0 || y >= WORLD_HEIGHT) return;
         
         // Don't update if block is same
@@ -735,7 +735,7 @@ export const GameCanvas: React.FC = () => {
 
                  if (isDesert) {
                      // Desert: Only Camel, Scorpion, Snake, Rabbit
-                     if (type === 'COW' || type === 'PIG' || type === 'SHEEP' || type.toString().includes('ZOMBIE') || type === 'POLAR_BEAR' || type === 'DOG' || type === 'GOLDEN_DEER' || type === 'LUNAR_FOX' || type === 'SHARK') {
+                     if (type === 'COW' || type === 'PIG' || type === 'SHEEP' || type.toString().includes('ZOMBIE') || type === 'POLAR_BEAR' || type === 'DOG' || type === 'GOLDEN_DEER' || type === 'LUNAR_FOX' || type === 'SHARK' || type === 'CHICKEN') {
                          attempts++; continue;
                      }
                  } else if (isSnow) {
@@ -755,9 +755,7 @@ export const GameCanvas: React.FC = () => {
                      // Beach
                      if (type === 'SHARK') {
                          // Shark is valid here
-                     } else if (type === 'COW' || type === 'PIG' || type === 'SHEEP' || type === 'BIRD') {
-                         // these are valid near the sand
-                     } else if (!type.toString().includes('ZOMBIE')) {
+                     } else if (type === 'COW' || type === 'PIG' || type === 'SHEEP' || type === 'BIRD') { // these are valid near the sand } else if (!type.toString().includes('ZOMBIE')) { attempts++; continue; }
                          attempts++; continue;
                      }
                  } else {
@@ -794,10 +792,8 @@ export const GameCanvas: React.FC = () => {
                              if (b === BlockType.DARK_GRASS) validBlock = true;
                          } else if (type === 'GOLDEN_DEER' || type === 'LUNAR_FOX') {
                              if (b === BlockType.GOLDEN_GRASS || b === BlockType.GRASS || b === BlockType.DARK_GRASS) validBlock = true;
-                         } else if (type === 'COW' || type === 'PIG' || type === 'SHEEP' || type === 'BIRD') {
-                             if (b === BlockType.GRASS || b === BlockType.DARK_GRASS || b === BlockType.SAND) validBlock = true;
-                         } else if (type === 'RABBIT' || type === 'CAMEL' || type === 'SCORPION' || type === 'SNAKE') {
-                             if (b === BlockType.SAND) validBlock = true;
+                         } else if (type === 'COW' || type === 'PIG' || type === 'SHEEP' || type === 'BIRD' || type === 'CHICKEN') { if (b === BlockType.GRASS || b === BlockType.DARK_GRASS || b === BlockType.SAND || (type === 'CHICKEN' && b === BlockType.SNOWY_GRASS)) validBlock = true;
+                         } else if (type === 'RABBIT' || type === 'CAMEL' || type === 'SCORPION' || type === 'SNAKE') { if (b === BlockType.SAND || (type === 'RABBIT' && (b === BlockType.SNOWY_GRASS || b === BlockType.GRASS || b === BlockType.DARK_GRASS))) validBlock = true;
                          } else {
                              validBlock = true; // Zombies etc
                          }
@@ -1561,7 +1557,7 @@ export const GameCanvas: React.FC = () => {
                 ctx.fillRect(36, -4, 4, 4); // Nose
             }
         }
-        else if (ent.type === 'BACKROOMS_SMILER') { ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(-16, -16, 32, 32); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-6, -6, 2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(6, -6, 2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(0, 4, 8, 0, Math.PI); ctx.stroke(); ctx.restore(); return; } if (ent.type === 'SHARK') {
+        else if (ent.type === 'BACKROOMS_SMILER') { ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(-16, -16, 32, 32); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-6, -6, 2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(6, -6, 2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(0, 4, 8, 0, Math.PI); ctx.stroke(); ctx.restore(); return; } else if (ent.type === 'SHARK') {
             const isFlop = ent.grounded && ent.vy < -2;
             ctx.save();
             if (isFlop) {
@@ -2369,7 +2365,7 @@ const activeChestPosRef = useRef(activeChestPos);
                                 type: 'SYNC_WORLD', 
                                 roomId,
                                 payload: { 
-                                    seed: currentSeedRef.current,
+                                    seed: currentSeed,
                                     world: null // Temporarily disabled full world sync due to size // Send the actual modified world object
                                 } 
                             });
@@ -2381,7 +2377,7 @@ const activeChestPosRef = useRef(activeChestPos);
                             type: 'SYNC_WORLD', 
                             roomId,
                             payload: { 
-                                seed: currentSeedRef.current,
+                                seed: currentSeed,
                                 world: null // Temporarily disabled full world sync due to size
                             } 
                         });
@@ -2974,6 +2970,13 @@ const activeChestPosRef = useRef(activeChestPos);
                 const bx = Math.floor((mouseRef.current.x + cameraRef.current.x) / BLOCK_SIZE); const by = Math.floor((mouseRef.current.y + cameraRef.current.y) / BLOCK_SIZE);
                 if (worldRef.current) { const idx = by * WORLD_WIDTH + bx; const b = worldRef.current.blocks[idx]; if (b === BlockType.DOOR_BOTTOM_CLOSED) { setBlockAt(bx, by, BlockType.DOOR_BOTTOM_OPEN); setBlockAt(bx, by - 1, BlockType.DOOR_TOP_OPEN); } else if (b === BlockType.DOOR_BOTTOM_OPEN) { setBlockAt(bx, by, BlockType.DOOR_BOTTOM_CLOSED); setBlockAt(bx, by - 1, BlockType.DOOR_TOP_CLOSED); } else if (b === BlockType.DOOR_TOP_CLOSED) { setBlockAt(bx, by, BlockType.DOOR_TOP_OPEN); setBlockAt(bx, by + 1, BlockType.DOOR_BOTTOM_OPEN); } else if (b === BlockType.DOOR_TOP_OPEN) { setBlockAt(bx, by, BlockType.DOOR_TOP_CLOSED); setBlockAt(bx, by + 1, BlockType.DOOR_BOTTOM_CLOSED); } }
                 const heldId = heldItem ? (heldItem.id?.toString() || '') : '';
+                if (heldId.startsWith('spawn_')) {
+                    let mobType = heldId.replace('spawn_', '').toUpperCase();
+                    if (mobType === 'SMILER') mobType = 'BACKROOMS_SMILER';
+                    spawnMob(mobType as any, bx * BLOCK_SIZE, (by - 1) * BLOCK_SIZE);
+                    setInventory(prev => { const n = [...prev]; n[selectedSlot]!.count--; if (n[selectedSlot]!.count <= 0) n[selectedSlot] = null; return n; });
+                    return;
+                }
                 if (heldId === 'bow' || heldId === 'crossbow') { const arrowIdx = inventory.findIndex(i => i && i.id === 'arrow' && i.count > 0); if (arrowIdx !== -1) { const isCrossbow = heldId === 'crossbow'; const cooldown = isCrossbow ? 3000 : 1000; if ((playerRef.current.attackCooldown || 0) <= 0) { const cvs = canvasRef.current; if (cvs) { const mx = mouseRef.current.x; const my = mouseRef.current.y; const px = playerRef.current.x + playerRef.current.width/2 - cameraRef.current.x; const py = playerRef.current.y + playerRef.current.height/2 - cameraRef.current.y; const angle = Math.atan2(my - py, mx - px); const force = 15; const shotCount = isCrossbow ? 3 : 1; for(let i=0; i<shotCount; i++) { const spread = isCrossbow ? (i - 1) * 0.1 : 0; const vx = Math.cos(angle + spread) * force; const vy = Math.sin(angle + spread) * force; entitiesRef.current.push({ id: generateEntityId(), type: 'PROJECTILE', x: playerRef.current.x + (vx > 0 ? 20 : -10), y: playerRef.current.y + 10, width: 16, height: 4, vx, vy, grounded: false, health: 1, maxHealth: 1, facingRight: vx > 0, rotation: angle + spread, itemId: 'arrow', projectileState: 'FLYING', ownerId: playerRef.current.id, creationTime: Date.now() }); } setInventory(prev => { const newInv = [...prev]; if (newInv[arrowIdx]) { newInv[arrowIdx]!.count--; if (newInv[arrowIdx]!.count <= 0) newInv[arrowIdx] = null; } return newInv; }); playerRef.current.attackCooldown = cooldown / 16; } } } }
                 if (spearChargeStartRef.current) { const chargeTime = Date.now() - spearChargeStartRef.current; const osc = (Math.sin(chargeTime / 300) + 1) / 2; spearChargeStartRef.current = null; if (heldItem && (heldItem.id?.toString() || '').includes('spear') && !(heldItem.id?.toString() || '').includes('hunting')) { const force = 10 + (osc * 15); const cvs = canvasRef.current; if(cvs) { const mx = mouseRef.current.x; const my = mouseRef.current.y; const px = playerRef.current.x + playerRef.current.width/2 - cameraRef.current.x; const py = playerRef.current.y + playerRef.current.height/2 - cameraRef.current.y; const angle = Math.atan2(my - py, mx - px); const vx = Math.cos(angle) * force; const vy = Math.sin(angle) * force; 
                 
@@ -3058,9 +3061,7 @@ const activeChestPosRef = useRef(activeChestPos);
                 // Spawn a backrooms monster
                 const rx = Math.floor(Math.random() * world.width);
                 const ry = Math.floor(Math.random() * world.height);
-                if (world.blocks[ry * world.width + rx] === BlockType.AIR && ry > 30) { // Not in Safe Zone (ry > 30 means below floor 0 roof)
-                    spawnMob('BACKROOMS_SMILER', rx * BLOCK_SIZE, ry * BLOCK_SIZE);
-                }
+                let inSafeZone = false; if (safeZoneBoundsRef.current) { const sx = safeZoneBoundsRef.current.sx / BLOCK_SIZE; const ex = safeZoneBoundsRef.current.ex / BLOCK_SIZE; const sy = safeZoneBoundsRef.current.sy / BLOCK_SIZE; const ey = safeZoneBoundsRef.current.ey / BLOCK_SIZE; if (rx >= sx && rx <= ex && ry >= sy && ry <= ey) inSafeZone = true; } if (!inSafeZone && ry < world.height - 1 && world.blocks[ry * world.width + rx] === BlockType.AIR) { const below = world.blocks[(ry + 1) * world.width + rx]; if (below === BlockType.MOSS || below === BlockType.CUSHION) { spawnMob('BACKROOMS_SMILER', rx * BLOCK_SIZE, ry * BLOCK_SIZE); } }
             }
 
             if (safeZoneBoundsRef.current) { const { sx, ex, sy, ey } = safeZoneBoundsRef.current; const px = player.x + player.width / 2; const py = player.y + player.height / 2; const isInSafeZone = px >= sx && px <= ex && py >= sy && py <= ey; if (isInSafeZone) { sanityLevelRef.current = 100; wasInSafeZoneRef.current = true; } else if (wasInSafeZoneRef.current) { wasInSafeZoneRef.current = false; addNotification('Você saiu da zona segura!'); } }
@@ -3107,7 +3108,7 @@ const safeZoneStartX = startX + centerRoomX * ROOM_WIDTH;
 const safeZoneEndX = safeZoneStartX + ROOM_WIDTH;
 const safeZoneStartY = startY + centerRoomY * ROOM_HEIGHT;
 const safeZoneEndY = safeZoneStartY + ROOM_HEIGHT;
-for (let floor = 0; floor < NUM_FLOORS; floor++) { const y = startY + floor * ROOM_HEIGHT; for (let rx = 0; rx < NUM_ROOMS_X; rx++) { const x = startX + rx * ROOM_WIDTH; for (let ix = 0; ix < ROOM_WIDTH; ix++) { brBlocks[(y + ROOM_HEIGHT - 1) * brWidth + x + ix] = BlockType.MOSS; if (floor === NUM_FLOORS - 1) brBlocks[(y + ROOM_HEIGHT) * brWidth + x + ix] = BlockType.DEEP_STONE; } for (let ix = 0; ix < ROOM_WIDTH; ix++) brBlocks[y * brWidth + x + ix] = BlockType.WALLPAPER; for (let iy = 0; iy < ROOM_HEIGHT - 1; iy++) { if (rx > 0 || rx === 0) brBlocks[(y + iy) * brWidth + x] = BlockType.WALLPAPER; if (rx === NUM_ROOMS_X - 1) brBlocks[(y + iy) * brWidth + x + ROOM_WIDTH - 1] = BlockType.WALLPAPER; } if (rx > 0) { brBlocks[(y + ROOM_HEIGHT - 2) * brWidth + x] = BlockType.DOOR_BOTTOM_CLOSED; brBlocks[(y + ROOM_HEIGHT - 3) * brWidth + x] = BlockType.DOOR_TOP_CLOSED; } const midX = x + Math.floor(ROOM_WIDTH / 2); if (floor < NUM_FLOORS - 1) { brBlocks[(y + ROOM_HEIGHT - 1) * brWidth + midX] = BlockType.AIR; brBlocks[(y + ROOM_HEIGHT - 1) * brWidth + midX + 1] = BlockType.AIR; for(let ly = 1; ly < ROOM_HEIGHT; ly++) brBlocks[(y + ly) * brWidth + midX] = BlockType.LADDER; } if (Math.random() < 0.5) brBlocks[(y + 1) * brWidth + x + Math.floor(ROOM_WIDTH/4)] = BlockType.GENERATOR_OFF; } } const spawnX = startX + centerRoomX * ROOM_WIDTH + Math.floor(ROOM_WIDTH / 2); (window as any).brSpawnX = spawnX * BLOCK_SIZE; (window as any).brSpawnY = (startY + ROOM_HEIGHT - 2) * BLOCK_SIZE;
+for (let floor = 0; floor < NUM_FLOORS; floor++) { const y = startY + floor * ROOM_HEIGHT; for (let rx = 0; rx < NUM_ROOMS_X; rx++) { const x = startX + rx * ROOM_WIDTH; for (let ix = 0; ix < ROOM_WIDTH; ix++) { brBlocks[(y + ROOM_HEIGHT - 1) * brWidth + x + ix] = BlockType.MOSS; if (floor === NUM_FLOORS - 1) brBlocks[(y + ROOM_HEIGHT) * brWidth + x + ix] = BlockType.DEEP_STONE; } for (let ix = 0; ix < ROOM_WIDTH; ix++) brBlocks[y * brWidth + x + ix] = BlockType.WALLPAPER; if (floor > 0) { const mX = x + Math.floor(ROOM_WIDTH / 2); brBlocks[y * brWidth + mX] = BlockType.LADDER; brBlocks[y * brWidth + mX + 1] = BlockType.AIR; } for (let iy = 0; iy < ROOM_HEIGHT - 1; iy++) { if (rx > 0 || rx === 0) brBlocks[(y + iy) * brWidth + x] = BlockType.WALLPAPER; if (rx === NUM_ROOMS_X - 1) brBlocks[(y + iy) * brWidth + x + ROOM_WIDTH - 1] = BlockType.WALLPAPER; } if (rx > 0) { brBlocks[(y + ROOM_HEIGHT - 2) * brWidth + x] = BlockType.DOOR_BOTTOM_CLOSED; brBlocks[(y + ROOM_HEIGHT - 3) * brWidth + x] = BlockType.DOOR_TOP_CLOSED; } const midX = x + Math.floor(ROOM_WIDTH / 2); if (floor < NUM_FLOORS - 1) { brBlocks[(y + ROOM_HEIGHT - 1) * brWidth + midX] = BlockType.AIR; brBlocks[(y + ROOM_HEIGHT - 1) * brWidth + midX + 1] = BlockType.AIR; brBlocks[(y + ROOM_HEIGHT) * brWidth + midX] = BlockType.LADDER; brBlocks[(y + ROOM_HEIGHT) * brWidth + midX + 1] = BlockType.AIR; for(let ly = 1; ly < ROOM_HEIGHT; ly++) brBlocks[(y + ly) * brWidth + midX] = BlockType.LADDER; } if (Math.random() < 0.5) brBlocks[(y + 1) * brWidth + x + Math.floor(ROOM_WIDTH/4)] = BlockType.GENERATOR_OFF; } } const spawnX = startX + centerRoomX * ROOM_WIDTH + Math.floor(ROOM_WIDTH / 2); (window as any).brSpawnX = spawnX * BLOCK_SIZE; (window as any).brSpawnY = (startY + ROOM_HEIGHT - 2) * BLOCK_SIZE;
 const spawnY = startY + centerRoomY * ROOM_HEIGHT + ROOM_HEIGHT - 2;
 brBlocks[spawnY * brWidth + spawnX - 3] = BlockType.WHITE_DOOR_CLOSED;
 brBlocks[(spawnY - 1) * brWidth + spawnX - 3] = BlockType.WHITE_DOOR_CLOSED;
@@ -3697,7 +3698,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                 
                 if (backroomsPhase !== 'NONE') { } else if (isDay && r < 0.3) {
                     // Added GOLDEN_DEER multiple times to increase spawn rate
-                    const types: any[] = ['PIG', 'SHEEP', 'COW', 'CAMEL', 'SNAKE', 'RABBIT', 'POLAR_BEAR', 'DOG', 'BIRD', 'GOLDEN_DEER', 'GOLDEN_DEER', 'GOLDEN_DEER', 'SHARK'];
+                    const types: any[] = ['PIG', 'SHEEP', 'COW', 'CAMEL', 'SNAKE', 'RABBIT', 'POLAR_BEAR', 'DOG', 'BIRD', 'GOLDEN_DEER', 'GOLDEN_DEER', 'GOLDEN_DEER', 'SHARK', 'CHICKEN', 'CHICKEN'];
                     spawnMob(types[Math.floor(Math.random() * types.length)]);
                 }
                 else if (!isDay && r < 0.5) {
@@ -5131,7 +5132,7 @@ let curTempState: 'NORMAL' | 'HOT' | 'COLD' = 'NORMAL';
                              });
                          }
 
-                         if (ent.health <= 0) { gainXP(XP_PER_MOB); if (ent.type === 'COW') { spawnDrop(ent.x, ent.y, 'raw_beef', 2); spawnDrop(ent.x, ent.y, 'leather', 1); } if (ent.type === 'GOLDEN_DEER') { spawnDrop(ent.x, ent.y, 'raw_beef', 2); spawnDrop(ent.x, ent.y, 'leather', 2); } if (ent.type === 'SHARK') spawnDrop(ent.x, ent.y, 'raw_beef', 2); if (ent.type === 'PIG') spawnDrop(ent.x, ent.y, 'raw_porkchop', 2); if (ent.type === 'SHEEP') { spawnDrop(ent.x, ent.y, 'raw_mutton', 1); spawnDrop(ent.x, ent.y, BlockType.WOOL, 1); } if (ent.type === 'LUNAR_FOX') { spawnDrop(ent.x, ent.y, 'raw_diamond', 2); spawnDrop(ent.x, ent.y, 'raw_gold', 3); } if (ent.type === 'MUTANT_ZOMBIE') { spawnDrop(ent.x, ent.y, 'uranium_totem', 1); spawnDrop(ent.x, ent.y, 'uranium', 5); } if (ent.type === 'ZOMBIE' && Math.random() < 0.5) { spawnDrop(ent.x, ent.y, 'bone', 1); } entitiesRef.current = entitiesRef.current.filter(e => e.id !== ent.id); } } }); damageTool(selectedSlot); }
+                         if (ent.health <= 0) { gainXP(XP_PER_MOB); if (ent.type === 'COW') { spawnDrop(ent.x, ent.y, 'raw_beef', 2); spawnDrop(ent.x, ent.y, 'leather', 1); } if (ent.type === 'GOLDEN_DEER') { spawnDrop(ent.x, ent.y, 'raw_beef', 2); spawnDrop(ent.x, ent.y, 'leather', 2); } if (ent.type === 'SHARK') spawnDrop(ent.x, ent.y, 'raw_beef', 2); if (ent.type === 'PIG') spawnDrop(ent.x, ent.y, 'raw_porkchop', 2); if (ent.type === 'CHICKEN') spawnDrop(ent.x, ent.y, 'raw_chicken', 1); if (ent.type === 'SHEEP') { spawnDrop(ent.x, ent.y, 'raw_mutton', 1); spawnDrop(ent.x, ent.y, BlockType.WOOL, 1); } if (ent.type === 'LUNAR_FOX') { spawnDrop(ent.x, ent.y, 'raw_diamond', 2); spawnDrop(ent.x, ent.y, 'raw_gold', 3); } if (ent.type === 'MUTANT_ZOMBIE') { spawnDrop(ent.x, ent.y, 'uranium_totem', 1); spawnDrop(ent.x, ent.y, 'uranium', 5); } if (ent.type === 'ZOMBIE' && Math.random() < 0.5) { spawnDrop(ent.x, ent.y, 'bone', 1); } entitiesRef.current = entitiesRef.current.filter(e => e.id !== ent.id); } } }); damageTool(selectedSlot); }
                 }
                 if (!hitEntity) { 
                     if (bx >= 0 && bx < WORLD_WIDTH && by >= 0 && by < WORLD_HEIGHT) { 
